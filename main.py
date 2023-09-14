@@ -61,10 +61,10 @@ async def das_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
 
     message = await update.message.reply_video(
         video=video,
-        duration=info["duration"],
+        duration=int(info["duration"]),
         caption=info["title"],
-        width=info["width"],
-        height=info["height"],
+        width=info.get("width"),
+        height=info.get("height"),
         thumbnail=info["thumbnail"],
         filename=filename,
         reply_to_message_id=update.message.id,
@@ -148,9 +148,9 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     info = videos[query]
 
-    duration = info["duration"]
-    width = info["width"]
-    height = info["height"]
+    duration = int(info["duration"])
+    width = info.get("width")
+    height = info.get("height")
     thumbnail = info["thumbnail"]
     caption = f"{info['title']}\n{info['webpage_url']}"
     requested_downloads = info["requested_downloads"][0]
