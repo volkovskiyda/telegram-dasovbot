@@ -24,7 +24,7 @@ videos = {}
 
 
 async def start_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
-    username = update.message.from_user["username"]
+    username = update.message.from_user['username']
     await update.message.reply_text(f"Hey, @{username}.\n"
                                     "Welcome to Download and Share Online Video bot\n"
                                     "Type @dasovbot <video url>\n"
@@ -40,10 +40,10 @@ async def help_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def das_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.message.text.removeprefix("/das").removeprefix("/dv").lstrip()
+    query = update.message.text.removeprefix('/das').removeprefix('/dv').lstrip()
 
     if not query:
-        await update.message.reply_text("Type /das <video url>")
+        await update.message.reply_text('Type /das <video url>')
         return
 
     if not videos.__contains__(query):
@@ -55,22 +55,22 @@ async def das_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
 
     info = videos[query]
 
-    requested_downloads = info["requested_downloads"][0]
-    video = info.get('file_id') or requested_downloads["filepath"]
-    filename = requested_downloads["filename"]
+    requested_downloads = info['requested_downloads'][0]
+    video = info.get('file_id') or requested_downloads['filepath']
+    filename = requested_downloads['filename']
 
     message = await update.message.reply_video(
         video=video,
-        duration=int(info["duration"]),
-        caption=info["title"],
+        duration=int(info['duration']),
+        caption=info['title'],
         width=info.get("width"),
         height=info.get("height"),
-        thumbnail=info["thumbnail"],
+        thumbnail=info['thumbnail'],
         filename=filename,
         reply_to_message_id=update.message.id,
     )
 
-    info.setdefault("file_id", message.video.file_id)
+    info.setdefault('file_id', message.video.file_id)
 
 
 async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
@@ -93,14 +93,13 @@ async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     else:
         file_id = None
 
-    inline_id = str(uuid4())
-    caption = info["webpage_url"]
-    title = info["title"]
-    description = info["description"]
+    caption = info['webpage_url']
+    title = info['title']
+    description = info['description']
     if file_id:
         results = [
             InlineQueryResultCachedVideo(
-                id=inline_id,
+                id=str(uuid4()),
                 video_file_id=file_id,
                 title=title,
                 description=description,
@@ -110,7 +109,7 @@ async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     else:
         results = [
             InlineQueryResultCachedVideo(
-                id=inline_id,
+                id=str(uuid4()),
                 video_file_id=animation_file_id,
                 title=title,
                 description=description,
@@ -148,14 +147,14 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     info = videos[query]
 
-    duration = int(info["duration"])
-    width = info.get("width")
-    height = info.get("height")
-    thumbnail = info["thumbnail"]
+    duration = int(info['duration'])
+    width = info.get('width')
+    height = info.get('height')
+    thumbnail = info['thumbnail']
     caption = f"{info['title']}\n{info['webpage_url']}"
-    requested_downloads = info["requested_downloads"][0]
-    filepath = requested_downloads["filepath"]
-    filename = requested_downloads["filename"]
+    requested_downloads = info['requested_downloads'][0]
+    filepath = requested_downloads['filepath']
+    filename = requested_downloads['filename']
 
     chat_id = update.chosen_inline_result.from_user.id
     message = await context.bot.send_video(
@@ -173,7 +172,7 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     os.remove(filepath)
 
     file_id = message.video.file_id
-    info.setdefault("file_id", file_id)
+    info.setdefault('file_id', file_id)
 
     await context.bot.edit_message_media(
         media=InputMediaVideo(
@@ -190,23 +189,23 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def populate_animation(bot: Bot):
-    video_url = os.getenv("LOADING_VIDEO_ID")
-    chat_id = os.getenv("DEVELOPER_CHAT_ID")
+    video_url = os.getenv('LOADING_VIDEO_ID')
+    chat_id = os.getenv('DEVELOPER_CHAT_ID')
 
     animation_info = ydl.extract_info(video_url, download=True)
-    requested_downloads = animation_info["requested_downloads"][0]
-    filepath = requested_downloads["filepath"]
-    filename = requested_downloads["filename"]
+    requested_downloads = animation_info['requested_downloads'][0]
+    filepath = requested_downloads['filepath']
+    filename = requested_downloads['filename']
 
     message = await bot.send_video(
         chat_id=chat_id,
         video=filepath,
-        duration=animation_info["duration"],
-        width=animation_info["width"],
-        height=animation_info["height"],
-        thumbnail=animation_info["thumbnail"],
+        duration=animation_info['duration'],
+        width=animation_info['width'],
+        height=animation_info['height'],
+        thumbnail=animation_info['thumbnail'],
         filename=filename,
-        caption=animation_info["title"],
+        caption=animation_info['title'],
         disable_notification=True,
     )
     await message.delete()
@@ -222,8 +221,8 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 def main() -> None:
-    token = os.getenv("BOT_TOKEN")
-    base_url = os.getenv("BASE_URL")
+    token = os.getenv('BOT_TOKEN')
+    base_url = os.getenv('BASE_URL')
     asyncio.get_event_loop().run_until_complete(populate_animation(Bot(token=token, base_url=base_url)))
 
     application = (
@@ -235,9 +234,9 @@ def main() -> None:
         .build()
     )
 
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler(["das", "dv"], das_command))
+    application.add_handler(CommandHandler('start', start_command))
+    application.add_handler(CommandHandler('help', help_command))
+    application.add_handler(CommandHandler(['das', 'dv'], das_command))
 
     application.add_handler(InlineQueryHandler(inline_query))
     application.add_handler(ChosenInlineResultHandler(chosen_query))
