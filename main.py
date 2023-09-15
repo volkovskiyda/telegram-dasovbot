@@ -64,7 +64,7 @@ async def das_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     message = await update.message.reply_video(
         video=video,
         duration=int(info['duration']),
-        caption=info['title'],
+        caption=f"{info['title']}\n{info.get('webpage_url') or info['url']}",
         width=info.get("width"),
         height=info.get("height"),
         thumbnail=info['thumbnail'],
@@ -106,7 +106,7 @@ async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
                 video_file_id=file_id,
                 title=info['title'],
                 description=info['description'],
-                caption=info.get('webpage_url') or info['url'],
+                caption=f"{info['title']}\n{info.get('webpage_url') or info['url']}",
             )
         ]
     else:
@@ -119,18 +119,17 @@ async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 def inline_video(info, playlist_index: Optional[str] = None) -> InlineQueryResultCachedVideo:
-    caption = info.get('webpage_url') or info['url']
     return InlineQueryResultCachedVideo(
         id=str(uuid4()) + (playlist_index or ''),
         video_file_id=animation_file_id,
         title=info['title'],
         description=info['description'],
-        caption=caption,
+        caption=f"{info['title']}\n{info.get('webpage_url') or info['url']}",
         reply_markup=InlineKeyboardMarkup(
             [[
                 InlineKeyboardButton(
                     text='loading',
-                    url=caption,
+                    url=info.get('webpage_url') or info['url'],
                 )
             ]]
         )
@@ -141,7 +140,6 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     inline_result = update.chosen_inline_result
     query = inline_result.query
     inline_message_id = inline_result.inline_message_id
-    playlist_caption = ''
 
     if not inline_message_id:
         return
@@ -153,7 +151,6 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             entries = videos[query].get('entries')
             if entries:
                 videos.pop(query)
-                playlist_caption = f"\n\n{query}"
                 query = entries[int(inline_result.result_id[-2:])]['url']
                 videos[query] = ydl.extract_info(query, download=True)
         except:
@@ -167,7 +164,7 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     width = info.get('width')
     height = info.get('height')
     thumbnail = info['thumbnail']
-    caption = f"{info['title']}\n{info.get('webpage_url') or info['url']}{playlist_caption}"
+    caption = f"{info['title']}\n{info.get('webpage_url') or info['url']}"
     requested_downloads = info['requested_downloads'][0]
     filepath = requested_downloads['filepath']
     filename = requested_downloads['filename']
