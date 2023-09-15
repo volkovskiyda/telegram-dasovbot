@@ -1,5 +1,6 @@
 import asyncio
 import os
+from typing import Optional
 from uuid import uuid4
 
 import yt_dlp
@@ -13,9 +14,10 @@ load_dotenv()
 animation_file_id: str
 
 ydl_opts = {
-    'format': 'worst[height>=360]/mp4',
+    'format': 'worst[height>=480]/mp4',
     'outtmpl': 'videos\%(upload_date)s - %(title)s [%(id)s].%(ext)s',
     'noplaylist': True,
+    'extract_flat': True,
     'quiet': True,
 }
 ydl = yt_dlp.YoutubeDL(ydl_opts)
@@ -93,46 +95,54 @@ async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     else:
         file_id = None
 
-    caption = info['webpage_url']
-    title = info['title']
-    description = info['description']
-    if file_id:
+    entries = info.get('entries')
+
+    if entries:
+        results = [inline_video(item, str(idx).zfill(2)) for idx, item in enumerate(entries[:10])]
+    elif file_id:
         results = [
             InlineQueryResultCachedVideo(
                 id=str(uuid4()),
                 video_file_id=file_id,
-                title=title,
-                description=description,
-                caption=caption,
+                title=info['title'],
+                description=info['description'],
+                caption=info.get('webpage_url') or info['url'],
             )
         ]
     else:
-        results = [
-            InlineQueryResultCachedVideo(
-                id=str(uuid4()),
-                video_file_id=animation_file_id,
-                title=title,
-                description=description,
-                caption=caption,
-                reply_markup=InlineKeyboardMarkup(
-                    [[
-                        InlineKeyboardButton(
-                            text='loading',
-                            url=caption,
-                        )
-                    ]]
-                )
-            )
-        ]
+        results = [inline_video(info)]
+
     await update.inline_query.answer(
         results=results,
         cache_time=10,
     )
 
 
+def inline_video(info, playlist_index: Optional[str] = None) -> InlineQueryResultCachedVideo:
+    caption = info.get('webpage_url') or info['url']
+    return InlineQueryResultCachedVideo(
+        id=str(uuid4()) + (playlist_index or ''),
+        video_file_id=animation_file_id,
+        title=info['title'],
+        description=info['description'],
+        caption=caption,
+        reply_markup=InlineKeyboardMarkup(
+            [[
+                InlineKeyboardButton(
+                    text='loading',
+                    url=caption,
+                )
+            ]]
+        )
+    )
+
+
 async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.chosen_inline_result.query
-    inline_message_id = update.chosen_inline_result.inline_message_id
+    inline_result = update.chosen_inline_result
+    query = inline_result.query
+    inline_message_id = inline_result.inline_message_id
+    playlist_caption = ''
+
     if not inline_message_id:
         return
 
@@ -140,6 +150,12 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         # noinspection PyBroadException
         try:
             videos[query] = ydl.extract_info(query, download=True)
+            entries = videos[query].get('entries')
+            if entries:
+                videos.pop(query)
+                playlist_caption = f"\n\n{query}"
+                query = entries[int(inline_result.result_id[-2:])]['url']
+                videos[query] = ydl.extract_info(query, download=True)
         except:
             return
     else:
@@ -151,12 +167,12 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     width = info.get('width')
     height = info.get('height')
     thumbnail = info['thumbnail']
-    caption = f"{info['title']}\n{info['webpage_url']}"
+    caption = f"{info['title']}\n{info.get('webpage_url') or info['url']}{playlist_caption}"
     requested_downloads = info['requested_downloads'][0]
     filepath = requested_downloads['filepath']
     filename = requested_downloads['filename']
 
-    chat_id = update.chosen_inline_result.from_user.id
+    chat_id = inline_result.from_user.id
     message = await context.bot.send_video(
         chat_id=chat_id,
         video=filepath,
