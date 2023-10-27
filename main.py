@@ -18,6 +18,7 @@ ydl_opts = {
     'outtmpl': 'videos\%(upload_date)s - %(title)s [%(id)s].%(ext)s',
     'noplaylist': True,
     'extract_flat': True,
+    'playlist_items': '1-10',
     'quiet': True,
 }
 ydl = yt_dlp.YoutubeDL(ydl_opts)
@@ -98,6 +99,9 @@ async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     entries = info.get('entries')
 
     if entries:
+        nested_entries = entries[0].get('entries')
+        if nested_entries:
+            entries = nested_entries
         results = [inline_video(item, str(idx).zfill(2)) for idx, item in enumerate(entries[:10])]
     elif file_id:
         results = [
@@ -150,6 +154,9 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             videos[query] = ydl.extract_info(query, download=True)
             entries = videos[query].get('entries')
             if entries:
+                nested_entries = entries[0].get('entries')
+                if nested_entries:
+                    entries = nested_entries
                 videos.pop(query)
                 query = entries[int(inline_result.result_id[-2:])]['url']
                 videos[query] = ydl.extract_info(query, download=True)
