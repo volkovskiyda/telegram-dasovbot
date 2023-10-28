@@ -15,10 +15,10 @@ animation_file_id: str
 
 ydl_opts = {
     'format': 'worst[height>=480]/mp4',
-    'outtmpl': 'videos\%(upload_date)s - %(title)s [%(id)s].%(ext)s',
+    'outtmpl': 'videos/%(upload_date)s - %(title)s [%(id)s].%(ext)s',
     'noplaylist': True,
     'extract_flat': True,
-    'playlist_items': '1-10',
+    'playlist_items': '1-20',
     'quiet': True,
 }
 ydl = yt_dlp.YoutubeDL(ydl_opts)
@@ -102,7 +102,7 @@ async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
         nested_entries = entries[0].get('entries')
         if nested_entries:
             entries = nested_entries
-        results = [inline_video(item, str(idx).zfill(2)) for idx, item in enumerate(entries[:10])]
+        results = [inline_video(item, str(idx).zfill(2)) for idx, item in enumerate(entries)]
     elif file_id:
         results = [
             InlineQueryResultCachedVideo(
