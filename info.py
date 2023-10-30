@@ -9,7 +9,7 @@ ydl_opts = {
     'noplaylist': True,
     'extract_flat': True,
     'playlist_items': '1-20',
-    'quiet': True,
+    'verbose': True,
 }
 ydl = yt_dlp.YoutubeDL(ydl_opts)
 
