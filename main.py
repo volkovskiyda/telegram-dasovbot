@@ -68,7 +68,6 @@ async def das_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
         caption=f"{info['title']}\n{info.get('webpage_url') or info['url']}",
         width=info.get("width"),
         height=info.get("height"),
-        thumbnail=info['thumbnail'],
         filename=filename,
         reply_to_message_id=update.message.id,
     )
@@ -183,7 +182,6 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         duration=duration,
         width=width,
         height=height,
-        thumbnail=thumbnail,
         caption=caption,
         filename=filename,
         disable_notification=True,
@@ -223,7 +221,6 @@ async def populate_animation(bot: Bot):
         duration=animation_info['duration'],
         width=animation_info['width'],
         height=animation_info['height'],
-        thumbnail=animation_info['thumbnail'],
         filename=filename,
         caption=animation_info['title'],
         disable_notification=True,
