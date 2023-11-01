@@ -17,18 +17,17 @@ def video(info):
     title = info['title']
     url = info.get('webpage_url') or info['url']
     duration = int(info['duration'])
+    download = info['url']
+    thumbnail = info['thumbnail']
+    upload_date = info['upload_date']
     video = {
         'title': title,
         'url': url,
-        'duration': duration
+        'duration': duration,
+        'download': download,
+        'thumbnail': thumbnail,
+        'upload_date': upload_date,
     }
-    try:
-        requested_downloads = info['requested_downloads'][0]
-        filename = requested_downloads['filename']
-        video['requested_downloads'] = requested_downloads
-        video['filename'] = filename
-    except (AttributeError, KeyError):
-        None
     return video
 
 async def info(query: str) -> None:
