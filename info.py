@@ -1,5 +1,6 @@
 import asyncio
 import sys
+import argparse
 import json
 import yt_dlp
 
@@ -30,8 +31,8 @@ def video(info):
     }
     return video
 
-async def info(query: str) -> None:
-    info = ydl.extract_info(query, download=False)
+async def info(query: str, download: bool) -> None:
+    info = ydl.extract_info(query, download=download)
     entries = info.get('entries')
     if entries:
         nested_entries = entries[0].get('entries')
@@ -45,8 +46,11 @@ async def info(query: str) -> None:
 
 
 def main() -> None:
-    url = sys.argv[1:][0]
-    asyncio.run(info(url))
+    parser = argparse.ArgumentParser()
+    parser.add_argument('url')
+    parser.add_argument('-d','--download',default=False)
+    args = parser.parse_args()
+    asyncio.run(info(args.url, download=args.download))
 
 
 if __name__ == "__main__":
