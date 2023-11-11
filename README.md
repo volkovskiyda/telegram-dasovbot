@@ -15,6 +15,7 @@
 - `BASE_URL` and `BOT_TOKEN` environment variables used to initialize bot.
 - For `BASE_URL` you can use standard `https://api.telegram.org/bot` or use a local server ([tutorial](https://github.com/tdlib/telegram-bot-api)).
 - Obtain `BOT_TOKEN` via @BotFather ([tutorial](https://core.telegram.org/bots/tutorial#obtain-your-bot-token))
+- `Tip`: Turn inline mode on, edit inline placeholder and set inline feedback to 100% in bot settings.
 - More info at [official github repository](https://github.com/tdlib/telegram-bot-api)
 - `DEVELOPER_CHAT_ID` and `LOADING_VIDEO_ID` environment variables are used to populate loading animation
 - For local server you can use [docker telegram bot api image](https://github.com/volkovskiyda/docker-telegram-bot-api)
