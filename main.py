@@ -100,7 +100,11 @@ async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     if entries:
         nested_entries = entries[0].get('entries')
         if nested_entries:
-            entries = nested_entries
+            try:
+                next_entries = entries[1].get('entries')
+            except:
+                next_entries = []
+            entries = nested_entries + next_entries
         results = [inline_video(item, str(idx).zfill(2)) for idx, item in enumerate(entries)]
     elif file_id:
         results = [
@@ -155,7 +159,11 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             if entries:
                 nested_entries = entries[0].get('entries')
                 if nested_entries:
-                    entries = nested_entries
+                    try:
+                        next_entries = entries[1].get('entries')
+                    except:
+                        next_entries = []
+                    entries = nested_entries + next_entries
                 videos.pop(query)
                 query = entries[int(inline_result.result_id[-2:])]['url']
                 videos[query] = ydl.extract_info(query, download=True)
