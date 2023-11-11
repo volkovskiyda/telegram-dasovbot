@@ -30,6 +30,15 @@ pip3 install -r requirements.txt
 python3 main.py
 ```
 
+- Show info
+```bash
+python3 info.py '<url>' -d=False
+```
+You can pass parameter `-d` (`--download`) to dowload video
+```bash
+python3 info.py '<url>' --download=True
+```
+
 ### **Docker container**
 
 ```bash
