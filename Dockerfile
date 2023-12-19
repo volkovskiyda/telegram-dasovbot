@@ -1,10 +1,8 @@
-FROM python
-
-LABEL org.opencontainers.image.source=https://github.com/volkovskiyda/telegram-dasovbot
+FROM python:alpine
 
 RUN mkdir project
 WORKDIR /project
-COPY info.py main.py requirements.txt ./
+COPY info.py main.py requirements.txt /project/
 
 RUN python -m pip install --upgrade pip
 RUN pip install -U -r requirements.txt
