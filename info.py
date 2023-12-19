@@ -5,12 +5,11 @@ import json
 import yt_dlp
 
 ydl_opts = {
-    'format': 'worst[height>=480]/mp4',
+    'format': 'mp4',
     'outtmpl': 'videos/%(upload_date)s - %(title)s [%(id)s].%(ext)s',
     'noplaylist': True,
     'extract_flat': True,
     'playlist_items': '1-20',
-    'verbose': True,
 }
 ydl = yt_dlp.YoutubeDL(ydl_opts)
 
