@@ -259,13 +259,14 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 def main() -> None:
     token = os.getenv('BOT_TOKEN')
     base_url = os.getenv('BASE_URL')
+    timeout = os.getenv('READ_TIMEOUT') or 30
     asyncio.get_event_loop().run_until_complete(populate_animation(Bot(token=token, base_url=base_url)))
 
     application = (
         Application.builder()
         .token(token)
         .base_url(base_url)
-        .read_timeout(30.0)
+        .read_timeout(float(timeout))
         .concurrent_updates(True)
         .build()
     )

@@ -18,6 +18,7 @@ services:
     image: ghcr.io/volkovskiyda/dasovbot
     restart: unless-stopped
     environment:
+      - READ_TIMEOUT=${READ_TIMEOUT}
       - BASE_URL=${BASE_URL}
       - BOT_TOKEN=${BOT_TOKEN}
       - LOADING_VIDEO_ID=${LOADING_VIDEO_ID}
