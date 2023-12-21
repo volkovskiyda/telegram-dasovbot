@@ -153,9 +153,6 @@ async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     print(f"{extract_user(user)} - {query}: inline_query#answer-end")
 
 async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    asyncio.get_event_loop().create_task(chosen_query_async(update, context))
-
-async def chosen_query_async(update: Update, context: ContextTypes.DEFAULT_TYPE):
     inline_result = update.chosen_inline_result
     user = inline_result.from_user
     query = inline_result.query
