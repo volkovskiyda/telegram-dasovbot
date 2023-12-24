@@ -1,12 +1,11 @@
 import asyncio
 import os
-from typing import Optional
-from uuid import uuid4
+import datetime
 
 import yt_dlp
 from dotenv import load_dotenv
 from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboardButton, Bot, \
-    InlineQueryResultCachedVideo, User
+    InlineQueryResultCachedVideo, User, Message
 from telegram.ext import Application, CommandHandler, ContextTypes, InlineQueryHandler, ChosenInlineResultHandler
 
 load_dotenv()
@@ -15,7 +14,7 @@ animation_file_id: str
 
 ydl_opts = {
     'format': 'mp4',
-    'outtmpl': 'videos/%(upload_date)s - %(title)s [%(id)s].%(ext)s',
+    'outtmpl': 'videos/%(upload_date)s - %(title).80s [%(id)s].%(ext)s',
     'noplaylist': True,
     'extract_flat': True,
     'playlist_items': '1-20',
@@ -26,8 +25,21 @@ ydl = yt_dlp.YoutubeDL(ydl_opts)
 
 videos = {}
 
-def extract_user(user: User) -> str:
-    return f"{user.username} ({user.id})"
+def extract_info(query: str, download=True) -> dict:
+    info = videos.get(query)
+    if info and (info.get('file_id') or not download): return info
+    
+    if not info:
+        info = ydl.extract_info(query, download=False)
+        url = extract_url(info)
+        info_url = videos.get(url)
+        if info_url:
+            videos[query] = info_url
+            return info_url
+
+    if not info.get('file_id') and download:
+        info = ydl.extract_info(query)
+    return info
 
 def extract_entries(entries):
     nested_entries = entries[0].get('entries')
@@ -39,20 +51,40 @@ def extract_entries(entries):
         entries = nested_entries + next_entries
     return entries
 
-def inline_video(info, playlist_index: Optional[str] = None) -> InlineQueryResultCachedVideo:
+def extract_url(info: dict) -> str:
+    return info.get('webpage_url') or info['url']
+
+def extract_caption(info: dict) -> str:
+    return f"{info['title']}\n{extract_url(info)}"
+
+def extract_duration(info: dict) -> int:
+    return int(info['duration'])
+
+def extract_user(user: User) -> str:
+    return f"{datetime.datetime.now()} {user.username} ({user.id})"
+
+async def post_process(query: str, info: dict, message: Message, remove_message=True, store_info=True) -> str:
+    file_id = message.video.file_id
+    filepath = info['requested_downloads'][0]['filepath']
+    info.setdefault('file_id', file_id)
+    url = extract_url(info)
+    if store_info:
+        videos[query] = info
+        videos[url] = info
+    if remove_message: await message.delete()
+    os.remove(filepath)
+    return file_id
+
+def inline_video(info) -> InlineQueryResultCachedVideo:
+    url = extract_url(info)
     return InlineQueryResultCachedVideo(
-        id=str(uuid4()) + (playlist_index or ''),
-        video_file_id=animation_file_id,
+        id=url,
+        video_file_id=info.get('file_id') or animation_file_id,
         title=info['title'],
         description=info['description'],
-        caption=f"{info['title']}\n{info.get('webpage_url') or info['url']}",
+        caption=extract_caption(info),
         reply_markup=InlineKeyboardMarkup(
-            [[
-                InlineKeyboardButton(
-                    text='loading',
-                    url=info.get('webpage_url') or info['url'],
-                )
-            ]]
+            [[ InlineKeyboardButton(text='loading', url=url) ]]
         )
     )
 
@@ -73,20 +105,17 @@ async def help_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def das_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
-    query = update.message.text.removeprefix('/das').removeprefix('/dv').lstrip()
+    message = update.message
+    user = message.from_user
+    query = message.text.removeprefix('/das').removeprefix('/dv').lstrip()
 
     if not query:
         await update.message.reply_text('Type /das <video url>')
         return
 
-    if not videos.__contains__(query):
-        # noinspection PyBroadException
-        try:
-            videos[query] = ydl.extract_info(query, download=True)
-        except:
-            return
-
-    info = videos[query]
+    info = extract_info(query)
+    entries = info.get('entries')
+    if entries: return
 
     requested_downloads = info['requested_downloads'][0]
     video = info.get('file_id') or requested_downloads['filepath']
@@ -94,15 +123,17 @@ async def das_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
 
     message = await update.message.reply_video(
         video=video,
-        duration=int(info['duration']),
-        caption=f"{info['title']}\n{info.get('webpage_url') or info['url']}",
+        duration=extract_duration(info),
+        caption=extract_caption(info),
         width=info.get("width"),
         height=info.get("height"),
         filename=filename,
         reply_to_message_id=update.message.id,
     )
 
-    info.setdefault('file_id', message.video.file_id)
+    await post_process(query, info, message, remove_message=False)
+
+    print(f"{extract_user(user)} # das: {query}")
 
 
 async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
@@ -110,87 +141,72 @@ async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     user = inline_query.from_user
     query = inline_query.query
 
-    if not query:
-        return
+    if not query: return
 
-    if not videos.__contains__(query):
-        # noinspection PyBroadException
-        try:
-            info = ydl.extract_info(query, download=False)
-        except:
-            return
-    else:
-        info = videos[query]
+    info = extract_info(query, download=False)
 
-    if videos.__contains__(query):
-        file_id = info.get('file_id')
-    else:
-        file_id = None
-
+    file_id = info.get('file_id')
     entries = info.get('entries')
 
     if entries:
         entries = extract_entries(entries)
-        results = [inline_video(item, str(idx).zfill(2)) for idx, item in enumerate(entries)]
+        results = [inline_video(item) for item in entries]
     elif file_id:
         results = [
             InlineQueryResultCachedVideo(
-                id=str(uuid4()),
+                id=extract_url(info),
                 video_file_id=file_id,
                 title=info['title'],
                 description=info['description'],
-                caption=f"{info['title']}\n{info.get('webpage_url') or info['url']}",
+                caption=extract_caption(info),
             )
         ]
     else:
         results = [inline_video(info)]
 
-    print(f"{extract_user(user)} - {query}: inline_query#answer-start")
+    print(f"{extract_user(user)} # inline_query: {query}")
     await update.inline_query.answer(
         results=results,
         cache_time=10,
     )
-    print(f"{extract_user(user)} - {query}: inline_query#answer-end")
 
 async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     inline_result = update.chosen_inline_result
-    user = inline_result.from_user
-    query = inline_result.query
     inline_message_id = inline_result.inline_message_id
+    
+    if not inline_message_id: return
 
-    if not inline_message_id:
+    query = inline_result.result_id
+    user = inline_result.from_user
+    chat_id = user.id
+
+    print(f"{extract_user(user)} # chosen_query_strt: {query}")
+
+    info = videos.get(query)
+    file_id = info.get('file_id') if info else None
+    if file_id:
+        await context.bot.edit_message_media(
+            media=InputMediaVideo(
+                media=file_id,
+                caption=extract_caption(info),
+            ),
+            inline_message_id=inline_message_id,
+        )
+        print(f"{extract_user(user)} # chosen_query_fnsh: {query}")
         return
 
-    if not videos.__contains__(query):
-        # noinspection PyBroadException
-        try:
-            print(f"{extract_user(user)} - {query}: chosen_query#download")
-            videos[query] = ydl.extract_info(query, download=True)
-            entries = videos[query].get('entries')
-            if entries:
-                entries = extract_entries(entries)
-                videos.pop(query)
-                query = entries[int(inline_result.result_id[-2:])]['url']
-                print(f"{extract_user(user)} - {query}: chosen_query#download_entry")
-                videos[query] = ydl.extract_info(query, download=True)
-        except:
-            return
-    else:
-        return
+    info = extract_info(query)
 
-    info = videos[query]
-
-    duration = int(info['duration'])
+    duration = extract_duration(info)
     width = info.get('width')
     height = info.get('height')
     thumbnail = info['thumbnail']
-    caption = f"{info['title']}\n{info.get('webpage_url') or info['url']}"
+    caption = extract_caption(info)
     requested_downloads = info['requested_downloads'][0]
     filepath = requested_downloads['filepath']
     filename = requested_downloads['filename']
 
     chat_id = inline_result.from_user.id
-    print(f"{extract_user(user)} - {query}: chosen_query#send_video-start")
     message = await context.bot.send_video(
         chat_id=chat_id,
         video=filepath,
@@ -201,15 +217,9 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         filename=filename,
         disable_notification=True,
     )
-    print(f"{extract_user(user)} - {query}: chosen_query#send_video-end")
-    await message.delete()
-    os.remove(filepath)
-    print(f"{extract_user(user)} - {query}: chosen_query#send_video-remove")
 
-    file_id = message.video.file_id
-    info.setdefault('file_id', file_id)
+    await post_process(query, info, message)
 
-    print(f"{extract_user(user)} - {query}: chosen_query#edit_message_media-start")
     await context.bot.edit_message_media(
         media=InputMediaVideo(
             media=message.video,
@@ -222,33 +232,31 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         ),
         inline_message_id=inline_message_id,
     )
-    print(f"{extract_user(user)} - {query}: chosen_query#edit_message_media-end")
+    print(f"{extract_user(user)} # chosen_query_fnsh: {query}")
 
 
 async def populate_animation(bot: Bot):
-    video_url = os.getenv('LOADING_VIDEO_ID')
+    query = os.getenv('LOADING_VIDEO_ID')
     chat_id = os.getenv('DEVELOPER_CHAT_ID')
 
-    animation_info = ydl.extract_info(video_url, download=True)
-    requested_downloads = animation_info['requested_downloads'][0]
+    info = ydl.extract_info(query)
+    requested_downloads = info['requested_downloads'][0]
     filepath = requested_downloads['filepath']
     filename = requested_downloads['filename']
 
     message = await bot.send_video(
         chat_id=chat_id,
         video=filepath,
-        duration=animation_info['duration'],
-        width=animation_info['width'],
-        height=animation_info['height'],
+        duration=extract_duration(info),
+        width=info['width'],
+        height=info['height'],
         filename=filename,
-        caption=animation_info['title'],
+        caption=info['title'],
         disable_notification=True,
     )
-    await message.delete()
-    os.remove(filepath)
 
     global animation_file_id
-    animation_file_id = message.video.file_id
+    animation_file_id = await post_process(query, info, message, store_info=False)
     print('animation_file_id = ' + animation_file_id)
 
 
