@@ -4,5 +4,5 @@ videos/
 vpn/*
 !vpn/.gitkeep
 .env
-populate_channels.txt
+download.txt
 videos.json

@@ -119,7 +119,7 @@ def populate_channels(bot: Bot):
     interval_sec = float(interval_min) * 60
     while True:
         try:
-            with open("populate_channels.txt", "r") as file:
+            with open("download.txt", "r") as file:
                 channels = [line.rstrip() for line in file]
                 start = time.time()
                 for channel in channels:
