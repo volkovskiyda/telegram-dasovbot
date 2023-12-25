@@ -23,23 +23,8 @@ ydl_opts = {
 }
 ydl = yt_dlp.YoutubeDL(ydl_opts)
 
+video_info_file = "videos.json"
 videos = {}
-
-def extract_info(query: str, download=True) -> dict:
-    info = videos.get(query)
-    if info and (info.get('file_id') or not download): return info
-    
-    if not info:
-        info = ydl.extract_info(query, download=False)
-        url = extract_url(info)
-        info_url = videos.get(url)
-        if info_url:
-            videos[query] = info_url
-            return info_url
-
-    if not info.get('file_id') and download:
-        info = ydl.extract_info(query)
-    return info
 
 def extract_uploader_entries(entries: list) -> list:
     if not entries: return []
@@ -65,26 +50,69 @@ def extract_nested_entries(entries: list) -> list:
 def extract_url(info: dict) -> str:
     return info.get('webpage_url') or info['url']
 
-def extract_caption(info: dict) -> str:
-    return f"{info['title']}\n{extract_url(info)}"
-
-def extract_duration(info: dict) -> int:
-    return int(info['duration'])
+def extract_time() -> str:
+    return time.strftime('%Y-%m-%d %H:%M:%S')
 
 def extract_user(user: User) -> str:
-    return f"{time.strftime('%Y-%m-%d %H:%M:%S')} {user.username} ({user.id})"
+    return f"{extract_time()} {user.username} ({user.id})"
+
+def extract_info(query: str, download=True) -> dict:
+    info = videos.get(query)
+    if info and (info.get('file_id') or not download): return info
+    
+    if not info:
+        info = ydl.extract_info(query, download=False)
+        url = extract_url(info)
+        info_url = videos.get(url)
+        if info_url:
+            videos[query] = info_url
+            return info_url
+
+    if not info.get('file_id') and download:
+        info = ydl.extract_info(query)
+    return process_info(info)
 
 async def post_process(query: str, info: dict, message: Message, remove_message=True, store_info=True) -> str:
     file_id = message.video.file_id
-    filepath = info['requested_downloads'][0]['filepath']
-    info.setdefault('file_id', file_id)
-    url = extract_url(info)
+    filepath = info['filepath']
+    info['file_id'] = file_id
     if store_info:
+        url = extract_url(info)
+        del info['url']
+        del info['filepath']
+        del info['filename']
+        del info['entries']
         videos[query] = info
         videos[url] = info
     if remove_message: await message.delete()
     os.remove(filepath)
     return file_id
+
+def process_info(info: dict) -> dict:
+    filepath = None
+    filename = None
+    requested_downloads_list = info.get('requested_downloads')
+    if requested_downloads_list:
+        requested_downloads = requested_downloads_list[0]
+        filepath = requested_downloads['filepath']
+        filename = requested_downloads['filename']
+
+    return {
+        'file_id': info.get('file_id'),
+        'url': info.get('url'),
+        'webpage_url': info.get('webpage_url'),
+        'title': info.get('title'),
+        'description': info.get('description'),
+        'thumbnail': info.get('thumbnail'),
+        'duration': int(info.get('duration') or 0),
+        'uploader_url': info.get('uploader_url'),
+        'width': info.get('width'),
+        'height': info.get('height'),
+        'filepath': filepath,
+        'filename': filename,
+        'entries': info.get('entries'),
+        'caption': f"{info['title']}\n{extract_url(info)}",
+    }
 
 def populate_channels(bot: Bot):
     interval_min = os.getenv('POPULATE_CHANNELS_INTERVAL_MIN') or 60
@@ -97,7 +125,7 @@ def populate_channels(bot: Bot):
                 for channel in channels:
                     asyncio.new_event_loop().run_until_complete(populate_channel(bot, channel))
                 elapsed = time.time() - start
-                if elapsed > 10 * len(channels): print(f"populate_channels {channels} took {elapsed}")
+                if elapsed > 10 * len(channels): print(f"{extract_time()} # populate_channels {channels} took {elapsed}")
         except:
             pass
         finally:
@@ -114,10 +142,10 @@ async def populate_channel(bot: Bot, channel: str):
     entries = extract_uploader_entries(entries)
     if not entries: return
     start = time.time()
-    for entry in entries[:3]:
+    for entry in entries[:5]:
         await populate_video(bot, entry)
     elapsed = time.time() - start
-    if elapsed > 3: print(f"populate_channel {channel} ({uploader_url}) took {elapsed}")
+    if elapsed > 5: print(f"{extract_time()} # populate_channel {channel} ({uploader_url}) took {elapsed}")
 
 async def populate_video(bot: Bot, entry: dict) -> dict:
     query = extract_url(entry)
@@ -127,17 +155,14 @@ async def populate_video(bot: Bot, entry: dict) -> dict:
     start = time.time()
     try:
         info = extract_info(query)
-        requested_downloads = info['requested_downloads'][0]
-        filepath = requested_downloads['filepath']
-        filename = requested_downloads['filename']
         message = await bot.send_video(
             chat_id=developer_chat_id,
-            video=filepath,
-            duration=extract_duration(info),
+            video=info['filepath'],
+            duration=info['duration'],
             width=info.get('width'),
             height=info.get('height'),
-            caption=extract_caption(info),
-            filename=filename,
+            caption=info.get('caption'),
+            filename=info['filename'],
             disable_notification=True,
         )
         await post_process(query, info, message)
@@ -148,9 +173,21 @@ async def populate_video(bot: Bot, entry: dict) -> dict:
         elapsed = time.time() - start
         file_id = info.get('file_id') if info else None
         if file_id:
-            if elapsed > 1: print(f"populate_video {query} took {elapsed}: {file_id}")
+            if elapsed > 1: print(f"{extract_time()} # populate_video {query} took {elapsed}: {file_id}")
         else:
-            print(f"populate_video {entry.get('url')} failed after {elapsed}")
+            print(f"{extract_time()} # populate_video {entry.get('url')} failed after {elapsed}")
+
+def extract_video_info():
+    interval_sec = 60 * 10 # 10 mins
+    while True:
+        try:
+            file = open(video_info_file, "w")
+            json.dump(videos, file, indent=1, sort_keys=True)
+            file.write('\r')
+        except:
+            pass
+        finally:
+            time.sleep(interval_sec)
 
 def inline_video(info) -> InlineQueryResultCachedVideo:
     url = extract_url(info)
@@ -159,7 +196,7 @@ def inline_video(info) -> InlineQueryResultCachedVideo:
         video_file_id=info.get('file_id') or animation_file_id,
         title=info['title'],
         description=info['description'],
-        caption=extract_caption(info),
+        caption=info.get('caption'),
         reply_markup=InlineKeyboardMarkup(
             [[ InlineKeyboardButton(text='loading', url=url) ]]
         )
@@ -192,17 +229,16 @@ async def das_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     entries = info.get('entries')
     if entries: return
 
-    requested_downloads = info['requested_downloads'][0]
-    video = info.get('file_id') or requested_downloads['filepath']
-    filename = requested_downloads['filename']
+    video = info.get('file_id') or info['filepath']
+    filename = info['filename']
 
     message = await update.message.reply_video(
         video=video,
-        duration=extract_duration(info),
-        caption=extract_caption(info),
+        filename=filename,
+        duration=info['duration'],
+        caption=info.get('caption'),
         width=info.get("width"),
         height=info.get("height"),
-        filename=filename,
         reply_to_message_id=update.message.id,
     )
 
@@ -232,7 +268,7 @@ async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
                 video_file_id=file_id,
                 title=info['title'],
                 description=info['description'],
-                caption=extract_caption(info),
+                caption=info.get('caption'),
             )
         ]
     else:
@@ -262,7 +298,7 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await context.bot.edit_message_media(
             media=InputMediaVideo(
                 media=file_id,
-                caption=extract_caption(info),
+                caption=info.get('caption'),
             ),
             inline_message_id=inline_message_id,
         )
@@ -271,14 +307,13 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     info = extract_info(query)
 
-    duration = extract_duration(info)
+    duration = info['duration']
     width = info.get('width')
     height = info.get('height')
     thumbnail = info['thumbnail']
-    caption = extract_caption(info)
-    requested_downloads = info['requested_downloads'][0]
-    filepath = requested_downloads['filepath']
-    filename = requested_downloads['filename']
+    caption = info.get('caption')
+    filepath = info['filepath']
+    filename = info['filename']
 
     chat_id = inline_result.from_user.id
     message = await context.bot.send_video(
@@ -311,25 +346,22 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def populate_animation(bot: Bot):
     query = os.getenv('LOADING_VIDEO_ID')
 
-    info = ydl.extract_info(query)
-    requested_downloads = info['requested_downloads'][0]
-    filepath = requested_downloads['filepath']
-    filename = requested_downloads['filename']
+    info = extract_info(query)
 
     message = await bot.send_video(
         chat_id=developer_chat_id,
-        video=filepath,
-        duration=extract_duration(info),
-        width=info['width'],
-        height=info['height'],
-        filename=filename,
-        caption=info['title'],
+        video=info['filepath'],
+        filename=info['filename'],
+        duration=info['duration'],
+        width=info.get('width'),
+        height=info.get('height'),
+        caption=info.get('caption'),
         disable_notification=True,
     )
 
     global animation_file_id
     animation_file_id = await post_process(query, info, message, store_info=False)
-    print('animation_file_id = ' + animation_file_id)
+    print(f"{extract_time()} # animation_file_id = {animation_file_id}")
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     return
@@ -360,6 +392,7 @@ def main() -> None:
 
     asyncio.get_event_loop().run_until_complete(populate_animation(bot))
     Thread(target=populate_channels, args=(bot,), daemon=True).start()
+    Thread(target=extract_video_info, daemon=True).start()
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
