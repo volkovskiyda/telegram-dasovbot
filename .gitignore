@@ -5,3 +5,4 @@ vpn/*
 !vpn/.gitkeep
 .env
 populate_channels.txt
+videos.json
