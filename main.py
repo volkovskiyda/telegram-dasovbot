@@ -26,6 +26,33 @@ ydl = yt_dlp.YoutubeDL(ydl_opts)
 video_info_file = "videos.json"
 videos = {}
 
+def write_video_info_file():
+    try:
+        file = open(video_info_file, "w")
+        json.dump(videos, file, indent=1, sort_keys=True)
+        file.write('\r')
+    except:
+        pass
+
+def read_video_info_file() -> dict:
+    global videos
+    try:
+        with open(video_info_file, "r") as file:
+            obj = json.load(file)
+            videos = obj
+            return obj
+    except:
+        write_video_info_file()
+        return {}
+
+def populate_video_info_file():
+    interval_sec = 60 * 10 # 10 mins
+    while True:
+        time.sleep(interval_sec)
+        write_video_info_file()
+
+read_video_info_file()
+
 def extract_uploader_entries(entries: list) -> list:
     if not entries: return []
     first_entries = entries[0]
@@ -176,18 +203,6 @@ async def populate_video(bot: Bot, entry: dict) -> dict:
             if elapsed > 1: print(f"{extract_time()} # populate_video {query} took {elapsed}: {file_id}")
         else:
             print(f"{extract_time()} # populate_video {entry.get('url')} failed after {elapsed}")
-
-def extract_video_info():
-    interval_sec = 60 * 10 # 10 mins
-    while True:
-        try:
-            file = open(video_info_file, "w")
-            json.dump(videos, file, indent=1, sort_keys=True)
-            file.write('\r')
-        except:
-            pass
-        finally:
-            time.sleep(interval_sec)
 
 def inline_video(info) -> InlineQueryResultCachedVideo:
     url = extract_url(info)
@@ -392,7 +407,7 @@ def main() -> None:
 
     asyncio.get_event_loop().run_until_complete(populate_animation(bot))
     Thread(target=populate_channels, args=(bot,), daemon=True).start()
-    Thread(target=extract_video_info, daemon=True).start()
+    Thread(target=populate_video_info_file, daemon=True).start()
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
