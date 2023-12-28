@@ -23,7 +23,8 @@ ydl_opts = {
 }
 ydl = yt_dlp.YoutubeDL(ydl_opts)
 
-video_info_file = "videos.json"
+video_info_file = "config/videos.json"
+populate_channels_file = "config/download.txt"
 videos = {}
 
 def write_video_info_file():
@@ -146,7 +147,7 @@ def populate_channels(bot: Bot):
     interval_sec = float(interval_min) * 60
     while True:
         try:
-            with open("download.txt", "r") as file:
+            with open(populate_channels_file, "r") as file:
                 channels = [line.rstrip() for line in file]
                 start = time.time()
                 for channel in channels:
