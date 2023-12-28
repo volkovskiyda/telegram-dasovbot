@@ -1,7 +1,5 @@
-import os, time, json, asyncio
+import os, time, json, asyncio, yt_dlp
 from threading import Thread
-
-import yt_dlp
 from dotenv import load_dotenv
 from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboardButton, Bot, \
     InlineQueryResultCachedVideo, User, Message
@@ -26,6 +24,7 @@ ydl = yt_dlp.YoutubeDL(ydl_opts)
 video_info_file = "config/videos.json"
 populate_channels_file = "config/download.txt"
 videos = {}
+intents = {}
 
 def write_video_info_file():
     try:
@@ -72,11 +71,11 @@ def extract_nested_entries(entries: list) -> list:
 def extract_url(info: dict) -> str:
     return info.get('webpage_url') or info['url']
 
-def extract_time() -> str:
+def now() -> str:
     return time.strftime('%Y-%m-%d %H:%M:%S')
 
 def extract_user(user: User) -> str:
-    return f"{extract_time()} {user.username} ({user.id})"
+    return f"{now()} {user.username} ({user.id})"
 
 def extract_info(query: str, download=True) -> dict:
     info = videos.get(query)
@@ -136,24 +135,44 @@ def process_info(info: dict) -> dict:
         'entries': info.get('entries'),
     }
 
-def populate_channels(bot: Bot):
+def append_intent(query: str, inline_message_id: str = '', priority: int = 1):
+    query_intent = intents.get(query)
+    intent_priority = query_intent['priority'] if query_intent else 0
+    intent_items = query_intent['items'] if query_intent else []
+    for intent in intent_items:
+        if intent.get('inline_message_id') == inline_message_id:
+            return
+    intent_items.append({
+        'inline_message_id': inline_message_id,
+        'priority': priority,
+    })
+    intents[query] = {
+        'priority': intent_priority + priority,
+        'items': intent_items,
+    }
+
+def process_intents(bot: Bot):
+    while True:
+        time.sleep(5)
+        if not intents: return
+        max_priority = max(intents, key=lambda key: intents[key]['priority'])
+        asyncio.new_event_loop().run_until_complete(process_query(bot, max_priority))
+
+def populate_channels():
     interval_min = os.getenv('POPULATE_CHANNELS_INTERVAL_MIN') or 60
     interval_sec = float(interval_min) * 60
     while True:
         try:
             with open(populate_channels_file, "r") as file:
                 channels = [line.rstrip() for line in file]
-                start = time.time()
                 for channel in channels:
-                    asyncio.new_event_loop().run_until_complete(populate_channel(bot, channel))
-                elapsed = time.time() - start
-                if elapsed > 10 * len(channels): print(f"{extract_time()} # populate_channels {channels} took {elapsed}")
+                    populate_channel(channel)
         except:
             pass
         finally:
             time.sleep(interval_sec)
 
-async def populate_channel(bot: Bot, channel: str):
+def populate_channel(channel: str):
     info = ydl.extract_info(channel, download=False)
     entries = info.get('entries')
     uploader_url = info.get('uploader_url')
@@ -163,41 +182,15 @@ async def populate_channel(bot: Bot, channel: str):
         entries = info.get('entries')
     entries = extract_uploader_entries(entries)
     if not entries: return
-    start = time.time()
     for entry in entries[:5]:
-        await populate_video(bot, entry)
-    elapsed = time.time() - start
-    if elapsed > 5: print(f"{extract_time()} # populate_channel {channel} ({uploader_url}) took {elapsed}")
+        populate_video(entry)
 
-async def populate_video(bot: Bot, entry: dict) -> dict:
+def populate_video(entry: dict) -> dict:
     query = extract_url(entry)
     info = videos.get(query)
     file_id = info.get('file_id') if info else None
     if file_id: return info
-    start = time.time()
-    try:
-        info = extract_info(query)
-        message = await bot.send_video(
-            chat_id=developer_chat_id,
-            video=info['filepath'],
-            duration=info['duration'],
-            width=info.get('width'),
-            height=info.get('height'),
-            caption=info.get('caption'),
-            filename=info['filename'],
-            disable_notification=True,
-        )
-        await post_process(query, info, message)
-        return info
-    except:
-        pass
-    finally:
-        elapsed = time.time() - start
-        file_id = info.get('file_id') if info else None
-        if file_id:
-            if elapsed > 1: print(f"{extract_time()} # populate_video {query} took {elapsed}: {file_id}")
-        else:
-            print(f"{extract_time()} # populate_video {entry.get('url')} failed after {elapsed}")
+    append_intent(query)
 
 def inline_video(info) -> InlineQueryResultCachedVideo:
     url = extract_url(info)
@@ -297,7 +290,6 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     query = inline_result.result_id
     user = inline_result.from_user
-    chat_id = user.id
 
     print(f"{extract_user(user)} # chosen_query_strt: {query}")
 
@@ -313,7 +305,11 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         )
         print(f"{extract_user(user)} # chosen_query_fnsh: {query}")
         return
+    
+    append_intent(query, inline_message_id, priority=2)
+    print(f"{extract_user(user)} # chosen_query_append: {query}")
 
+async def process_query(bot: Bot, query: str) -> dict:
     info = extract_info(query)
 
     duration = info['duration']
@@ -324,9 +320,9 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     filepath = info['filepath']
     filename = info['filename']
 
-    chat_id = inline_result.from_user.id
-    message = await context.bot.send_video(
-        chat_id=chat_id,
+    try:
+        message = await bot.send_video(
+        chat_id=developer_chat_id,
         video=filepath,
         duration=duration,
         width=width,
@@ -335,22 +331,28 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         filename=filename,
         disable_notification=True,
     )
+    except:
+        return info
 
     await post_process(query, info, message)
 
-    await context.bot.edit_message_media(
-        media=InputMediaVideo(
-            media=message.video,
-            width=width,
-            height=height,
-            duration=duration,
-            thumbnail=thumbnail,
-            caption=caption,
-            filename=filename,
-        ),
-        inline_message_id=inline_message_id,
-    )
-    print(f"{extract_user(user)} # chosen_query_fnsh: {query}")
+    for intent in intents[query]['items']:
+        inline_message_id = intent.get('inline_message_id')
+        if inline_message_id:
+            await bot.edit_message_media(
+            media=InputMediaVideo(
+                media=message.video,
+                width=width,
+                height=height,
+                duration=duration,
+                thumbnail=thumbnail,
+                caption=caption,
+                filename=filename,
+            ),
+            inline_message_id=inline_message_id,
+        )
+    del intents[query]
+    return info
 
 async def populate_animation(bot: Bot):
     query = os.getenv('LOADING_VIDEO_ID')
@@ -370,7 +372,7 @@ async def populate_animation(bot: Bot):
 
     global animation_file_id
     animation_file_id = await post_process(query, info, message, store_info=False)
-    print(f"{extract_time()} # animation_file_id = {animation_file_id}")
+    print(f"{now()} # animation_file_id = {animation_file_id}")
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     return
@@ -400,8 +402,9 @@ def main() -> None:
     application.add_error_handler(error_handler)
 
     asyncio.get_event_loop().run_until_complete(populate_animation(bot))
-    Thread(target=populate_channels, args=(bot,), daemon=True).start()
+    Thread(target=populate_channels, daemon=True).start()
     Thread(target=populate_video_info_file, daemon=True).start()
+    Thread(target=process_intents, args=(bot,), daemon=True).start()
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
