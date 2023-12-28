@@ -1,8 +1,7 @@
 .idea/
+config/
 venv/
 videos/
 vpn/*
 !vpn/.gitkeep
 .env
-download.txt
-videos.json
