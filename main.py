@@ -29,7 +29,7 @@ videos = {}
 def write_video_info_file():
     try:
         file = open(video_info_file, "w")
-        json.dump(videos, file, indent=1, sort_keys=True)
+        json.dump(videos, file, indent=1)
         file.write('\r')
     except:
         pass
@@ -126,7 +126,6 @@ def process_info(info: dict) -> dict:
 
     return {
         'file_id': info.get('file_id'),
-        'url': info.get('url'),
         'webpage_url': info.get('webpage_url'),
         'title': info.get('title'),
         'description': info.get('description'),
@@ -135,10 +134,11 @@ def process_info(info: dict) -> dict:
         'uploader_url': info.get('uploader_url'),
         'width': info.get('width'),
         'height': info.get('height'),
+        'caption': f"{info['title']}\n{extract_url(info)}",
+        'url': info.get('url'),
         'filepath': filepath,
         'filename': filename,
         'entries': info.get('entries'),
-        'caption': f"{info['title']}\n{extract_url(info)}",
     }
 
 def populate_channels(bot: Bot):
