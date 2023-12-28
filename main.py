@@ -28,8 +28,8 @@ videos = {}
 
 def write_video_info_file():
     try:
-        file = open(video_info_file, "w")
-        json.dump(videos, file, indent=1)
+        file = open(video_info_file, "w", encoding='utf8')
+        json.dump(videos, file, indent=1, ensure_ascii=False)
         file.write('\r')
     except:
         pass
@@ -37,7 +37,7 @@ def write_video_info_file():
 def read_video_info_file() -> dict:
     global videos
     try:
-        with open(video_info_file, "r") as file:
+        with open(video_info_file, "r", encoding='utf8') as file:
             obj = json.load(file)
             videos = obj
             return obj
