@@ -257,7 +257,7 @@ async def das_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
 async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     inline_query = update.inline_query
     user = inline_query.from_user
-    query = inline_query.query
+    query = inline_query.query.lstrip()
 
     if not query: return
 
