@@ -340,7 +340,8 @@ async def process_query(bot: Bot, query: str) -> dict:
     except:
         return info
 
-    await post_process(query, info, message)
+    populated_message = any(not item['inline_message_id'] for item in intents[query]['items'])
+    await post_process(query, info, message, remove_message=not populated_message)
 
     for intent in intents[query]['items']:
         inline_message_id = intent.get('inline_message_id')
