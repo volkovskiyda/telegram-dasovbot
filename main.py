@@ -94,7 +94,10 @@ def extract_info(query: str, download=True) -> dict:
             return info_url
 
     if not info.get('file_id') and download:
-        info = ydl.extract_info(query)
+        try:
+            info = ydl.extract_info(query)
+        except:
+            pass
     return process_info(info)
 
 async def post_process(query: str, info: dict, message: Message, remove_message=True, store_info=True) -> str:
@@ -159,7 +162,7 @@ def append_intent(query: str, inline_message_id: str = '', priority: int = 1):
 def process_intents(bot: Bot):
     while True:
         time.sleep(5)
-        if not intents: return
+        if not intents: continue
         max_priority = max(intents, key=lambda key: intents[key]['priority'])
         asyncio.new_event_loop().run_until_complete(process_query(bot, max_priority))
 
