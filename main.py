@@ -381,9 +381,6 @@ async def populate_animation(bot: Bot):
     animation_file_id = await post_process(query, info, message, store_info=False)
     print(f"{now()} # animation_file_id = {animation_file_id}")
 
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    return
-
 def main() -> None:
     token = os.getenv('BOT_TOKEN')
     base_url = os.getenv('BASE_URL')
@@ -405,8 +402,6 @@ def main() -> None:
 
     application.add_handler(InlineQueryHandler(inline_query))
     application.add_handler(ChosenInlineResultHandler(chosen_query))
-
-    application.add_error_handler(error_handler)
 
     asyncio.get_event_loop().run_until_complete(populate_animation(bot))
     Thread(target=populate_channels, daemon=True).start()
