@@ -67,13 +67,7 @@ def extract_uploader_entries(entries: list) -> list:
 
 def extract_nested_entries(entries: list) -> list:
     nested_entries = entries[0].get('entries')
-    if nested_entries:
-        try:
-            next_entries = entries[1].get('entries')
-        except:
-            next_entries = []
-        entries = nested_entries + next_entries
-    return entries
+    return nested_entries if nested_entries else entries
 
 def extract_url(info: dict) -> str:
     return info.get('webpage_url') or info['url']
@@ -275,8 +269,7 @@ async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     entries = info.get('entries')
 
     if entries:
-        entries = extract_nested_entries(entries)
-        results = [inline_video(item) for item in entries]
+        results = [inline_video(item) for item in extract_nested_entries(entries)]
     elif file_id:
         results = [
             InlineQueryResultCachedVideo(
