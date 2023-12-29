@@ -79,13 +79,17 @@ def extract_user(user: User) -> str:
 
 def extract_info(query: str, download=True) -> dict:
     info = videos.get(query)
-    if info and (info.get('file_id') or not download): return info
+    if info and (info.get('file_id') or not download):
+        videos[query]['requested'] = now()
+        return info
     
     if not info:
         info = ydl.extract_info(query, download=False)
         url = extract_url(info)
         info_url = videos.get(url)
         if info_url:
+            info_url['requested'] = now()
+            videos[url] = info_url
             videos[query] = info_url
             return info_url
 
@@ -117,7 +121,6 @@ def process_info(info: dict) -> dict:
         requested_downloads = requested_downloads_list[0]
         filepath = requested_downloads['filepath']
         filename = requested_downloads['filename']
-
     return {
         'file_id': info.get('file_id'),
         'webpage_url': info.get('webpage_url'),
@@ -129,6 +132,8 @@ def process_info(info: dict) -> dict:
         'width': info.get('width'),
         'height': info.get('height'),
         'caption': f"{info['title']}\n{extract_url(info)}",
+        'created': now(),
+        'requested': now(),
         'url': info.get('url'),
         'filepath': filepath,
         'filename': filename,
@@ -303,6 +308,7 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             ),
             inline_message_id=inline_message_id,
         )
+        videos[query]['requested'] = now()
         print(f"{extract_user(user)} # chosen_query_fnsh: {query}")
         return
     
