@@ -1,5 +1,5 @@
 import os, time, json, asyncio, yt_dlp
-from threading import Thread
+from threading import Thread, Condition
 from dotenv import load_dotenv
 from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboardButton, Bot, \
     InlineQueryResultCachedVideo, User, Message
@@ -27,6 +27,7 @@ videos = {}
 intents = {}
 
 populate_channels_interval_sec = 60 * 60 # an hour
+download_video_condition = Condition()
 
 def write_video_info_file():
     try:
@@ -160,11 +161,17 @@ def append_intent(query: str, inline_message_id: str = '', priority: int = 1):
         'priority': intent_priority + priority,
         'items': intent_items,
     }
+    with download_video_condition:
+        download_video_condition.notify()
 
 def process_intents(bot: Bot):
     while True:
-        time.sleep(5)
-        if not intents: continue
+        if not intents:
+            with download_video_condition:
+                download_video_condition.wait(populate_channels_interval_sec)
+        if not intents:
+            time.sleep(5)
+            continue
         max_priority = max(intents, key=lambda key: intents[key]['priority'])
         asyncio.new_event_loop().run_until_complete(process_query(bot, max_priority))
 
