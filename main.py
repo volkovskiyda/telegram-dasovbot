@@ -26,6 +26,8 @@ populate_channels_file = "config/download.txt"
 videos = {}
 intents = {}
 
+populate_channels_interval_sec = 60 * 60 # an hour
+
 def write_video_info_file():
     try:
         file = open(video_info_file, "w", encoding='utf8')
@@ -167,8 +169,6 @@ def process_intents(bot: Bot):
         asyncio.new_event_loop().run_until_complete(process_query(bot, max_priority))
 
 def populate_channels():
-    interval_min = os.getenv('POPULATE_CHANNELS_INTERVAL_MIN') or 60
-    interval_sec = float(interval_min) * 60
     while True:
         try:
             with open(populate_channels_file, "r") as file:
@@ -178,7 +178,7 @@ def populate_channels():
         except:
             pass
         finally:
-            time.sleep(interval_sec)
+            time.sleep(populate_channels_interval_sec)
 
 def populate_channel(channel: str):
     info = ydl.extract_info(channel, download=False)
