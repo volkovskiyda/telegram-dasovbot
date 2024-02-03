@@ -18,6 +18,7 @@ ydl_opts = {
     'playlist_items': '1-20',
     'quiet': True,
     'progress': True,
+    'match_filter': '!is_live',
 }
 ydl = yt_dlp.YoutubeDL(ydl_opts)
 
