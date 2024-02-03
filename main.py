@@ -173,7 +173,14 @@ def process_intents(bot: Bot):
             time.sleep(5)
             continue
         max_priority = max(intents, key=lambda key: intents[key]['priority'])
-        asyncio.new_event_loop().run_until_complete(process_query(bot, max_priority))
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(process_query(bot, max_priority))
+        except:
+            print(f"# process_intents error: {max_priority}")
+            intents.popitem(max_priority)
+        finally:
+            loop.close()
 
 def populate_channels():
     while True:
