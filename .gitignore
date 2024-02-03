@@ -5,3 +5,4 @@ videos/
 vpn/*
 !vpn/.gitkeep
 .env
+*.pyc

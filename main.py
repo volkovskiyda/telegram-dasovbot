@@ -1,4 +1,5 @@
 import os, time, json, asyncio, yt_dlp
+from utils import ydl_opts
 from threading import Thread, Condition
 from dotenv import load_dotenv
 from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboardButton, Bot, \
@@ -10,15 +11,6 @@ load_dotenv()
 developer_chat_id = os.getenv('DEVELOPER_CHAT_ID')
 animation_file_id: str
 
-ydl_opts = {
-    'format': 'mp4',
-    'outtmpl': 'videos/%(upload_date)s - %(title).80s [%(id)s].%(ext)s',
-    'noplaylist': True,
-    'extract_flat': True,
-    'playlist_items': '1-20',
-    'quiet': True,
-    'progress': True,
-}
 ydl = yt_dlp.YoutubeDL(ydl_opts)
 
 video_info_file = "config/videos.json"

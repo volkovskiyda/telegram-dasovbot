@@ -1,23 +1,17 @@
 import asyncio
-import sys
 import argparse
 import json
 import yt_dlp
+from utils import ydl_opts
 
-ydl_opts = {
-    'format': 'mp4',
-    'outtmpl': 'videos/%(upload_date)s - %(title)s [%(id)s].%(ext)s',
-    'noplaylist': True,
-    'extract_flat': True,
-    'playlist_items': '1-20',
-}
+del ydl_opts['quiet']
 ydl = yt_dlp.YoutubeDL(ydl_opts)
 
 def video(info):
     title = info['title']
     url = info.get('webpage_url') or info['url']
-    duration = int(info['duration'])
-    download = info['url']
+    duration = int(info.get('duration') or 0)
+    download = info.get('url')
     thumbnail = info['thumbnail']
     upload_date = info['upload_date']
     video = {
