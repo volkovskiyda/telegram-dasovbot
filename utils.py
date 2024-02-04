@@ -4,7 +4,7 @@ def is_not_live(info, *, incomplete):
 
 ydl_opts = {
     'format': 'mp4',
-    'outtmpl': 'videos/%(upload_date)s - %(title).80s [%(id)s].%(ext)s',
+    'outtmpl': 'videos/%(upload_date)s - %(title).40s [%(id).20s].%(ext)s',
     'noplaylist': True,
     'extract_flat': True,
     'playlist_items': '1-20',
