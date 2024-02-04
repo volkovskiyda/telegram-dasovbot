@@ -83,7 +83,7 @@ def extract_info(query: str, download=True) -> dict:
                 videos[query] = info_url
                 return info_url
         except:
-            print(f"# extract_info error: {query}")
+            print(f"{now()} # extract_info error: {query}")
 
     if not info.get('file_id') and download:
         try:
@@ -138,7 +138,7 @@ def process_intents(bot: Bot):
         try:
             asyncio.new_event_loop().run_until_complete(process_query(bot, max_priority))
         except:
-            print(f"# process_intents error: {max_priority}")
+            print(f"{now()} # process_intents error: {max_priority}")
             intents.popitem(max_priority)
 
 def populate_channels():
@@ -205,6 +205,8 @@ async def das_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     user = message.from_user
     query = message.text.removeprefix('/das').removeprefix('/dv').lstrip()
 
+    print(f"{extract_user(user)} # das: {query}")
+
     if not query:
         await update.message.reply_text('Type /das <video url>')
         return
@@ -228,12 +230,12 @@ async def das_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
 
     await post_process(query, info, message, remove_message=False)
 
-    print(f"{extract_user(user)} # das: {query}")
-
 async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     inline_query = update.inline_query
     user = inline_query.from_user
     query = inline_query.query.lstrip()
+
+    print(f"{extract_user(user)} # inline_query: {query}")
 
     if not query: return
 
@@ -257,7 +259,6 @@ async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     else:
         results = [inline_video(info)]
 
-    print(f"{extract_user(user)} # inline_query: {query}")
     await update.inline_query.answer(
         results=results,
         cache_time=10,
