@@ -1,5 +1,5 @@
 import os, time, json, asyncio, yt_dlp
-from utils import ydl_opts
+from utils import ydl_opts, extract_url, now, process_info
 from threading import Thread, Condition
 from dotenv import load_dotenv
 from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboardButton, Bot, \
@@ -63,12 +63,6 @@ def extract_nested_entries(entries: list) -> list:
     nested_entries = entries[0].get('entries')
     return nested_entries if nested_entries else entries
 
-def extract_url(info: dict) -> str:
-    return info.get('webpage_url') or info['url']
-
-def now() -> str:
-    return time.strftime('%Y-%m-%d %H:%M:%S')
-
 def extract_user(user: User) -> str:
     return f"{now()} {user.username} ({user.id})"
 
@@ -110,33 +104,6 @@ async def post_process(query: str, info: dict, message: Message, remove_message=
     if remove_message: await message.delete()
     os.remove(filepath)
     return file_id
-
-def process_info(info: dict) -> dict:
-    filepath = None
-    filename = None
-    requested_downloads_list = info.get('requested_downloads')
-    if requested_downloads_list:
-        requested_downloads = requested_downloads_list[0]
-        filepath = requested_downloads['filepath']
-        filename = requested_downloads['filename']
-    return {
-        'file_id': info.get('file_id'),
-        'webpage_url': info.get('webpage_url'),
-        'title': info.get('title'),
-        'description': info.get('description'),
-        'thumbnail': info.get('thumbnail'),
-        'duration': int(info.get('duration') or 0),
-        'uploader_url': info.get('uploader_url'),
-        'width': info.get('width'),
-        'height': info.get('height'),
-        'caption': f"{info['title']}\n{extract_url(info)}",
-        'created': now(),
-        'requested': now(),
-        'url': info.get('url'),
-        'filepath': filepath,
-        'filename': filename,
-        'entries': info.get('entries'),
-    }
 
 def append_intent(query: str, inline_message_id: str = '', priority: int = 1):
     query_intent = intents.get(query)
@@ -244,12 +211,12 @@ async def das_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     if entries: return
 
     video = info.get('file_id') or info['filepath']
-    filename = info['filename']
+    filename = info.get('filename')
 
     message = await update.message.reply_video(
         video=video,
         filename=filename,
-        duration=info['duration'],
+        duration=info.get('duration'),
         caption=info.get('caption'),
         width=info.get("width"),
         height=info.get("height"),
@@ -324,7 +291,7 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def process_query(bot: Bot, query: str) -> dict:
     info = extract_info(query)
 
-    duration = info['duration']
+    duration = info.get('duration')
     width = info.get('width')
     height = info.get('height')
     thumbnail = info['thumbnail']
