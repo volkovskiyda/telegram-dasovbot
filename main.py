@@ -73,14 +73,17 @@ def extract_info(query: str, download=True) -> dict:
         return info
     
     if not info:
-        info = ydl.extract_info(query, download=False)
-        url = extract_url(info)
-        info_url = videos.get(url)
-        if info_url:
-            info_url['requested'] = now()
-            videos[url] = info_url
-            videos[query] = info_url
-            return info_url
+        try:
+            info = ydl.extract_info(query, download=False)
+            url = extract_url(info)
+            info_url = videos.get(url)
+            if info_url:
+                info_url['requested'] = now()
+                videos[url] = info_url
+                videos[query] = info_url
+                return info_url
+        except:
+            print(f"# extract_info error: {query}")
 
     if not info.get('file_id') and download:
         try:
