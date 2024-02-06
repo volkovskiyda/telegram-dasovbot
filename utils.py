@@ -21,13 +21,15 @@ def now() -> str:
     return strftime('%Y-%m-%d %H:%M:%S')
 
 def process_info(info: dict) -> dict:
-    filepath = None
-    filename = None
+    if not info: return None
     requested_downloads_list = info.get('requested_downloads')
     if requested_downloads_list:
         requested_downloads = requested_downloads_list[0]
         filepath = requested_downloads['filepath']
         filename = requested_downloads['filename']
+    else:
+        filepath = None
+        filename = None
     return {
         'file_id': info.get('file_id'),
         'webpage_url': info.get('webpage_url'),

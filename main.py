@@ -85,7 +85,7 @@ def extract_info(query: str, download=True) -> dict:
         except:
             print(f"{now()} # extract_info error: {query}")
 
-    if not info.get('file_id') and download:
+    if (not info or not info.get('file_id')) and download:
         try:
             info = ydl.extract_info(query)
         except:
@@ -212,8 +212,7 @@ async def das_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     info = extract_info(query)
-    entries = info.get('entries')
-    if entries: return
+    if not info or info.get('entries'): return
 
     video = info.get('file_id') or info['filepath']
     filename = info.get('filename')
@@ -240,6 +239,9 @@ async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     if not query: return
 
     info = extract_info(query, download=False)
+    if not info:
+        await update.inline_query.answer(results=[])
+        return
 
     file_id = info.get('file_id')
     entries = info.get('entries')
