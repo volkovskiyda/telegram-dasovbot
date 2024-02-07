@@ -7,6 +7,9 @@ from utils import ydl_opts
 del ydl_opts['quiet']
 ydl = yt_dlp.YoutubeDL(ydl_opts)
 
+def json_dumps(info):
+    print(json.dumps(info, indent=1, ensure_ascii=False))
+
 def video(info):
     title = info['title']
     url = info.get('webpage_url') or info['url']
@@ -26,6 +29,7 @@ def video(info):
 
 async def info(query: str, download: bool) -> None:
     info = ydl.extract_info(query, download=download)
+    json_dumps(info)
     entries = info.get('entries')
     if entries:
         nested_entries = entries[0].get('entries')
@@ -35,7 +39,7 @@ async def info(query: str, download: bool) -> None:
     else:
         output = video(info)
     
-    print(json.dumps(output, indent=1, ensure_ascii=False))
+    json_dumps(output)
 
 
 def main() -> None:
