@@ -30,17 +30,18 @@ def process_info(info: dict) -> dict:
     else:
         filepath = None
         filename = None
+    url = extract_url(info)
     return {
         'file_id': info.get('file_id'),
         'webpage_url': info.get('webpage_url'),
-        'title': info.get('title'),
+        'title': info.get('title') or url,
         'description': info.get('description'),
         'thumbnail': info.get('thumbnail'),
         'duration': int(info.get('duration') or 0),
         'uploader_url': info.get('uploader_url'),
         'width': info.get('width'),
         'height': info.get('height'),
-        'caption': f"{info.get('title')}\n{extract_url(info)}",
+        'caption': f"{info.get('title')}\n{url}",
         'created': now(),
         'requested': now(),
         'url': info.get('url'),
