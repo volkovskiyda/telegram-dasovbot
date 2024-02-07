@@ -94,7 +94,7 @@ def extract_info(query: str, download=True) -> dict:
 
 async def post_process(query: str, info: dict, message: Message, remove_message=True, store_info=True) -> str:
     file_id = message.video.file_id
-    filepath = info['filepath']
+    filepath = info.get('filepath')
     info['file_id'] = file_id
     if store_info:
         url = extract_url(info)
@@ -105,7 +105,7 @@ async def post_process(query: str, info: dict, message: Message, remove_message=
         videos[query] = info
         videos[url] = info
     if remove_message: await message.delete()
-    os.remove(filepath)
+    if filepath: os.remove(filepath)
     return file_id
 
 def append_intent(query: str, inline_message_id: str = '', priority: int = 1):
@@ -214,12 +214,12 @@ async def das_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
     info = extract_info(query)
     if not info or info.get('entries'): return
 
-    video = info.get('file_id') or info['filepath']
-    filename = info.get('filename')
+    video = info.get('file_id') or info.get('filepath')
+    if not video: return
 
     message = await update.message.reply_video(
         video=video,
-        filename=filename,
+        filename=info.get('filename'),
         duration=info.get('duration'),
         caption=info.get('caption'),
         width=info.get("width"),
@@ -243,8 +243,8 @@ async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
         await update.inline_query.answer(results=[])
         return
 
-    file_id = info.get('file_id')
     entries = info.get('entries')
+    file_id = info.get('file_id')
 
     if entries:
         results = [inline_video(item) for item in extract_nested_entries(entries)]
