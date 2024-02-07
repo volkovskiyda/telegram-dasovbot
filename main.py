@@ -1,5 +1,6 @@
 import os, time, json, asyncio, yt_dlp
 from utils import ydl_opts, extract_url, now, process_info
+from uuid import uuid4
 from threading import Thread, Condition
 from dotenv import load_dotenv
 from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboardButton, Bot, \
@@ -17,6 +18,7 @@ video_info_file = "config/videos.json"
 populate_channels_file = "config/download.txt"
 videos = {}
 intents = {}
+inline_query_ids = {}
 
 populate_channels_interval_sec = 60 * 60 # an hour
 download_video_condition = Condition()
@@ -174,16 +176,19 @@ def populate_video(entry: dict) -> dict:
     append_intent(query)
 
 def inline_video(info) -> InlineQueryResultCachedVideo:
+    id = str(uuid4())
     url = extract_url(info)
+    inline_query_ids[id] = url
+    file_id = info.get('file_id')
+
+    reply_markup = InlineKeyboardMarkup([[ InlineKeyboardButton(text='loading', url=url) ]]) if not file_id else None
     return InlineQueryResultCachedVideo(
-        id=url,
-        video_file_id=info.get('file_id') or animation_file_id,
+        id=id,
+        video_file_id=file_id or animation_file_id,
         title=info['title'],
         description=info['description'],
         caption=info.get('caption'),
-        reply_markup=InlineKeyboardMarkup(
-            [[ InlineKeyboardButton(text='loading', url=url) ]]
-        )
+        reply_markup=reply_markup
     )
 
 async def start_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
@@ -244,27 +249,13 @@ async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     entries = info.get('entries')
-    file_id = info.get('file_id')
 
     if entries:
         results = [inline_video(item) for item in extract_nested_entries(entries)]
-    elif file_id:
-        results = [
-            InlineQueryResultCachedVideo(
-                id=extract_url(info),
-                video_file_id=file_id,
-                title=info['title'],
-                description=info['description'],
-                caption=info.get('caption'),
-            )
-        ]
     else:
         results = [inline_video(info)]
 
-    await update.inline_query.answer(
-        results=results,
-        cache_time=10,
-    )
+    await update.inline_query.answer(results=results, cache_time=10)
 
 async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     inline_result = update.chosen_inline_result
@@ -272,7 +263,7 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     
     if not inline_message_id: return
 
-    query = inline_result.result_id
+    query = inline_query_ids.pop(inline_result.result_id)
     user = inline_result.from_user
 
     print(f"{extract_user(user)} # chosen_query_strt: {query}")
