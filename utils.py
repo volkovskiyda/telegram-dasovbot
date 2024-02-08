@@ -1,15 +1,15 @@
 from time import strftime
 
-def is_not_live(info, *, incomplete):
-    if info.get('is_live'): return f"{now()} # ignore live video {info.get('url')}"
+def match_filter(info, *, incomplete):
+    if info.get('is_live'): return f"{now()} # ignore video {info.get('url')}"
 
 ydl_opts = {
     'format': 'mp4',
     'outtmpl': 'videos/%(upload_date)s - %(title).40s [%(id).20s].%(ext)s',
     'noplaylist': True,
-    'extract_flat': 'discard_in_playlist',
+    'extract_flat': 'in_playlist',
     'playlist_items': '1-20',
-    'match_filter': is_not_live,
+    'match_filter': match_filter,
     'quiet': True,
     'progress': True,
 }
