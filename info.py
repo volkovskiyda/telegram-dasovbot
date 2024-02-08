@@ -17,6 +17,12 @@ def video(info):
     download = info.get('url')
     thumbnail = info['thumbnail']
     upload_date = info['upload_date']
+    channel_url = info['channel_url']
+    uploader = info['uploader']
+    uploader_url = info['uploader_url']
+    live_status = info['live_status']
+    is_live = info['is_live']
+    was_live = info['was_live']
     video = {
         'title': title,
         'url': url,
@@ -24,6 +30,12 @@ def video(info):
         'download': download,
         'thumbnail': thumbnail,
         'upload_date': upload_date,
+        'channel_url': channel_url,
+        'uploader': uploader,
+        'uploader_url': uploader_url,
+        'live_status': live_status,
+        'is_live': is_live,
+        'was_live': was_live,
     }
     return video
 
