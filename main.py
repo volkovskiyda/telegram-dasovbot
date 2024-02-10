@@ -137,11 +137,7 @@ def process_intents(bot: Bot):
             time.sleep(5)
             continue
         max_priority = max(intents, key=lambda key: intents[key]['priority'])
-        try:
-            asyncio.new_event_loop().run_until_complete(process_query(bot, max_priority))
-        except:
-            print(f"{now()} # process_intents error: {max_priority}")
-            intents.popitem(max_priority)
+        asyncio.new_event_loop().run_until_complete(process_query(bot, max_priority))
 
 def populate_channels():
     while True:
@@ -287,6 +283,10 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def process_query(bot: Bot, query: str) -> dict:
     info = extract_info(query)
+    if not info:
+        print(f"{now()} # process_query error: {query}")
+        del intents[query]
+        return info
 
     duration = info.get('duration')
     width = info.get('width')
