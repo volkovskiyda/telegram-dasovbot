@@ -5,7 +5,7 @@ from threading import Thread, Condition
 from dotenv import load_dotenv
 from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboardButton, Bot, \
     InlineQueryResultCachedVideo, User, Message
-from telegram.ext import Application, CommandHandler, ContextTypes, InlineQueryHandler, ChosenInlineResultHandler
+from telegram.ext import filters, Application, CommandHandler, MessageHandler, ContextTypes, InlineQueryHandler, ChosenInlineResultHandler
 
 load_dotenv()
 
@@ -187,7 +187,7 @@ def inline_video(info) -> InlineQueryResultCachedVideo:
         reply_markup=reply_markup
     )
 
-async def start_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
+async def start_command(update: Update, _: ContextTypes.DEFAULT_TYPE):
     username = update.message.from_user['username']
     await update.message.reply_text(f"Hey, @{username}.\n"
                                     "Welcome to Download and Share Online Video bot\n"
@@ -195,13 +195,18 @@ async def start_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
                                     "or /das <video url>\n"
                                     "/help - for more details")
 
-async def help_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
+async def help_command(update: Update, _: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "@dasovbot <video url> - download and send video\n"
         "/das <video url> - download video"
     )
 
-async def das_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
+async def unknown_command(update: Update, _: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Unknown command. Please type /help for available commands"
+    )
+
+async def das_command(update: Update, _: ContextTypes.DEFAULT_TYPE):
     message = update.message
     user = message.from_user
     query = message.text.removeprefix('/das').removeprefix('/dv').lstrip()
@@ -230,7 +235,7 @@ async def das_command(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
 
     await post_process(query, info, message, remove_message=False)
 
-async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
+async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE):
     inline_query = update.inline_query
     user = inline_query.from_user
     query = inline_query.query.lstrip()
@@ -253,7 +258,7 @@ async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE) -> None:
 
     await update.inline_query.answer(results=results, cache_time=10)
 
-async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     inline_result = update.chosen_inline_result
     inline_message_id = inline_result.inline_message_id
     
@@ -351,7 +356,7 @@ async def populate_animation(bot: Bot):
     animation_file_id = await post_process(query, info, message, store_info=False)
     print(f"{now()} # animation_file_id = {animation_file_id}")
 
-def main() -> None:
+def main():
     token = os.getenv('BOT_TOKEN')
     base_url = os.getenv('BASE_URL')
     timeout = os.getenv('READ_TIMEOUT') or 30
@@ -372,6 +377,7 @@ def main() -> None:
 
     application.add_handler(InlineQueryHandler(inline_query))
     application.add_handler(ChosenInlineResultHandler(chosen_query))
+    application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
 
     asyncio.get_event_loop().run_until_complete(populate_animation(bot))
     Thread(target=populate_channels, daemon=True).start()
