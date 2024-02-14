@@ -400,6 +400,9 @@ async def subscribe_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         if not uploader_url:
             await update.message.reply_text("Unsupported url", reply_markup=ReplyKeyboardRemove())
             return ConversationHandler.END
+        if not info.get('playlist_count') and info.get('entries'):
+            context.user_data['videos'] = f"{uploader_url}/videos"
+            return await subscribe_playlist(update, context)
         playlists = f"{uploader_url}/playlists"
         if query != playlists:
             info = ydl.extract_info(playlists, download=False)
@@ -430,9 +433,12 @@ async def subscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYPE)
     chat_id = message.chat_id
     query = message.text
 
-    urls = context.user_data.pop('urls')
+    urls = context.user_data.pop('urls', None)
+    videos = context.user_data.pop('videos', None)
     if urls:
         url = urls.get(query)
+    elif videos:
+        url = videos
     else:
         url = query
 
