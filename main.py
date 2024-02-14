@@ -7,6 +7,7 @@ from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboa
 from telegram.ext import filters, Application, CommandHandler, MessageHandler, ContextTypes, InlineQueryHandler, ChosenInlineResultHandler, ConversationHandler
 
 SUBSCRIBE_URL, SUBSCRIBE_PLAYLIST = range(2)
+DAS_URL, = range(1)
 
 load_dotenv()
 
@@ -214,37 +215,6 @@ async def unknown_command(update: Update, _: ContextTypes.DEFAULT_TYPE):
         "Unknown command. Please type /help for available commands"
     )
 
-async def das_command(update: Update, _: ContextTypes.DEFAULT_TYPE):
-    message = update.message
-    user = message.from_user
-    chat_id = message.chat_id
-    query = message.text.removeprefix('/das').removeprefix('/dv').lstrip()
-
-    print(f"{extract_user(user)} # das: {query}")
-
-    if not query:
-        await update.message.reply_text('Type /das <video url>')
-        return
-
-    info = extract_info(query)
-    if not info or info.get('entries'): return
-
-    video = info.get('file_id') or info.get('filepath')
-    if not video: return
-
-    message = await update.message.reply_video(
-        video=video,
-        filename=info.get('filename'),
-        duration=info.get('duration'),
-        caption=info.get('caption'),
-        width=info.get("width"),
-        height=info.get("height"),
-        reply_to_message_id=update.message.id,
-    )
-
-    users[str(chat_id)] = user.to_dict()
-    await post_process(query, info, message, remove_message=False)
-
 async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE):
     inline_query = update.inline_query
     user = inline_query.from_user
@@ -365,6 +335,48 @@ async def populate_animation(bot: Bot):
     global animation_file_id
     animation_file_id = await post_process(query, info, message, store_info=False)
     print(f"{now()} # animation_file_id = {animation_file_id}")
+
+async def das(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
+    if update.message.text.removeprefix('/das').removeprefix('/dv').lstrip():
+        return await das_url(update, _)
+    else:
+        await update.message.reply_text("Enter url")
+        return DAS_URL
+    
+async def das_url(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
+    message = update.message
+    user = message.from_user
+    chat_id = message.chat_id
+    query = message.text.removeprefix('/das').removeprefix('/dv').lstrip()
+
+    print(f"{extract_user(user)} # das: {query}")
+
+    if not query: return ConversationHandler.END
+
+    info = extract_info(query)
+    if not info or info.get('entries'):
+        await update.message.reply_text("Unsupported url", reply_markup=ReplyKeyboardRemove())
+        return ConversationHandler.END
+
+    video = info.get('file_id') or info.get('filepath')
+    if not video:
+        await update.message.reply_text("Error occured", reply_markup=ReplyKeyboardRemove())
+        return ConversationHandler.END
+
+    message = await update.message.reply_video(
+        video=video,
+        filename=info.get('filename'),
+        duration=info.get('duration'),
+        caption=info.get('caption'),
+        width=info.get("width"),
+        height=info.get("height"),
+        reply_to_message_id=update.message.id,
+    )
+
+    users[str(chat_id)] = user.to_dict()
+    await post_process(query, info, message, remove_message=False)
+
+    return ConversationHandler.END
 
 async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if update.message.text.removeprefix('/subscribe').lstrip():
@@ -489,10 +501,16 @@ def main():
 
     application.add_handler(CommandHandler('start', start_command))
     application.add_handler(CommandHandler('help', help_command))
-    application.add_handler(CommandHandler(['das', 'dv'], das_command))
 
     application.add_handler(InlineQueryHandler(inline_query))
     application.add_handler(ChosenInlineResultHandler(chosen_query))
+    application.add_handler(ConversationHandler(
+        entry_points=[CommandHandler(['das', 'dv'], das)],
+        states={
+            DAS_URL: [MessageHandler(filters.TEXT, das_url)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    ))
     application.add_handler(ConversationHandler(
         entry_points=[CommandHandler(['subscribe'], subscribe)],
         states={
