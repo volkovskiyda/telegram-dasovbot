@@ -3,9 +3,10 @@ from utils import ydl_opts, extract_url, now, process_info
 from uuid import uuid4
 from threading import Thread, Condition
 from dotenv import load_dotenv
-from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboardButton, Bot, \
-    InlineQueryResultCachedVideo, User, Message
-from telegram.ext import filters, Application, CommandHandler, MessageHandler, ContextTypes, InlineQueryHandler, ChosenInlineResultHandler
+from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Bot, InlineQueryResultCachedVideo, User, Message
+from telegram.ext import filters, Application, CommandHandler, MessageHandler, ContextTypes, InlineQueryHandler, ChosenInlineResultHandler, ConversationHandler
+
+SUBSCRIBE_URL, SUBSCRIBE_PLAYLIST = range(2)
 
 load_dotenv()
 
@@ -15,40 +16,47 @@ animation_file_id: str
 ydl = yt_dlp.YoutubeDL(ydl_opts)
 
 video_info_file = "config/videos.json"
+user_info_file = "config/users.json"
+subscription_info_file = "config/subscriptions.json"
 populate_channels_file = "config/download.txt"
+
 videos = {}
+users = {}
+subscriptions = {}
+
 intents = {}
 inline_query_ids = {}
 
 populate_channels_interval_sec = 60 * 60 # an hour
 download_video_condition = Condition()
 
-def write_video_info_file():
+def write_file(file_path, dict):
     try:
-        file = open(video_info_file, "w", encoding='utf8')
-        json.dump(videos, file, indent=1, ensure_ascii=False)
+        file = open(file_path, "w", encoding='utf8')
+        json.dump(dict, file, indent=1, ensure_ascii=False)
         file.write('\r')
     except:
         pass
 
-def read_video_info_file() -> dict:
-    global videos
+def read_file(file_path, dict) -> dict:
     try:
-        with open(video_info_file, "r", encoding='utf8') as file:
-            obj = json.load(file)
-            videos = obj
-            return obj
+        with open(file_path, "r", encoding='utf8') as file:
+            return json.load(file)
     except:
-        write_video_info_file()
+        write_file(file_path, dict)
         return {}
 
-def populate_video_info_file():
+def populate_files():
     interval_sec = 60 * 10 # 10 mins
     while True:
         time.sleep(interval_sec)
-        write_video_info_file()
+        write_file(video_info_file, videos)
+        write_file(user_info_file, users)
+        write_file(subscription_info_file, subscriptions)
 
-read_video_info_file()
+videos = read_file(video_info_file, videos)
+users = read_file(user_info_file, users)
+subscriptions = read_file(subscription_info_file, subscriptions)
 
 def extract_uploader_entries(entries: list) -> list:
     if not entries: return []
@@ -356,6 +364,112 @@ async def populate_animation(bot: Bot):
     animation_file_id = await post_process(query, info, message, store_info=False)
     print(f"{now()} # animation_file_id = {animation_file_id}")
 
+async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if update.message.text.removeprefix('/subscribe').lstrip():
+        return await subscribe_url(update, context)
+    else:
+        await update.message.reply_text("Enter url")
+        return SUBSCRIBE_URL
+
+async def subscribe_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    message = update.message
+    user = message.from_user
+    query = message.text.removeprefix('/subscribe').lstrip()
+    
+    print(f"{extract_user(user)} # subscribe_url: {query}")
+
+    if not query: return ConversationHandler.END
+
+    try:
+        info = ydl.extract_info(query, download=False)
+        uploader_url = info.get('uploader_url')
+        if not uploader_url:
+            await update.message.reply_text("Unsupported url", reply_markup=ReplyKeyboardRemove())
+            return ConversationHandler.END
+        playlists = f"{uploader_url}/playlists"
+        if query != playlists:
+            info = ydl.extract_info(playlists, download=False)
+    except:
+        print(f"{extract_user(user)} # subscribe_url_failed: {query}")
+        await update.message.reply_text("Error occured", reply_markup=ReplyKeyboardRemove())
+        return ConversationHandler.END
+    
+    entries = info.get('entries')
+    uploader = info.get('uploader') or info.get('uploader_id')
+    uploader_videos = f"{uploader_url}/videos"
+    if not entries or not uploader or not uploader_videos: return ConversationHandler.END
+
+    urls = { uploader: uploader_videos }
+    for item in entries:
+        urls[item['title']] = item['url']
+
+    context.user_data['urls'] = urls
+
+    await update.message.reply_text("Select playlist", reply_markup=ReplyKeyboardMarkup(
+        [[button] for button in list(urls.keys())], one_time_keyboard=True, input_field_placeholder="Select playlist", resize_keyboard=True
+    ))
+    return SUBSCRIBE_PLAYLIST
+    
+async def subscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    message = update.message
+    user = message.from_user
+    chat_id = message.chat_id
+    query = message.text
+
+    urls = context.user_data.pop('urls')
+    if urls:
+        url = urls.get(query)
+    else:
+        url = query
+
+    print(f"{extract_user(user)} # subscribe_playlist: {query} - {url}")
+
+    if not url:
+        await update.message.reply_text("Invalid selection", reply_markup=ReplyKeyboardRemove())
+        return ConversationHandler.END
+
+    users[chat_id] = user.to_dict()
+    subscription = subscriptions.get(url)
+    if subscription:
+        chat_ids = subscription['chat_ids']
+        if chat_id in chat_ids:
+            await update.message.reply_text("Already subscribed", reply_markup=ReplyKeyboardRemove())
+        else:
+            chat_ids.append(chat_id)
+            await update.message.reply_text("Subscribed", reply_markup=ReplyKeyboardRemove())
+
+        return ConversationHandler.END
+    elif urls:
+        title = query
+        uploader = next(iter(urls))
+        uploader_videos = urls[uploader]
+    else:
+        try:
+            info = ydl.extract_info(url, download=False)
+            uploader_url = info.get('uploader_url')
+            title = info.get('title')
+            uploader = info.get('uploader') or info.get('uploader_id')
+            uploader_videos = f"{uploader_url}/videos"
+        except:
+            print(f"{extract_user(user)} # subscribe_playlist_failed: {url}")
+            await update.message.reply_text("Error occured", reply_markup=ReplyKeyboardRemove())
+            return ConversationHandler.END
+        
+    subscriptions[url] = {
+        'chat_ids': [chat_id],
+        'title': title,
+        'uploader': uploader,
+        'uploader_videos': uploader_videos,
+    }
+    await update.message.reply_text("Subscribed", reply_markup=ReplyKeyboardRemove())
+
+    return ConversationHandler.END
+
+async def cancel(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
+    print(f"{extract_user(update.message.from_user)} # cancel")
+    await update.message.reply_text("Cancelled", reply_markup=ReplyKeyboardRemove())
+    return ConversationHandler.END
+
 def main():
     token = os.getenv('BOT_TOKEN')
     base_url = os.getenv('BASE_URL')
@@ -377,14 +491,21 @@ def main():
 
     application.add_handler(InlineQueryHandler(inline_query))
     application.add_handler(ChosenInlineResultHandler(chosen_query))
+    application.add_handler(ConversationHandler(
+        entry_points=[CommandHandler(['subscribe'], subscribe)],
+        states={
+            SUBSCRIBE_URL: [MessageHandler(filters.TEXT, subscribe_url)],
+            SUBSCRIBE_PLAYLIST: [MessageHandler(filters.TEXT, subscribe_playlist)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    ))
     application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
 
     asyncio.get_event_loop().run_until_complete(populate_animation(bot))
     Thread(target=populate_channels, daemon=True).start()
-    Thread(target=populate_video_info_file, daemon=True).start()
+    Thread(target=populate_files, daemon=True).start()
     Thread(target=process_intents, args=(bot,), daemon=True).start()
     application.run_polling(allowed_updates=Update.ALL_TYPES)
-
 
 if __name__ == "__main__":
     main()
