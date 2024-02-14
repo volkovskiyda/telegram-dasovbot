@@ -26,7 +26,6 @@ users = {}
 subscriptions = {}
 
 intents = {}
-inline_query_ids = {}
 
 populate_channels_interval_sec = 60 * 60 # an hour
 download_video_condition = Condition()
@@ -183,17 +182,18 @@ def populate_video(entry: dict) -> dict:
 def inline_video(info) -> InlineQueryResultCachedVideo:
     id = str(uuid4())
     url = extract_url(info)
-    inline_query_ids[id] = url
     file_id = info.get('file_id')
-
+    video_file_id = file_id or animation_file_id
     reply_markup = InlineKeyboardMarkup([[ InlineKeyboardButton(text='loading', url=url) ]]) if not file_id else None
+    api_kwargs = { 'url': url }
     return InlineQueryResultCachedVideo(
         id=id,
-        video_file_id=file_id or animation_file_id,
+        video_file_id=video_file_id,
         title=info['title'],
         description=info['description'],
         caption=info.get('caption'),
-        reply_markup=reply_markup
+        reply_markup=reply_markup,
+        api_kwargs=api_kwargs,
     )
 
 async def start_command(update: Update, _: ContextTypes.DEFAULT_TYPE):
@@ -215,7 +215,7 @@ async def unknown_command(update: Update, _: ContextTypes.DEFAULT_TYPE):
         "Unknown command. Please type /help for available commands"
     )
 
-async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE):
+async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     inline_query = update.inline_query
     user = inline_query.from_user
     query = inline_query.query.lstrip()
@@ -236,15 +236,20 @@ async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE):
     else:
         results = [inline_video(info)]
 
+    context.user_data['results'] = results
+
     await update.inline_query.answer(results=results, cache_time=10)
 
 async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     inline_result = update.chosen_inline_result
     inline_message_id = inline_result.inline_message_id
-    
-    if not inline_message_id: return
+    results = context.user_data.pop('results', None)
 
-    query = inline_query_ids.pop(inline_result.result_id)
+    if not inline_message_id or not results: return
+    result = next(result for result in results if result.id == inline_result.result_id)
+    if not result: return
+    query = result.api_kwargs.get('url')
+    if not query: return
     user = inline_result.from_user
 
     print(f"{extract_user(user)} # chosen_query_strt: {query}")
