@@ -217,6 +217,7 @@ async def unknown_command(update: Update, _: ContextTypes.DEFAULT_TYPE):
 async def das_command(update: Update, _: ContextTypes.DEFAULT_TYPE):
     message = update.message
     user = message.from_user
+    chat_id = message.chat_id
     query = message.text.removeprefix('/das').removeprefix('/dv').lstrip()
 
     print(f"{extract_user(user)} # das: {query}")
@@ -241,6 +242,7 @@ async def das_command(update: Update, _: ContextTypes.DEFAULT_TYPE):
         reply_to_message_id=update.message.id,
     )
 
+    users[str(chat_id)] = user.to_dict()
     await post_process(query, info, message, remove_message=False)
 
 async def inline_query(update: Update, _: ContextTypes.DEFAULT_TYPE):
@@ -428,7 +430,7 @@ async def subscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("Invalid selection", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
-    users[chat_id] = user.to_dict()
+    users[str(chat_id)] = user.to_dict()
     subscription = subscriptions.get(url)
     if subscription:
         chat_ids = subscription['chat_ids']
@@ -454,7 +456,7 @@ async def subscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYPE)
             print(f"{extract_user(user)} # subscribe_playlist_failed: {url}")
             await update.message.reply_text("Error occured", reply_markup=ReplyKeyboardRemove())
             return ConversationHandler.END
-        
+
     subscriptions[url] = {
         'chat_ids': [chat_id],
         'title': title,
