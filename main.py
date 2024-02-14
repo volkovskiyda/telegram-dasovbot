@@ -108,10 +108,10 @@ async def post_process(query: str, info: dict, message: Message, remove_message=
     info['file_id'] = file_id
     if store_info:
         url = extract_url(info)
-        del info['url']
-        del info['filepath']
-        del info['filename']
-        del info['entries']
+        info.pop('url', None)
+        info.pop('filepath', None)
+        info.pop('filename', None)
+        info.pop('entries', None)
         videos[query] = info
         videos[url] = info
     if remove_message: await message.delete()
@@ -300,7 +300,7 @@ async def process_query(bot: Bot, query: str) -> dict:
     info = extract_info(query)
     if not info:
         print(f"{now()} # process_query error: {query}")
-        del intents[query]
+        intents.pop(query, None)
         return info
 
     duration = info.get('duration')
@@ -343,7 +343,7 @@ async def process_query(bot: Bot, query: str) -> dict:
             ),
             inline_message_id=inline_message_id,
         )
-    del intents[query]
+    intents.pop(query, None)
     return info
 
 async def populate_animation(bot: Bot):
