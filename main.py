@@ -419,7 +419,7 @@ async def subscribe_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     urls = { uploader: uploader_videos }
     for item in entries:
-        urls[item['title']] = extract_url(item)
+        urls.setdefault(item['title'], extract_url(item))
 
     context.user_data['urls'] = urls
 
