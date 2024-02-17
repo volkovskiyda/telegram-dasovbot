@@ -1,4 +1,4 @@
-import os, time, json, asyncio, yt_dlp
+import os, re, time, json, asyncio, yt_dlp
 from utils import ydl_opts, extract_url, now, process_info
 from uuid import uuid4
 from threading import Thread, Condition
@@ -189,7 +189,7 @@ def inline_video(info, inline_query_ids) -> InlineQueryResultCachedVideo:
         reply_markup=reply_markup,
     )
 
-async def start_command(update: Update, _: ContextTypes.DEFAULT_TYPE):
+async def start(update: Update, _: ContextTypes.DEFAULT_TYPE):
     username = update.message.from_user['username']
     await update.message.reply_text(f"Hey, @{username}.\n"
                                     "Welcome to Download and Share Online Video bot\n"
@@ -197,13 +197,13 @@ async def start_command(update: Update, _: ContextTypes.DEFAULT_TYPE):
                                     "or /das <video url>\n"
                                     "/help - for more details")
 
-async def help_command(update: Update, _: ContextTypes.DEFAULT_TYPE):
+async def help(update: Update, _: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "@dasovbot <video url> - download and send video\n"
         "/das <video url> - download video"
     )
 
-async def unknown_command(update: Update, _: ContextTypes.DEFAULT_TYPE):
+async def unknown(update: Update, _: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Unknown command. Please type /help for available commands"
     )
@@ -332,6 +332,18 @@ async def populate_animation(bot: Bot):
     global animation_file_id
     animation_file_id = await post_process(query, info, message, store_info=False)
     print(f"{now()} # animation_file_id = {animation_file_id}")
+
+async def subscription_list(update: Update, _: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat_id
+    subscriptions_user = []
+
+    for url in list(subscriptions):
+        subscription = subscriptions[url]
+        if subscription['chat_ids'].__contains__(chat_id):
+            subscriptions_user.append(f"[{re.escape(subscription['title'])}]({url})")
+
+    if subscriptions_user: await update.message.reply_text('\n\n'.join(subscriptions_user), parse_mode='MarkdownV2')
+    else: await update.message.reply_text('No subscriptions yet')
 
 async def das(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
     if update.message.text.removeprefix('/das').removeprefix('/dv').lstrip():
@@ -506,11 +518,12 @@ def main():
     )
     bot = application.bot
 
-    application.add_handler(CommandHandler('start', start_command))
-    application.add_handler(CommandHandler('help', help_command))
+    application.add_handler(CommandHandler('start', start))
+    application.add_handler(CommandHandler('help', help))
 
     application.add_handler(InlineQueryHandler(inline_query))
     application.add_handler(ChosenInlineResultHandler(chosen_query))
+    application.add_handler(CommandHandler(['subscriptions', 'subs'], subscription_list))
     application.add_handler(ConversationHandler(
         entry_points=[CommandHandler(['das', 'dv'], das)],
         states={
@@ -526,7 +539,7 @@ def main():
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     ))
-    application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
+    application.add_handler(MessageHandler(filters.COMMAND, unknown))
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.run_until_complete(populate_animation(bot))
