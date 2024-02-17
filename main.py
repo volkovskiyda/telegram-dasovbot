@@ -242,7 +242,10 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data['results'] = results
 
-    await update.inline_query.answer(results=results, cache_time=10)
+    try:
+        await update.inline_query.answer(results=results, cache_time=10)
+    except:
+        pass
 
 async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     inline_result = update.chosen_inline_result
