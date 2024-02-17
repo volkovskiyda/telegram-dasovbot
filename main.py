@@ -114,7 +114,11 @@ async def post_process(query: str, info: dict, message: Message, remove_message=
         info.pop('entries', None)
         videos[query] = info
         videos[url] = info
-    if remove_message: await message.delete()
+    if remove_message:
+        try:
+            await message.delete()
+        except:
+            pass
     if filepath: os.remove(filepath)
     return file_id
 
