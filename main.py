@@ -141,6 +141,8 @@ def append_intent(query: str, inline_message_id: str = '', priority: int = 1):
         download_video_condition.notify()
 
 def process_intents(bot: Bot):
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     while True:
         if not intents:
             with download_video_condition:
@@ -149,7 +151,7 @@ def process_intents(bot: Bot):
             time.sleep(5)
             continue
         max_priority = max(intents, key=lambda key: intents[key]['priority'])
-        asyncio.new_event_loop().run_until_complete(process_query(bot, max_priority))
+        loop.run_until_complete(process_query(bot, max_priority))
 
 def populate_channels():
     while True:
@@ -538,8 +540,9 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel)],
     ))
     application.add_handler(MessageHandler(filters.COMMAND, unknown_command))
-
-    asyncio.get_event_loop().run_until_complete(populate_animation(bot))
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(populate_animation(bot))
     Thread(target=populate_channels, daemon=True).start()
     Thread(target=populate_files, daemon=True).start()
     Thread(target=process_intents, args=(bot,), daemon=True).start()
