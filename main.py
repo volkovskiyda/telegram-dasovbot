@@ -19,7 +19,6 @@ ydl = yt_dlp.YoutubeDL(ydl_opts)
 video_info_file = "config/videos.json"
 user_info_file = "config/users.json"
 subscription_info_file = "config/subscriptions.json"
-populate_channels_file = "config/download.txt"
 
 videos = {}
 users = {}
@@ -27,7 +26,7 @@ subscriptions = {}
 
 intents = {}
 
-populate_channels_interval_sec = 60 * 60 # an hour
+interval_sec = 60 * 60 # an hour
 download_video_condition = Condition()
 
 def write_file(file_path, dict):
@@ -57,17 +56,6 @@ def populate_files():
 videos = read_file(video_info_file, videos)
 users = read_file(user_info_file, users)
 subscriptions = read_file(subscription_info_file, subscriptions)
-
-def extract_uploader_entries(entries: list) -> list:
-    if not entries: return []
-    first_entries = entries[0]
-    if not first_entries: return entries
-    nested_entries = first_entries.get('entries')
-    if not nested_entries: return entries
-    webpage_url = first_entries.get('webpage_url')
-    if not webpage_url: return entries
-    info = ydl.extract_info(webpage_url, download=False)
-    return info.get('entries')
 
 def extract_nested_entries(entries: list) -> list:
     nested_entries = entries[0].get('entries')
@@ -119,17 +107,25 @@ async def post_process(query: str, info: dict, message: Message, remove_message=
             await message.delete()
         except:
             pass
-    if filepath: os.remove(filepath)
+    if filepath:
+        try:
+            os.remove(filepath)
+        except:
+            pass
     return file_id
 
-def append_intent(query: str, inline_message_id: str = '', priority: int = 1):
+def append_intent(query: str, chat_ids: list = [], inline_message_id: str = ''):
     query_intent = intents.get(query)
     intent_priority = query_intent['priority'] if query_intent else 0
     intent_items = query_intent['items'] if query_intent else []
     for intent in intent_items:
-        if intent.get('inline_message_id') == inline_message_id:
-            return
+        if chat_ids and intent.get('chat_ids') == chat_ids: return
+        if inline_message_id and intent.get('inline_message_id') == inline_message_id: return
+
+    priority = 2 if inline_message_id else len(chat_ids)
+
     intent_items.append({
+        'chat_ids': chat_ids,
         'inline_message_id': inline_message_id,
         'priority': priority,
     })
@@ -146,44 +142,35 @@ def process_intents(bot: Bot):
     while True:
         if not intents:
             with download_video_condition:
-                download_video_condition.wait(populate_channels_interval_sec)
+                download_video_condition.wait(interval_sec)
         if not intents:
             time.sleep(5)
             continue
         max_priority = max(intents, key=lambda key: intents[key]['priority'])
         loop.run_until_complete(process_query(bot, max_priority))
 
-def populate_channels():
+def populate_subscriptions():
     while True:
-        try:
-            with open(populate_channels_file, "r") as file:
-                channels = [line.rstrip() for line in file]
-                for channel in channels:
-                    populate_channel(channel)
-        except:
-            pass
-        finally:
-            time.sleep(populate_channels_interval_sec)
+        time.sleep(interval_sec)
+        for url in list(subscriptions.keys()):
+            chat_ids = subscriptions[url]['chat_ids']
+            if chat_ids: populate_playlist(url, chat_ids)
+            else: subscriptions.pop(url, None)
 
-def populate_channel(channel: str):
+def populate_playlist(channel: str, chat_ids: list):
     info = ydl.extract_info(channel, download=False)
     entries = info.get('entries')
-    uploader_url = info.get('uploader_url')
     if not entries:
-        if not uploader_url: return
-        info = ydl.extract_info(uploader_url, download=False)
-        entries = info.get('entries')
-    entries = extract_uploader_entries(entries)
-    if not entries: return
-    for entry in entries[:5]:
-        populate_video(entry)
+        print(f"{now()} # populate_playlist error: {channel}")
+        return
+    for entry in entries[:5]: populate_video(entry, chat_ids)
 
-def populate_video(entry: dict) -> dict:
+def populate_video(entry: dict, chat_ids: list):
     query = extract_url(entry)
     info = videos.get(query)
     file_id = info.get('file_id') if info else None
     if file_id: return info
-    append_intent(query)
+    append_intent(query, chat_ids = chat_ids)
 
 def inline_video(info, inline_query_ids) -> InlineQueryResultCachedVideo:
     id = str(uuid4())
@@ -276,7 +263,7 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"{extract_user(user)} # chosen_query_fnsh: {query}")
         return
     
-    append_intent(query, inline_message_id, priority=2)
+    append_intent(query, inline_message_id = inline_message_id)
     print(f"{extract_user(user)} # chosen_query_append: {query}")
 
 async def process_query(bot: Bot, query: str) -> dict:
@@ -286,47 +273,43 @@ async def process_query(bot: Bot, query: str) -> dict:
         intents.pop(query, None)
         return info
 
-    duration = info.get('duration')
-    width = info.get('width')
-    height = info.get('height')
-    thumbnail = info['thumbnail']
     caption = info.get('caption')
-    filepath = info['filepath']
-    filename = info['filename']
 
     try:
         message = await bot.send_video(
         chat_id=developer_chat_id,
-        video=filepath,
-        duration=duration,
-        width=width,
-        height=height,
         caption=caption,
-        filename=filename,
+        video=info['filepath'],
+        duration=info.get('duration'),
+        width=info.get('width'),
+        height=info.get('height'),
+        filename=info['filename'],
         disable_notification=True,
     )
     except:
         intents.pop(query, None)
         return info
 
-    populated_message = any(not item['inline_message_id'] for item in intents[query]['items'])
-    await post_process(query, info, message, remove_message=not populated_message)
+    await post_process(query, info, message)
 
     for intent in intents[query]['items']:
+        chat_ids = intent.get('chat_ids')
         inline_message_id = intent.get('inline_message_id')
-        if inline_message_id:
+        if chat_ids:
+            for chat_id in chat_ids:
+                await bot.send_video(
+                    chat_id=chat_id,
+                    video=message.video,
+                    caption=caption,
+                )
+        elif inline_message_id:
             await bot.edit_message_media(
-            media=InputMediaVideo(
-                media=message.video,
-                width=width,
-                height=height,
-                duration=duration,
-                thumbnail=thumbnail,
-                caption=caption,
-                filename=filename,
-            ),
-            inline_message_id=inline_message_id,
-        )
+                inline_message_id=inline_message_id,
+                media=InputMediaVideo(
+                    media=message.video,
+                    caption=caption,
+                ),
+            )
     intents.pop(query, None)
     return info
 
@@ -414,7 +397,10 @@ async def subscribe_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         if not uploader_url:
             await update.message.reply_text("Unsupported url", reply_markup=ReplyKeyboardRemove())
             return ConversationHandler.END
-        if not info.get('playlist_count') and info.get('entries'):
+        if query != uploader_url:
+            info = ydl.extract_info(uploader_url, download=False)
+        entries = info.get('entries')
+        if entries and (not info.get('playlist_count') or not entries[0].get('entries')):
             context.user_data['videos'] = f"{uploader_url}/videos"
             return await subscribe_playlist(update, context)
         playlists = f"{uploader_url}/playlists"
@@ -543,7 +529,7 @@ def main():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.run_until_complete(populate_animation(bot))
-    Thread(target=populate_channels, daemon=True).start()
+    Thread(target=populate_subscriptions, daemon=True).start()
     Thread(target=populate_files, daemon=True).start()
     Thread(target=process_intents, args=(bot,), daemon=True).start()
     application.run_polling(allowed_updates=Update.ALL_TYPES)
