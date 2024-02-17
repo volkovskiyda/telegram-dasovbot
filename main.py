@@ -185,13 +185,14 @@ def populate_video(entry: dict) -> dict:
     if file_id: return info
     append_intent(query)
 
-def inline_video(info) -> InlineQueryResultCachedVideo:
+def inline_video(info, inline_query_ids) -> InlineQueryResultCachedVideo:
     id = str(uuid4())
     url = extract_url(info)
     file_id = info.get('file_id')
     video_file_id = file_id or animation_file_id
     reply_markup = InlineKeyboardMarkup([[ InlineKeyboardButton(text='loading', url=url) ]]) if not file_id else None
-    api_kwargs = { 'url': url }
+    inline_query_ids[id] = url
+
     return InlineQueryResultCachedVideo(
         id=id,
         video_file_id=video_file_id,
@@ -199,7 +200,6 @@ def inline_video(info) -> InlineQueryResultCachedVideo:
         description=info['description'],
         caption=info.get('caption'),
         reply_markup=reply_markup,
-        api_kwargs=api_kwargs,
     )
 
 async def start_command(update: Update, _: ContextTypes.DEFAULT_TYPE):
@@ -236,13 +236,14 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     entries = info.get('entries')
+    inline_query_ids = {}
 
     if entries:
-        results = [inline_video(item) for item in extract_nested_entries(entries)]
+        results = [inline_video(item, inline_query_ids) for item in extract_nested_entries(entries)]
     else:
-        results = [inline_video(info)]
+        results = [inline_video(info, inline_query_ids)]
 
-    context.user_data['results'] = results
+    context.user_data['inline_query_ids'] = inline_query_ids
 
     try:
         await update.inline_query.answer(results=results, cache_time=10)
@@ -252,12 +253,10 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     inline_result = update.chosen_inline_result
     inline_message_id = inline_result.inline_message_id
-    results = context.user_data.pop('results', None)
+    inline_query_ids = context.user_data.pop('inline_query_ids', None)
 
-    if not inline_message_id or not results: return
-    result = next(result for result in results if result.id == inline_result.result_id)
-    if not result: return
-    query = result.api_kwargs.get('url')
+    if not inline_message_id or not inline_query_ids: return
+    query = inline_query_ids[inline_result.result_id]
     if not query: return
     user = inline_result.from_user
 
