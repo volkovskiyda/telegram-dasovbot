@@ -397,15 +397,16 @@ async def subscribe_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         if not uploader_url:
             await update.message.reply_text("Unsupported url", reply_markup=ReplyKeyboardRemove())
             return ConversationHandler.END
-        if query != uploader_url:
+        if not uploader_url.startswith(query):
             info = ydl.extract_info(uploader_url, download=False)
-        entries = info.get('entries')
-        if entries and (not info.get('playlist_count') or not entries[0].get('entries')):
+
+        try:
+            playlists = f"{uploader_url}/playlists"
+            info = ydl.extract_info(playlists, download=False)
+        except:
             context.user_data['videos'] = f"{uploader_url}/videos"
             return await subscribe_playlist(update, context)
-        playlists = f"{uploader_url}/playlists"
-        if query != playlists:
-            info = ydl.extract_info(playlists, download=False)
+
     except:
         print(f"{extract_user(user)} # subscribe_url_failed: {query}")
         await update.message.reply_text("Error occured", reply_markup=ReplyKeyboardRemove())
@@ -418,7 +419,7 @@ async def subscribe_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     urls = { uploader: uploader_videos }
     for item in entries:
-        urls[item['title']] = item['url']
+        urls[item['title']] = extract_url(item)
 
     context.user_data['urls'] = urls
 
