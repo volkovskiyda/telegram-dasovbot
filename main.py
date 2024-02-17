@@ -239,7 +239,7 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     inline_query_ids = {}
 
     if entries:
-        results = [inline_video(item, inline_query_ids) for item in extract_nested_entries(entries)]
+        results = [inline_video(process_info(item), inline_query_ids) for item in extract_nested_entries(entries)]
     else:
         results = [inline_video(info, inline_query_ids)]
 
