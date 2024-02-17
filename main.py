@@ -306,6 +306,7 @@ async def process_query(bot: Bot, query: str) -> dict:
         disable_notification=True,
     )
     except:
+        intents.pop(query, None)
         return info
 
     populated_message = any(not item['inline_message_id'] for item in intents[query]['items'])
