@@ -11,7 +11,6 @@ ydl_opts = {
     'playlist_items': '1-20',
     'match_filter': match_filter,
     'quiet': True,
-    'progress': True,
 }
 
 def extract_url(info: dict) -> str:

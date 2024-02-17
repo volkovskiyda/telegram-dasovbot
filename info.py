@@ -4,7 +4,7 @@ import json
 import yt_dlp
 from utils import ydl_opts
 
-del ydl_opts['quiet']
+ydl_opts.pop('quiet', None)
 ydl = yt_dlp.YoutubeDL(ydl_opts)
 
 def json_dumps(info):
