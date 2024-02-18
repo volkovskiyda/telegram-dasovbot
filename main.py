@@ -472,11 +472,12 @@ async def subscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYPE)
     subscription = subscriptions.get(url)
     if subscription:
         chat_ids = subscription['chat_ids']
+        subscription_info = f"[{re.escape(subscription['title'])}]({url})"
         if chat_id in chat_ids:
-            await update.message.reply_text("Already subscribed", reply_markup=ReplyKeyboardRemove())
+            await update.message.reply_text(f"Already subscribed to {subscription_info}", reply_markup=ReplyKeyboardRemove(), parse_mode='MarkdownV2')
         else:
             chat_ids.append(chat_id)
-            await update.message.reply_text("Subscribed", reply_markup=ReplyKeyboardRemove())
+            await update.message.reply_text(f"Subscribed to {subscription_info}", reply_markup=ReplyKeyboardRemove(), parse_mode='MarkdownV2')
 
         return ConversationHandler.END
     elif urls:
@@ -536,7 +537,8 @@ async def unsubscribe_playlist(update: Update, _: ContextTypes.DEFAULT_TYPE) -> 
     chat_ids[:] = (item for item in chat_ids if item != chat_id)
     if not chat_ids: subscriptions.pop(query, None)
 
-    await update.message.reply_text("Unsubscribed", reply_markup=ReplyKeyboardRemove())
+    subscription_info = f"[{re.escape(subscription['title'])}]({query})"
+    await update.message.reply_text(f"Unsubscribed from {subscription_info}", reply_markup=ReplyKeyboardRemove(), parse_mode='MarkdownV2')
     return ConversationHandler.END
 
 async def cancel(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
