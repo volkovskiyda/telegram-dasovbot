@@ -6,7 +6,8 @@ from dotenv import load_dotenv
 from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Bot, InlineQueryResultCachedVideo, User, Message
 from telegram.ext import filters, Application, CommandHandler, MessageHandler, ContextTypes, InlineQueryHandler, ChosenInlineResultHandler, ConversationHandler
 
-SUBSCRIBE_URL, SUBSCRIBE_PLAYLIST = range(2)
+SUBSCRIBE_URL, SUBSCRIBE_PLAYLIST, = range(2)
+UNSUBSCRIBE_PLAYLIST, = range(1)
 DAS_URL, = range(1)
 
 load_dotenv()
@@ -333,17 +334,23 @@ async def populate_animation(bot: Bot):
     animation_file_id = await post_process(query, info, message, store_info=False)
     print(f"{now()} # animation_file_id = {animation_file_id}")
 
-async def subscription_list(update: Update, _: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
-    subscriptions_user = []
+def user_subscriptions(chat_id: str) -> dict:
+    user_subscriptions = {}
 
     for url in list(subscriptions):
         subscription = subscriptions[url]
         if subscription['chat_ids'].__contains__(chat_id):
-            subscriptions_user.append(f"[{re.escape(subscription['title'])}]({url})")
+            user_subscriptions[url] = subscription
 
-    if subscriptions_user: await update.message.reply_text('\n\n'.join(subscriptions_user), parse_mode='MarkdownV2')
-    else: await update.message.reply_text('No subscriptions yet')
+    return user_subscriptions
+
+async def subscription_list(update: Update, _: ContextTypes.DEFAULT_TYPE):
+    subscription_list = []
+    for url, subscription in user_subscriptions(chat_id=update.message.chat_id).items():
+        subscription_list.append(f"[{re.escape(subscription['title'])}]({url})")
+
+    if subscription_list: await update.message.reply_text('\n\n'.join(subscription_list), parse_mode='MarkdownV2')
+    else: await update.message.reply_text('No active subscriptions')
 
 async def das(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
     if update.message.text.removeprefix('/das').removeprefix('/dv').lstrip():
@@ -498,6 +505,40 @@ async def subscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     return ConversationHandler.END
 
+async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if update.message.text.removeprefix('/unsubscribe').lstrip():
+        return await unsubscribe_playlist(update, context)
+    else:
+        await update.message.reply_text("Select playlist", reply_markup=ReplyKeyboardMarkup(
+            [[button] for button in list(user_subscriptions(chat_id=update.message.chat_id).keys())], one_time_keyboard=True, input_field_placeholder="Select playlist", resize_keyboard=True)
+        )
+        return UNSUBSCRIBE_PLAYLIST
+
+async def unsubscribe_playlist(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
+    message = update.message
+    user = message.from_user
+    chat_id = message.chat_id
+    query = message.text.removeprefix('/unsubscribe').lstrip()
+
+    subscription = subscriptions.get(query)
+
+    print(f"{extract_user(user)} # unsubscribe_playlist: {query}")
+
+    if not subscription:
+        await update.message.reply_text("Invalid selection", reply_markup=ReplyKeyboardRemove())
+        return ConversationHandler.END
+    
+    chat_ids = subscription['chat_ids']
+    if chat_id not in chat_ids:
+        await update.message.reply_text("No subscription found", reply_markup=ReplyKeyboardRemove())
+        return ConversationHandler.END
+
+    chat_ids[:] = (item for item in chat_ids if item != chat_id)
+    if not chat_ids: subscriptions.pop(query, None)
+
+    await update.message.reply_text("Unsubscribed", reply_markup=ReplyKeyboardRemove())
+    return ConversationHandler.END
+
 async def cancel(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
     print(f"{extract_user(update.message.from_user)} # cancel")
     await update.message.reply_text("Cancelled", reply_markup=ReplyKeyboardRemove())
@@ -536,6 +577,13 @@ def main():
         states={
             SUBSCRIBE_URL: [MessageHandler(filters.TEXT, subscribe_url)],
             SUBSCRIBE_PLAYLIST: [MessageHandler(filters.TEXT, subscribe_playlist)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    ))
+    application.add_handler(ConversationHandler(
+        entry_points=[CommandHandler(['unsubscribe'], unsubscribe)],
+        states={
+            UNSUBSCRIBE_PLAYLIST: [MessageHandler(filters.TEXT, unsubscribe_playlist)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     ))
