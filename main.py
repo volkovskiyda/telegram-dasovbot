@@ -525,7 +525,7 @@ def main():
     application.add_handler(ChosenInlineResultHandler(chosen_query))
     application.add_handler(CommandHandler(['subscriptions', 'subs'], subscription_list))
     application.add_handler(ConversationHandler(
-        entry_points=[CommandHandler(['das', 'dv'], das)],
+        entry_points=[CommandHandler(['download', 'das', 'dv'], das)],
         states={
             DAS_URL: [MessageHandler(filters.TEXT, das_url)],
         },
