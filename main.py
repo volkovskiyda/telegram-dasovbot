@@ -544,10 +544,15 @@ async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if message.text.removeprefix('/unsubscribe').lstrip():
         return await unsubscribe_playlist(update, context)
     else:
-        await message.reply_text("Select playlist", reply_markup=ReplyKeyboardMarkup(
-            [[button] for button in list(user_subscriptions(chat_id=message.chat_id).keys())], one_time_keyboard=True, input_field_placeholder="Select playlist", resize_keyboard=True)
-        )
-        return UNSUBSCRIBE_PLAYLIST
+        subscriptions = list(user_subscriptions(chat_id=message.chat_id).keys())
+        if subscriptions:
+            await message.reply_text("Select playlist", reply_markup=ReplyKeyboardMarkup(
+                [[button] for button in subscriptions], one_time_keyboard=True, input_field_placeholder="Select playlist", resize_keyboard=True)
+            )
+            return UNSUBSCRIBE_PLAYLIST
+        else:
+            await message.reply_text("No subscription found", reply_markup=ReplyKeyboardRemove())
+            return ConversationHandler.END
 
 async def unsubscribe_playlist(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
     message = update.message
