@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Bot, InlineQueryResultCachedVideo, User, Message
 from telegram.ext import filters, Application, CommandHandler, MessageHandler, ContextTypes, InlineQueryHandler, ChosenInlineResultHandler, ConversationHandler
 
-SUBSCRIBE_URL, SUBSCRIBE_PLAYLIST, = range(2)
+SUBSCRIBE_URL, SUBSCRIBE_PLAYLIST, SUBSCRIBE_SHOW, = range(3)
 UNSUBSCRIBE_PLAYLIST, = range(1)
 DAS_URL, = range(1)
 
@@ -159,10 +159,14 @@ def populate_subscriptions():
             else: subscriptions.pop(url, None)
 
 def populate_playlist(channel: str, chat_ids: list):
-    info = ydl.extract_info(channel, download=False)
+    try:
+        info = ydl.extract_info(channel, download=False)
+    except:
+        print(f"{now()} # populate_playlist error: {channel}")
+        return
     entries = info.get('entries')
     if not entries:
-        print(f"{now()} # populate_playlist error: {channel}")
+        print(f"{now()} # populate_playlist no entries: {channel}")
         return
     for entry in entries[:5]: populate_video(entry, chat_ids)
 
@@ -191,8 +195,9 @@ def inline_video(info, inline_query_ids) -> InlineQueryResultCachedVideo:
     )
 
 async def start(update: Update, _: ContextTypes.DEFAULT_TYPE):
-    username = update.message.from_user['username']
-    await update.message.reply_text(f"Hey, @{username}.\n"
+    message = update.message
+    username = message.from_user['username']
+    await message.reply_text(f"Hey, @{username}.\n"
                                     "Welcome to Download and Share Online Video bot\n"
                                     "Type @dasovbot <video url>\n"
                                     "or /das <video url>\n"
@@ -220,7 +225,7 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     info = extract_info(query, download=False)
     if not info:
-        await update.inline_query.answer(results=[])
+        await inline_query.answer(results=[])
         return
 
     entries = info.get('entries')
@@ -234,7 +239,7 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['inline_query_ids'] = inline_query_ids
 
     try:
-        await update.inline_query.answer(results=results, cache_time=10)
+        await inline_query.answer(results=results, cache_time=10)
     except:
         pass
 
@@ -345,18 +350,20 @@ def user_subscriptions(chat_id: str) -> dict:
     return user_subscriptions
 
 async def subscription_list(update: Update, _: ContextTypes.DEFAULT_TYPE):
+    message = update.message
     subscription_list = []
-    for url, subscription in user_subscriptions(chat_id=update.message.chat_id).items():
+    for url, subscription in user_subscriptions(chat_id=message.chat_id).items():
         subscription_list.append(f"[{re.escape(subscription['title'])}]({url})")
 
-    if subscription_list: await update.message.reply_text('\n\n'.join(subscription_list), parse_mode='MarkdownV2')
-    else: await update.message.reply_text('No active subscriptions')
+    if subscription_list: await message.reply_markdown_v2('\n\n'.join(subscription_list))
+    else: await message.reply_text('No active subscriptions')
 
 async def das(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
-    if update.message.text.removeprefix('/das').removeprefix('/dv').lstrip():
+    message = update.message
+    if message.text.removeprefix('/das').removeprefix('/dv').lstrip():
         return await das_url(update, _)
     else:
-        await update.message.reply_text("Enter url")
+        await message.reply_text("Enter url")
         return DAS_URL
     
 async def das_url(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
@@ -371,34 +378,34 @@ async def das_url(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
 
     info = extract_info(query)
     if not info or info.get('entries'):
-        await update.message.reply_text("Unsupported url", reply_markup=ReplyKeyboardRemove())
+        await message.reply_text("Unsupported url", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
     video = info.get('file_id') or info.get('filepath')
     if not video:
-        await update.message.reply_text("Error occured", reply_markup=ReplyKeyboardRemove())
+        await message.reply_text("Error occured", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
-    message = await update.message.reply_video(
+    video_message = await message.reply_video(
         video=video,
         filename=info.get('filename'),
         duration=info.get('duration'),
         caption=info.get('caption'),
         width=info.get("width"),
         height=info.get("height"),
-        reply_to_message_id=update.message.id,
+        reply_to_message_id=message.id,
     )
 
     users[str(chat_id)] = user.to_dict()
-    await post_process(query, info, message, remove_message=False)
-
+    await post_process(query, info, video_message, remove_message=False)
     return ConversationHandler.END
 
 async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if update.message.text.removeprefix('/subscribe').lstrip():
+    message = update.message
+    if message.text.removeprefix('/subscribe').lstrip():
         return await subscribe_url(update, context)
     else:
-        await update.message.reply_text("Enter url")
+        await message.reply_text("Enter url")
         return SUBSCRIBE_URL
 
 async def subscribe_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -414,7 +421,7 @@ async def subscribe_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         info = ydl.extract_info(query, download=False)
         uploader_url = info.get('uploader_url')
         if not uploader_url:
-            await update.message.reply_text("Unsupported url", reply_markup=ReplyKeyboardRemove())
+            await message.reply_text("Unsupported url", reply_markup=ReplyKeyboardRemove())
             return ConversationHandler.END
         if not uploader_url.startswith(query):
             info = ydl.extract_info(uploader_url, download=False)
@@ -428,7 +435,7 @@ async def subscribe_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     except:
         print(f"{extract_user(user)} # subscribe_url_failed: {query}")
-        await update.message.reply_text("Error occured", reply_markup=ReplyKeyboardRemove())
+        await message.reply_text("Error occured", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
     
     entries = info.get('entries')
@@ -442,7 +449,7 @@ async def subscribe_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     context.user_data['urls'] = urls
 
-    await update.message.reply_text("Select playlist", reply_markup=ReplyKeyboardMarkup(
+    await message.reply_text("Select playlist", reply_markup=ReplyKeyboardMarkup(
         [[button] for button in list(urls.keys())], one_time_keyboard=True, input_field_placeholder="Select playlist", resize_keyboard=True
     ))
     return SUBSCRIBE_PLAYLIST
@@ -465,21 +472,25 @@ async def subscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYPE)
     print(f"{extract_user(user)} # subscribe_playlist: {query} - {url}")
 
     if not url:
-        await update.message.reply_text("Invalid selection", reply_markup=ReplyKeyboardRemove())
+        await message.reply_text("Invalid selection", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
     users[str(chat_id)] = user.to_dict()
     subscription = subscriptions.get(url)
+    reply_markup=ReplyKeyboardMarkup(
+        [['Yes', 'No']], one_time_keyboard=True, input_field_placeholder="Show latest videos?", resize_keyboard=True
+    )
     if subscription:
         chat_ids = subscription['chat_ids']
         subscription_info = f"[{re.escape(subscription['title'])}]({url})"
         if chat_id in chat_ids:
-            await update.message.reply_text(f"Already subscribed to {subscription_info}", reply_markup=ReplyKeyboardRemove(), parse_mode='MarkdownV2')
+            await message.reply_markdown_v2(f"Already subscribed to {subscription_info}", reply_markup=ReplyKeyboardRemove())
+            return ConversationHandler.END
         else:
             chat_ids.append(chat_id)
-            await update.message.reply_text(f"Subscribed to {subscription_info}", reply_markup=ReplyKeyboardRemove(), parse_mode='MarkdownV2')
-
-        return ConversationHandler.END
+            context.user_data['subscription_url'] = url
+            await message.reply_markdown_v2(f"Subscribed to {subscription_info}\nShow latest videos?", reply_markup=reply_markup)
+            return SUBSCRIBE_SHOW
     elif urls:
         title = query
         uploader = next(iter(urls))
@@ -493,7 +504,7 @@ async def subscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYPE)
             uploader_videos = f"{uploader_url}/videos"
         except:
             print(f"{extract_user(user)} # subscribe_playlist_failed: {url}")
-            await update.message.reply_text("Error occured", reply_markup=ReplyKeyboardRemove())
+            await message.reply_text("Error occured", reply_markup=ReplyKeyboardRemove())
             return ConversationHandler.END
 
     subscriptions[url] = {
@@ -502,16 +513,39 @@ async def subscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYPE)
         'uploader': uploader,
         'uploader_videos': uploader_videos,
     }
-    await update.message.reply_text("Subscribed", reply_markup=ReplyKeyboardRemove())
+    subscription_info = f"[{re.escape(title)}]({url})"
+    context.user_data['subscription_url'] = url
+    await message.reply_markdown_v2(f"Subscribed to {subscription_info}\nShow latest videos?", reply_markup=reply_markup)
+    return SUBSCRIBE_SHOW
 
+async def subscribe_show(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    message = update.message
+    chat_id = message.chat_id
+    result = message.text.lower() in ['yes', 'true', 'y', 't', '1']
+
+    subscription_url = context.user_data.pop('subscription_url', None)
+    reply = await message.reply_text(subscription_url, reply_markup=ReplyKeyboardRemove(), disable_notification=True)
+    await reply.delete()
+
+    if result:
+        try:
+            info = ydl.extract_info(subscription_url, download=False)
+            entries = info.get('entries')
+            for entry in entries[:5]:
+                video = videos.get(extract_url(entry))
+                file_id = video.get('file_id') if video else None
+                if file_id: await context.bot.send_video(chat_id, file_id, caption=video.get('caption'))
+        except:
+            pass
     return ConversationHandler.END
 
 async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    if update.message.text.removeprefix('/unsubscribe').lstrip():
+    message = update.message
+    if message.text.removeprefix('/unsubscribe').lstrip():
         return await unsubscribe_playlist(update, context)
     else:
-        await update.message.reply_text("Select playlist", reply_markup=ReplyKeyboardMarkup(
-            [[button] for button in list(user_subscriptions(chat_id=update.message.chat_id).keys())], one_time_keyboard=True, input_field_placeholder="Select playlist", resize_keyboard=True)
+        await message.reply_text("Select playlist", reply_markup=ReplyKeyboardMarkup(
+            [[button] for button in list(user_subscriptions(chat_id=message.chat_id).keys())], one_time_keyboard=True, input_field_placeholder="Select playlist", resize_keyboard=True)
         )
         return UNSUBSCRIBE_PLAYLIST
 
@@ -526,24 +560,25 @@ async def unsubscribe_playlist(update: Update, _: ContextTypes.DEFAULT_TYPE) -> 
     print(f"{extract_user(user)} # unsubscribe_playlist: {query}")
 
     if not subscription:
-        await update.message.reply_text("Invalid selection", reply_markup=ReplyKeyboardRemove())
+        await message.reply_text("Invalid selection", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
     
     chat_ids = subscription['chat_ids']
     if chat_id not in chat_ids:
-        await update.message.reply_text("No subscription found", reply_markup=ReplyKeyboardRemove())
+        await message.reply_text("No subscription found", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
     chat_ids[:] = (item for item in chat_ids if item != chat_id)
     if not chat_ids: subscriptions.pop(query, None)
 
     subscription_info = f"[{re.escape(subscription['title'])}]({query})"
-    await update.message.reply_text(f"Unsubscribed from {subscription_info}", reply_markup=ReplyKeyboardRemove(), parse_mode='MarkdownV2')
+    await message.reply_markdown_v2(f"Unsubscribed from {subscription_info}", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
 
 async def cancel(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
-    print(f"{extract_user(update.message.from_user)} # cancel")
-    await update.message.reply_text("Cancelled", reply_markup=ReplyKeyboardRemove())
+    message = update.message
+    print(f"{extract_user(message.from_user)} # cancel")
+    await message.reply_text("Cancelled", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
 
 def main():
@@ -579,6 +614,7 @@ def main():
         states={
             SUBSCRIBE_URL: [MessageHandler(filters.TEXT, subscribe_url)],
             SUBSCRIBE_PLAYLIST: [MessageHandler(filters.TEXT, subscribe_playlist)],
+            SUBSCRIBE_SHOW: [MessageHandler(filters.TEXT, subscribe_show)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     ))
