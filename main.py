@@ -58,6 +58,9 @@ videos = read_file(video_info_file, videos)
 users = read_file(user_info_file, users)
 subscriptions = read_file(subscription_info_file, subscriptions)
 
+def remove_command_prefix(command: str) -> str:
+    return re.sub('^/\w+', '', command).lstrip()
+
 def extract_nested_entries(entries: list) -> list:
     nested_entries = entries[0].get('entries')
     return nested_entries if nested_entries else entries
@@ -360,7 +363,7 @@ async def subscription_list(update: Update, _: ContextTypes.DEFAULT_TYPE):
 
 async def das(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
     message = update.message
-    if message.text.removeprefix('/das').removeprefix('/dv').lstrip():
+    if remove_command_prefix(message.text):
         return await das_url(update, _)
     else:
         await message.reply_text("Enter url")
@@ -370,7 +373,7 @@ async def das_url(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
     message = update.message
     user = message.from_user
     chat_id = message.chat_id
-    query = message.text.removeprefix('/das').removeprefix('/dv').lstrip()
+    query = remove_command_prefix(message.text)
 
     print(f"{extract_user(user)} # das: {query}")
 
@@ -402,7 +405,7 @@ async def das_url(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     message = update.message
-    if message.text.removeprefix('/subscribe').lstrip():
+    if remove_command_prefix(message.text):
         return await subscribe_url(update, context)
     else:
         await message.reply_text("Enter url")
@@ -411,7 +414,7 @@ async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def subscribe_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     message = update.message
     user = message.from_user
-    query = message.text.removeprefix('/subscribe').lstrip()
+    query = remove_command_prefix(message.text)
     
     print(f"{extract_user(user)} # subscribe_url: {query}")
 
@@ -541,7 +544,7 @@ async def subscribe_show(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     message = update.message
-    if message.text.removeprefix('/unsubscribe').lstrip():
+    if remove_command_prefix(message.text):
         return await unsubscribe_playlist(update, context)
     else:
         subscriptions = list(user_subscriptions(chat_id=message.chat_id).keys())
@@ -558,7 +561,7 @@ async def unsubscribe_playlist(update: Update, _: ContextTypes.DEFAULT_TYPE) -> 
     message = update.message
     user = message.from_user
     chat_id = message.chat_id
-    query = message.text.removeprefix('/unsubscribe').lstrip()
+    query = remove_command_prefix(message.text)
 
     subscription = subscriptions.get(query)
 
