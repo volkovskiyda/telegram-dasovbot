@@ -202,14 +202,17 @@ async def start(update: Update, _: ContextTypes.DEFAULT_TYPE):
     username = message.from_user['username']
     await message.reply_text(f"Hey, @{username}.\n"
                                     "Welcome to Download and Share Online Video bot\n"
-                                    "Type @dasovbot <video url>\n"
-                                    "or /das <video url>\n"
+                                    "Type /download\n\n"
                                     "/help - for more details")
 
 async def help(update: Update, _: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "@dasovbot <video url> - download and send video\n"
-        "/das <video url> - download video"
+    await update.message.reply_markdown(
+        "@dasovbot - Download and share video\n\n"
+        "/download - Download video\n\n"
+        "*Subscriptions*\n"
+        "/subscriptions - Show list of subscriptions\n"
+        "/subscribe - Subscribe to playlist\n"
+        "/unsubscribe - Unsubscribe from playlist"
     )
 
 async def unknown(update: Update, _: ContextTypes.DEFAULT_TYPE):
