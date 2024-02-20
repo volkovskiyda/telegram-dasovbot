@@ -20,11 +20,11 @@ ydl = yt_dlp.YoutubeDL(ydl_opts)
 video_info_file = "config/videos.json"
 user_info_file = "config/users.json"
 subscription_info_file = "config/subscriptions.json"
+intent_info_file = "config/intents.json"
 
 videos = {}
 users = {}
 subscriptions = {}
-
 intents = {}
 
 interval_sec = 60 * 60 # an hour
@@ -53,10 +53,12 @@ def populate_files():
         write_file(video_info_file, videos)
         write_file(user_info_file, users)
         write_file(subscription_info_file, subscriptions)
+        write_file(intent_info_file, intents)
 
 videos = read_file(video_info_file, videos)
 users = read_file(user_info_file, users)
 subscriptions = read_file(subscription_info_file, subscriptions)
+intents = read_file(intent_info_file, intents)
 
 def remove_command_prefix(command: str) -> str:
     return re.sub(r'^/\w+', '', command).lstrip()
@@ -119,34 +121,29 @@ async def post_process(query: str, info: dict, message: Message, remove_message=
     return file_id
 
 def append_intent(query: str, chat_ids: list = [], inline_message_id: str = ''):
-    query_intent = intents.get(query)
-    intent_priority = query_intent['priority'] if query_intent else 0
-    intent_items = query_intent['items'] if query_intent else []
-    for intent in intent_items:
-        if chat_ids and intent.get('chat_ids') == chat_ids: return
-        if inline_message_id and intent.get('inline_message_id') == inline_message_id: return
-
-    priority = 2 if inline_message_id else len(chat_ids)
-
-    intent_items.append({
-        'chat_ids': chat_ids,
-        'inline_message_id': inline_message_id,
-        'priority': priority,
+    intent = intents.setdefault(query, {
+        'chat_ids': [],
+        'inline_message_ids': [],
+        'priority': 0,
     })
-    intents[query] = {
-        'priority': intent_priority + priority,
-        'items': intent_items,
-    }
-    with download_video_condition:
-        download_video_condition.notify()
+
+    intent_chat_ids = intent['chat_ids']
+    intent_inline_message_ids = intent['inline_message_ids']
+    
+    for item in chat_ids:
+        if item not in intent_chat_ids:
+            intent_chat_ids.append(item)
+    if inline_message_id and inline_message_id not in intent_inline_message_ids:
+        intent_inline_message_ids.append(inline_message_id)
+    intent['priority'] += 2 if inline_message_id else len(chat_ids)
+    with download_video_condition: download_video_condition.notify()
 
 def process_intents(bot: Bot):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     while True:
         if not intents:
-            with download_video_condition:
-                download_video_condition.wait(interval_sec)
+            with download_video_condition: download_video_condition.wait(interval_sec)
         if not intents:
             time.sleep(5)
             continue
@@ -245,7 +242,7 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['inline_query_ids'] = inline_query_ids
 
     try:
-        await inline_query.answer(results=results, cache_time=10)
+        await inline_query.answer(results=results, cache_time=1)
     except:
         pass
 
@@ -280,9 +277,9 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def process_query(bot: Bot, query: str) -> dict:
     info = extract_info(query)
+    intent = intents.pop(query, None)
     if not info:
         print(f"{now()} # process_query error: {query}")
-        intents.pop(query, None)
         return info
 
     caption = info.get('caption')
@@ -299,30 +296,21 @@ async def process_query(bot: Bot, query: str) -> dict:
         disable_notification=True,
     )
     except:
-        intents.pop(query, None)
         return info
-
+    
+    video = message.video
     await post_process(query, info, message)
 
-    for intent in intents[query]['items']:
-        chat_ids = intent.get('chat_ids')
-        inline_message_id = intent.get('inline_message_id')
-        if chat_ids:
-            for chat_id in chat_ids:
-                await bot.send_video(
-                    chat_id=chat_id,
-                    video=message.video,
-                    caption=caption,
-                )
-        elif inline_message_id:
-            await bot.edit_message_media(
-                inline_message_id=inline_message_id,
-                media=InputMediaVideo(
-                    media=message.video,
-                    caption=caption,
-                ),
-            )
-    intents.pop(query, None)
+    for item in intent['chat_ids']:
+        try:
+            await bot.send_video(chat_id=item, video=video, caption=caption)
+        except:
+            print(f"{now()} # process_query send_video error: {query} - {item}")
+    for item in intent['inline_message_ids']:
+        try:
+            await bot.edit_message_media(inline_message_id=item, media=InputMediaVideo(media=video, caption=caption))
+        except:
+            print(f"{now()} # process_query edit_message_media error: {query}")
     return info
 
 async def populate_animation(bot: Bot):
