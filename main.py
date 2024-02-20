@@ -59,7 +59,7 @@ users = read_file(user_info_file, users)
 subscriptions = read_file(subscription_info_file, subscriptions)
 
 def remove_command_prefix(command: str) -> str:
-    return re.sub('^/\w+', '', command).lstrip()
+    return re.sub(r'^/\w+', '', command).lstrip()
 
 def extract_nested_entries(entries: list) -> list:
     nested_entries = entries[0].get('entries')
