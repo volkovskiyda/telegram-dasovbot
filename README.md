@@ -4,11 +4,20 @@
 
 #### Based on [python telegram bot](https://github.com/python-telegram-bot/python-telegram-bot) and [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 
-### **Available commands:**
-`/das` - download specified video url
-
 ### **[Inline mode:](https://telegram.org/blog/inline-bots)**
-`@dasovbot <video url>` in chat or group - download video and send it
+`@dasovbot` _video url_ - Download and share video
+
+### **Available commands:**
+`/download` _video url_ - Download video
+
+`/help` - Show available commands
+
+#### **Subscriptions:**
+`/subscriptions` - Show list of subscriptions
+
+`/subscribe` _playlist url_ - Subscribe to playlist
+
+`/unsubscribe` _playlist url_ - Unsubscribe from playlist
 
 ### **Configuration:**
 - Copy `.env.example` file to `.env` and change `READ_TIMEOUT`, `BASE_URL`, `BOT_TOKEN`, `DEVELOPER_CHAT_ID` and `LOADING_VIDEO_ID` environment variables.
