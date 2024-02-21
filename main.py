@@ -35,8 +35,7 @@ def write_file(file_path, dict):
         file = open(file_path, "w", encoding='utf8')
         json.dump(dict, file, indent=1, ensure_ascii=False)
         file.write('\r')
-    except:
-        pass
+    except: pass
 
 def read_file(file_path, dict) -> dict:
     try:
@@ -86,14 +85,11 @@ def extract_info(query: str, download=True) -> dict:
                 videos[url] = info_url
                 videos[query] = info_url
                 return info_url
-        except:
-            print(f"{now()} # extract_info error: {query}")
+        except: print(f"{now()} # extract_info error: {query}")
 
     if (not info or not info.get('file_id')) and download:
-        try:
-            info = ydl.extract_info(query)
-        except:
-            pass
+        try: info = ydl.extract_info(query)
+        except: pass
     return process_info(info)
 
 async def post_process(query: str, info: dict, message: Message, remove_message=True, store_info=True) -> str:
@@ -109,15 +105,11 @@ async def post_process(query: str, info: dict, message: Message, remove_message=
         videos[query] = info
         videos[url] = info
     if remove_message:
-        try:
-            await message.delete()
-        except:
-            pass
+        try: await message.delete()
+        except: pass
     if filepath:
-        try:
-            os.remove(filepath)
-        except:
-            pass
+        try: os.remove(filepath)
+        except: pass
     return file_id
 
 def append_intent(query: str, chat_ids: list = [], inline_message_id: str = ''):
@@ -228,7 +220,8 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     info = extract_info(query, download=False)
     if not info:
-        await inline_query.answer(results=[])
+        try: await inline_query.answer(results=[])
+        except: pass
         return
 
     entries = info.get('entries')
@@ -241,10 +234,8 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data['inline_query_ids'] = inline_query_ids
 
-    try:
-        await inline_query.answer(results=results, cache_time=1)
-    except:
-        pass
+    try: await inline_query.answer(results=results, cache_time=1)
+    except: pass
 
 async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     inline_result = update.chosen_inline_result
@@ -295,22 +286,17 @@ async def process_query(bot: Bot, query: str) -> dict:
         filename=info['filename'],
         disable_notification=True,
     )
-    except:
-        return info
+    except: return info
     
     video = message.video
     await post_process(query, info, message)
 
     for item in intent['chat_ids']:
-        try:
-            await bot.send_video(chat_id=item, video=video, caption=caption)
-        except:
-            print(f"{now()} # process_query send_video error: {query} - {item}")
+        try: await bot.send_video(chat_id=item, video=video, caption=caption)
+        except: print(f"{now()} # process_query send_video error: {query} - {item}")
     for item in intent['inline_message_ids']:
-        try:
-            await bot.edit_message_media(inline_message_id=item, media=InputMediaVideo(media=video, caption=caption))
-        except:
-            print(f"{now()} # process_query edit_message_media error: {query}")
+        try: await bot.edit_message_media(inline_message_id=item, media=InputMediaVideo(media=video, caption=caption))
+        except: print(f"{now()} # process_query edit_message_media error: {query}")
     return info
 
 async def populate_animation(bot: Bot):
@@ -529,8 +515,7 @@ async def subscribe_show(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 video = videos.get(extract_url(entry))
                 file_id = video.get('file_id') if video else None
                 if file_id: await context.bot.send_video(chat_id, file_id, caption=video.get('caption'))
-        except:
-            pass
+        except: pass
     return ConversationHandler.END
 
 async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
