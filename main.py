@@ -382,6 +382,7 @@ async def download_url(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
         width=info.get("width"),
         height=info.get("height"),
         reply_to_message_id=message.id,
+        allow_sending_without_reply=True,
     )
 
     users[str(chat_id)] = user.to_dict()
