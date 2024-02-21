@@ -10,6 +10,7 @@ ydl_opts = {
     'extract_flat': 'in_playlist',
     'playlist_items': '1-20',
     'match_filter': match_filter,
+    'no_warnings': True,
     'quiet': True,
 }
 
