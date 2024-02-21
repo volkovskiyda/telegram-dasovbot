@@ -3,9 +3,11 @@ from utils import ydl_opts, extract_url, now, process_info
 from uuid import uuid4
 from threading import Thread, Condition
 from dotenv import load_dotenv
+from warnings import filterwarnings
 from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Bot, InlineQueryResultCachedVideo, User, Message
 from telegram.ext import filters, Application, CommandHandler, MessageHandler, ContextTypes, InlineQueryHandler, ChosenInlineResultHandler, ConversationHandler, CallbackQueryHandler
 from telegram.constants import ParseMode
+from telegram.warnings import PTBUserWarning
 
 SUBSCRIBE_URL, SUBSCRIBE_PLAYLIST, SUBSCRIBE_SHOW, = range(3)
 UNSUBSCRIBE_PLAYLIST, = range(1)
@@ -30,6 +32,8 @@ intents = {}
 
 interval_sec = 60 * 60 # an hour
 download_video_condition = Condition()
+
+filterwarnings(action="ignore", message=r".*CallbackQueryHandler", category=PTBUserWarning)
 
 def write_file(file_path, dict):
     try:
