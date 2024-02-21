@@ -62,6 +62,9 @@ intents = read_file(intent_info_file, intents)
 def remove_command_prefix(command: str) -> str:
     return re.sub(r'^/\w+', '', command).lstrip()
 
+def filter_uploader_url(entries: list) -> list:
+    return filter(lambda entry: entry.get('uploader_url'), entries)
+
 def extract_nested_entries(entries: list) -> list:
     nested_entries = entries[0].get('entries')
     return nested_entries if nested_entries else entries
@@ -228,7 +231,7 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     inline_query_ids = {}
 
     if entries:
-        results = [inline_video(process_info(item), inline_query_ids) for item in extract_nested_entries(entries)]
+        results = [inline_video(process_info(item), inline_query_ids) for item in filter_uploader_url(extract_nested_entries(entries))]
     else:
         results = [inline_video(info, inline_query_ids)]
 
