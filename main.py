@@ -341,15 +341,15 @@ async def subscription_list(update: Update, _: ContextTypes.DEFAULT_TYPE):
     if subscription_list: await message.reply_markdown_v2('\n\n'.join(subscription_list))
     else: await message.reply_text('No active subscriptions')
 
-async def das(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
+async def download(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
     message = update.message
     if remove_command_prefix(message.text):
-        return await das_url(update, _)
+        return await download_url(update, _)
     else:
         await message.reply_text("Enter url")
         return DAS_URL
     
-async def das_url(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
+async def download_url(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
     message = update.message
     user = message.from_user
     chat_id = message.chat_id
@@ -590,9 +590,9 @@ def main():
     application.add_handler(ChosenInlineResultHandler(chosen_query))
     application.add_handler(CommandHandler(['subscriptions', 'subs'], subscription_list))
     application.add_handler(ConversationHandler(
-        entry_points=[CommandHandler(['download', 'das', 'dv'], das)],
+        entry_points=[CommandHandler(['download', 'das', 'dv'], download)],
         states={
-            DAS_URL: [MessageHandler(filters.TEXT, das_url)],
+            DAS_URL: [MessageHandler(filters.TEXT, download_url)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     ))
