@@ -4,7 +4,8 @@ from uuid import uuid4
 from threading import Thread, Condition
 from dotenv import load_dotenv
 from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Bot, InlineQueryResultCachedVideo, User, Message
-from telegram.ext import filters, Application, CommandHandler, MessageHandler, ContextTypes, InlineQueryHandler, ChosenInlineResultHandler, ConversationHandler
+from telegram.ext import filters, Application, CommandHandler, MessageHandler, ContextTypes, InlineQueryHandler, ChosenInlineResultHandler, ConversationHandler, CallbackQueryHandler
+from telegram.constants import ParseMode
 
 SUBSCRIBE_URL, SUBSCRIBE_PLAYLIST, SUBSCRIBE_SHOW, = range(3)
 UNSUBSCRIBE_PLAYLIST, = range(1)
@@ -336,9 +337,9 @@ async def subscription_list(update: Update, _: ContextTypes.DEFAULT_TYPE):
     message = update.message
     subscription_list = []
     for url, subscription in user_subscriptions(chat_id=message.chat_id).items():
-        subscription_list.append(f"[{re.escape(subscription['title'])}]({url})")
+        subscription_list.append(f"[{subscription['title']}]({url})")
 
-    if subscription_list: await message.reply_markdown_v2('\n\n'.join(subscription_list))
+    if subscription_list: await message.reply_markdown('\n\n'.join(subscription_list))
     else: await message.reply_text('No active subscriptions')
 
 async def download(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
@@ -413,7 +414,7 @@ async def subscribe_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             playlists = f"{uploader_url}/playlists"
             info = ydl.extract_info(playlists, download=False)
         except:
-            context.user_data['videos'] = f"{uploader_url}/videos"
+            context.user_data['uploader_videos'] = f"{uploader_url}/videos"
             return await subscribe_playlist(update, context)
 
     except:
@@ -424,55 +425,73 @@ async def subscribe_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     entries = info.get('entries')
     uploader = info.get('uploader') or info.get('uploader_id')
     uploader_videos = f"{uploader_url}/videos"
-    if not entries or not uploader or not uploader_videos: return ConversationHandler.END
+    if not entries or not uploader or not uploader_videos:
+        await message.reply_text("Error occured", reply_markup=ReplyKeyboardRemove())
+        return ConversationHandler.END
 
     urls = { uploader: uploader_videos }
     for item in entries:
         urls.setdefault(item['title'], extract_url(item))
 
     context.user_data['urls'] = urls
-
-    await message.reply_text("Select playlist", reply_markup=ReplyKeyboardMarkup(
-        [[button] for button in list(urls.keys())], one_time_keyboard=True, input_field_placeholder="Select playlist", resize_keyboard=True
+    await message.reply_markdown(f"Select playlist of [{uploader}]({uploader_url})", reply_markup=InlineKeyboardMarkup(
+        [[InlineKeyboardButton(text=title, callback_data=index)] for index, title in enumerate(urls)]
     ))
     return SUBSCRIBE_PLAYLIST
     
 async def subscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    message = update.message
-    user = message.from_user
-    chat_id = message.chat_id
-    query = message.text
-
     urls = context.user_data.pop('urls', None)
-    videos = context.user_data.pop('videos', None)
+    uploader_videos = context.user_data.pop('uploader_videos', None)
+    callback_query = update.callback_query
+
+    if callback_query:
+        await callback_query.answer()
+        message = callback_query.message
+        message_text = message.edit_text
+
+        if not urls:
+            print(f"{extract_user(user)} # subscribe_playlist_failed")
+            await message_text("Error occured", reply_markup=InlineKeyboardMarkup([]))
+            return ConversationHandler.END
+
+        url_index = int(callback_query.data)
+        query = list(urls)[url_index]
+        user = callback_query.from_user
+    else:
+        message = update.message
+        message_text = message.reply_text
+        query = message.text
+        user = message.from_user
+
+    chat_id = message.chat_id
     if urls:
         url = urls.get(query)
-    elif videos:
-        url = videos
+    elif uploader_videos:
+        url = uploader_videos
     else:
         url = query
 
     print(f"{extract_user(user)} # subscribe_playlist: {query} - {url}")
 
     if not url:
-        await message.reply_text("Invalid selection", reply_markup=ReplyKeyboardRemove())
+        await message_text("Invalid selection", reply_markup=InlineKeyboardMarkup([]))
         return ConversationHandler.END
 
     users[str(chat_id)] = user.to_dict()
     subscription = subscriptions.get(url)
-    reply_markup=ReplyKeyboardMarkup(
-        [['Yes', 'No']], one_time_keyboard=True, input_field_placeholder="Show latest videos?", resize_keyboard=True
+    reply_markup = InlineKeyboardMarkup(
+        [[ InlineKeyboardButton(text='Yes', callback_data='True'), InlineKeyboardButton(text='No', callback_data='False') ]]
     )
     if subscription:
         chat_ids = subscription['chat_ids']
-        subscription_info = f"[{re.escape(subscription['title'])}]({url})"
+        subscription_info = f"[{subscription['title']}]({url})"
         if chat_id in chat_ids:
-            await message.reply_markdown_v2(f"Already subscribed to {subscription_info}", reply_markup=ReplyKeyboardRemove())
+            await message_text(f"Already subscribed to {subscription_info}", parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup([]))
             return ConversationHandler.END
         else:
             chat_ids.append(chat_id)
             context.user_data['subscription_url'] = url
-            await message.reply_markdown_v2(f"Subscribed to {subscription_info}\nShow latest videos?", reply_markup=reply_markup)
+            await message_text(f"Subscribed to {subscription_info}\nShow latest videos?", parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
             return SUBSCRIBE_SHOW
     elif urls:
         title = query
@@ -487,7 +506,7 @@ async def subscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYPE)
             uploader_videos = f"{uploader_url}/videos"
         except:
             print(f"{extract_user(user)} # subscribe_playlist_failed: {url}")
-            await message.reply_text("Error occured", reply_markup=ReplyKeyboardRemove())
+            await message_text("Error occured", reply_markup=InlineKeyboardMarkup([]))
             return ConversationHandler.END
 
     subscriptions[url] = {
@@ -496,19 +515,21 @@ async def subscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYPE)
         'uploader': uploader,
         'uploader_videos': uploader_videos,
     }
-    subscription_info = f"[{re.escape(title)}]({url})"
+    subscription_info = f"[{title}]({url})"
     context.user_data['subscription_url'] = url
-    await message.reply_markdown_v2(f"Subscribed to {subscription_info}\nShow latest videos?", reply_markup=reply_markup)
+    await message_text(f"Subscribed to {subscription_info}\nShow latest videos?", parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
     return SUBSCRIBE_SHOW
 
 async def subscribe_show(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    message = update.message
+    callback_query = update.callback_query
+    message = callback_query.message
     chat_id = message.chat_id
-    result = message.text.lower() in ['yes', 'true', 'y', 't', '1']
+    result = callback_query.data == 'True'
+    text = '\n'.join(message.text_markdown.split('\n')[:-1])
 
+    await callback_query.answer()
+    await message.edit_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup([]))
     subscription_url = context.user_data.pop('subscription_url', None)
-    reply = await message.reply_text(subscription_url, reply_markup=ReplyKeyboardRemove(), disable_notification=True)
-    await reply.delete()
 
     if result:
         try:
@@ -558,8 +579,8 @@ async def unsubscribe_playlist(update: Update, _: ContextTypes.DEFAULT_TYPE) -> 
     chat_ids[:] = (item for item in chat_ids if item != chat_id)
     if not chat_ids: subscriptions.pop(query, None)
 
-    subscription_info = f"[{re.escape(subscription['title'])}]({query})"
-    await message.reply_markdown_v2(f"Unsubscribed from {subscription_info}", reply_markup=ReplyKeyboardRemove())
+    subscription_info = f"[{subscription['title']}]({query})"
+    await message.reply_markdown(f"Unsubscribed from {subscription_info}", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
 
 async def cancel(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
@@ -600,8 +621,8 @@ def main():
         entry_points=[CommandHandler(['subscribe'], subscribe)],
         states={
             SUBSCRIBE_URL: [MessageHandler(filters.TEXT, subscribe_url)],
-            SUBSCRIBE_PLAYLIST: [MessageHandler(filters.TEXT, subscribe_playlist)],
-            SUBSCRIBE_SHOW: [MessageHandler(filters.TEXT, subscribe_show)],
+            SUBSCRIBE_PLAYLIST: [CallbackQueryHandler(subscribe_playlist)],
+            SUBSCRIBE_SHOW: [CallbackQueryHandler(subscribe_show)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     ))
