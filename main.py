@@ -442,6 +442,7 @@ async def subscribe_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     context.user_data['playlists'] = playlists
     await message.reply_markdown(f"Select playlist of [{uploader}]({uploader_url})", reply_markup=InlineKeyboardMarkup(
         [[InlineKeyboardButton(text=item['title'], callback_data=id)] for id, item in playlists.items()]
+        + [[InlineKeyboardButton(text='Cancel', callback_data='cancel')]]
     ))
     return SUBSCRIBE_PLAYLIST
     
@@ -453,6 +454,11 @@ async def subscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if callback_query:
         await callback_query.answer()
         message = callback_query.message
+        callback_data = callback_query.data
+        if callback_data == 'cancel':
+            try: await message.delete()
+            except: pass
+            return ConversationHandler.END
         user = callback_query.from_user
         message_text = message.edit_text
 
@@ -461,7 +467,7 @@ async def subscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await message_text("Error occured", reply_markup=InlineKeyboardMarkup([]))
             return ConversationHandler.END
 
-        playlist = playlists[callback_query.data]
+        playlist = playlists[callback_data]
         title = playlist['title']
         url = playlist['url']
     else:
@@ -554,6 +560,7 @@ async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             context.user_data['user_subscriptions'] = subscriptions
             await message.reply_text("Select playlist", reply_markup=InlineKeyboardMarkup(
                 [[InlineKeyboardButton(text=item['title'], callback_data=id)] for id, item in subscriptions.items()]
+                + [[InlineKeyboardButton(text='Cancel', callback_data='cancel')]]
             ))
             return UNSUBSCRIBE_PLAYLIST
         else:
@@ -565,6 +572,11 @@ async def unsubscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYP
     if callback_query:
         await callback_query.answer()
         message = callback_query.message
+        callback_data = callback_query.data
+        if callback_data == 'cancel':
+            try: await message.delete()
+            except: pass
+            return ConversationHandler.END
         user = callback_query.from_user
         message_text = message.edit_text
         user_subscriptions = context.user_data.pop('user_subscriptions', None)
@@ -574,7 +586,7 @@ async def unsubscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYP
             await message_text("Error occured", reply_markup=InlineKeyboardMarkup([]))
             return ConversationHandler.END
 
-        query = user_subscriptions[callback_query.data]['url']
+        query = user_subscriptions[callback_data]['url']
     else:
         message = update.message
         user = message.from_user
