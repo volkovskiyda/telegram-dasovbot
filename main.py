@@ -452,21 +452,21 @@ async def subscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if callback_query:
         await callback_query.answer()
         message = callback_query.message
+        user = callback_query.from_user
         message_text = message.edit_text
 
         if not urls:
-            print(f"{extract_user(user)} # subscribe_playlist_failed")
+            print(f"{extract_user(user)} # subscribe_playlist failed")
             await message_text("Error occured", reply_markup=InlineKeyboardMarkup([]))
             return ConversationHandler.END
 
         url_index = int(callback_query.data)
         query = list(urls)[url_index]
-        user = callback_query.from_user
     else:
         message = update.message
+        user = message.from_user
         message_text = message.reply_text
         query = message.text
-        user = message.from_user
 
     chat_id = message.chat_id
     if urls:
@@ -552,40 +552,58 @@ async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if remove_command_prefix(message.text):
         return await unsubscribe_playlist(update, context)
     else:
-        subscriptions = list(user_subscriptions(chat_id=message.chat_id).keys())
+        subscriptions = list(user_subscriptions(message.chat_id).keys())
         if subscriptions:
-            await message.reply_text("Select playlist", reply_markup=ReplyKeyboardMarkup(
-                [[button] for button in subscriptions], one_time_keyboard=True, input_field_placeholder="Select playlist", resize_keyboard=True)
-            )
+            context.user_data['user_subscriptions'] = subscriptions
+            await message.reply_text("Select playlist", reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton(text=url, callback_data=index)] for index, url in enumerate(subscriptions)]
+            ))
             return UNSUBSCRIBE_PLAYLIST
         else:
-            await message.reply_text("No subscription found", reply_markup=ReplyKeyboardRemove())
+            await message.reply_text("No subscription found")
             return ConversationHandler.END
 
-async def unsubscribe_playlist(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
-    message = update.message
-    user = message.from_user
-    chat_id = message.chat_id
-    query = remove_command_prefix(message.text)
+async def unsubscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    callback_query = update.callback_query
+    if callback_query:
+        await callback_query.answer()
+        message = callback_query.message
+        user = callback_query.from_user
+        message_text = message.edit_text
+        user_subscriptions = context.user_data.pop('user_subscriptions', None)
 
+        if not user_subscriptions:
+            print(f"{extract_user(user)} # unsubscribe_playlist failed")
+            await message_text("Error occured", reply_markup=InlineKeyboardMarkup([]))
+            return ConversationHandler.END
+        
+        subscription_index = int(callback_query.data)
+        query = user_subscriptions[subscription_index]
+    else:
+        message = update.message
+        user = message.from_user
+        message_text = message.reply_text
+        query = remove_command_prefix(message.text)
+    
+    chat_id = message.chat_id
     subscription = subscriptions.get(query)
 
     print(f"{extract_user(user)} # unsubscribe_playlist: {query}")
 
     if not subscription:
-        await message.reply_text("Invalid selection", reply_markup=ReplyKeyboardRemove())
+        await message_text("Invalid selection", reply_markup=InlineKeyboardMarkup([]))
         return ConversationHandler.END
     
     chat_ids = subscription['chat_ids']
     if chat_id not in chat_ids:
-        await message.reply_text("No subscription found", reply_markup=ReplyKeyboardRemove())
+        await message_text("No subscription found", reply_markup=InlineKeyboardMarkup([]))
         return ConversationHandler.END
 
     chat_ids[:] = (item for item in chat_ids if item != chat_id)
     if not chat_ids: subscriptions.pop(query, None)
 
     subscription_info = f"[{subscription['title']}]({query})"
-    await message.reply_markdown(f"Unsubscribed from {subscription_info}", reply_markup=ReplyKeyboardRemove())
+    await message_text(f"Unsubscribed from {subscription_info}", parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup([]))
     return ConversationHandler.END
 
 async def cancel(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
@@ -634,7 +652,7 @@ def main():
     application.add_handler(ConversationHandler(
         entry_points=[CommandHandler(['unsubscribe'], unsubscribe)],
         states={
-            UNSUBSCRIBE_PLAYLIST: [MessageHandler(filters.TEXT, unsubscribe_playlist)],
+            UNSUBSCRIBE_PLAYLIST: [CallbackQueryHandler(unsubscribe_playlist)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     ))
