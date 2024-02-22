@@ -438,7 +438,9 @@ async def subscribe_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     playlists = {}
     append_playlist(playlists, uploader, uploader_videos)
     for entry in entries:
-        append_playlist(playlists, entry['title'], extract_url(entry))
+        url = extract_url(entry)
+        append_playlist(playlists, entry['title'], url)
+        if query == url: return await subscribe_playlist(update, context)
 
     context.user_data['playlists'] = playlists
     await message.reply_markdown(f"Select playlist of [{uploader}]({uploader_url})", reply_markup=InlineKeyboardMarkup(
