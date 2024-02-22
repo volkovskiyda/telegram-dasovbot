@@ -77,6 +77,19 @@ def extract_nested_entries(entries: list) -> list:
 def extract_user(user: User) -> str:
     return f"{now()} {user.username} ({user.id})"
 
+def user_subscriptions(chat_id: str) -> dict:
+    user_subscriptions = {}
+
+    for url, subscription in subscriptions.copy().items():
+        if subscription['chat_ids'].__contains__(chat_id):
+            user_subscriptions[str(uuid4())] = { 'title': subscription['title'], 'url': url }
+
+    return user_subscriptions
+
+def append_playlist(playlists, title, url):
+    id = str(uuid4())
+    playlists[id] = { 'title': title, 'url': url }
+
 def extract_info(query: str, download=True) -> dict:
     info = videos.get(query)
     if info and (info.get('file_id') or not download):
@@ -327,21 +340,9 @@ async def populate_animation(bot: Bot):
     animation_file_id = await post_process(query, info, message, store_info=False)
     print(f"{now()} # animation_file_id = {animation_file_id}")
 
-def user_subscriptions(chat_id: str) -> dict:
-    user_subscriptions = {}
-
-    for url in list(subscriptions):
-        subscription = subscriptions[url]
-        if subscription['chat_ids'].__contains__(chat_id):
-            user_subscriptions[url] = subscription
-
-    return user_subscriptions
-
 async def subscription_list(update: Update, _: ContextTypes.DEFAULT_TYPE):
     message = update.message
-    subscription_list = []
-    for url, subscription in user_subscriptions(chat_id=message.chat_id).items():
-        subscription_list.append(f"[{subscription['title']}]({url})")
+    subscription_list = [f"[{item['title']}]({item['url']})" for item in user_subscriptions(message.chat_id).values()]
 
     if subscription_list: await message.reply_markdown('\n\n'.join(subscription_list))
     else: await message.reply_text('No active subscriptions')
@@ -434,18 +435,19 @@ async def subscribe_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         await message.reply_text("Error occured", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
-    urls = { uploader: uploader_videos }
-    for item in entries:
-        urls.setdefault(item['title'], extract_url(item))
+    playlists = {}
+    append_playlist(playlists, uploader, uploader_videos)
+    for entry in entries:
+        append_playlist(playlists, entry['title'], extract_url(entry))
 
-    context.user_data['urls'] = urls
+    context.user_data['playlists'] = playlists
     await message.reply_markdown(f"Select playlist of [{uploader}]({uploader_url})", reply_markup=InlineKeyboardMarkup(
-        [[InlineKeyboardButton(text=title, callback_data=index)] for index, title in enumerate(urls)]
+        [[InlineKeyboardButton(text=item['title'], callback_data=id)] for id, item in playlists.items()]
     ))
     return SUBSCRIBE_PLAYLIST
     
 async def subscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    urls = context.user_data.pop('urls', None)
+    playlists = context.user_data.pop('playlists', None)
     uploader_videos = context.user_data.pop('uploader_videos', None)
     callback_query = update.callback_query
 
@@ -455,33 +457,29 @@ async def subscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYPE)
         user = callback_query.from_user
         message_text = message.edit_text
 
-        if not urls:
+        if not playlists:
             print(f"{extract_user(user)} # subscribe_playlist failed")
             await message_text("Error occured", reply_markup=InlineKeyboardMarkup([]))
             return ConversationHandler.END
 
-        url_index = int(callback_query.data)
-        query = list(urls)[url_index]
+        playlist = playlists[callback_query.data]
+        title = playlist['title']
+        url = playlist['url']
     else:
         message = update.message
         user = message.from_user
         message_text = message.reply_text
-        query = message.text
+        title = None
+        if uploader_videos: url = uploader_videos
+        else: url = remove_command_prefix(message.text)
 
-    chat_id = message.chat_id
-    if urls:
-        url = urls.get(query)
-    elif uploader_videos:
-        url = uploader_videos
-    else:
-        url = query
-
-    print(f"{extract_user(user)} # subscribe_playlist: {query} - {url}")
+    print(f"{extract_user(user)} # subscribe_playlist: {title} - {url}")
 
     if not url:
         await message_text("Invalid selection", reply_markup=InlineKeyboardMarkup([]))
         return ConversationHandler.END
 
+    chat_id = message.chat_id
     users[str(chat_id)] = user.to_dict()
     subscription = subscriptions.get(url)
     reply_markup = InlineKeyboardMarkup(
@@ -498,10 +496,10 @@ async def subscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYPE)
             context.user_data['subscription_url'] = url
             await message_text(f"Subscribed to {subscription_info}\nShow latest videos?", parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
             return SUBSCRIBE_SHOW
-    elif urls:
-        title = query
-        uploader = next(iter(urls))
-        uploader_videos = urls[uploader]
+    elif playlists:
+        uploader_info = next(iter(playlists.values()))
+        uploader = uploader_info['title']
+        uploader_videos = uploader_info['url']
     else:
         try:
             info = ydl.extract_info(url, download=False)
@@ -552,11 +550,11 @@ async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     if remove_command_prefix(message.text):
         return await unsubscribe_playlist(update, context)
     else:
-        subscriptions = list(user_subscriptions(message.chat_id).keys())
+        subscriptions = user_subscriptions(message.chat_id)
         if subscriptions:
             context.user_data['user_subscriptions'] = subscriptions
             await message.reply_text("Select playlist", reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton(text=url, callback_data=index)] for index, url in enumerate(subscriptions)]
+                [[InlineKeyboardButton(text=item['title'], callback_data=id)] for id, item in subscriptions.items()]
             ))
             return UNSUBSCRIBE_PLAYLIST
         else:
@@ -576,9 +574,8 @@ async def unsubscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYP
             print(f"{extract_user(user)} # unsubscribe_playlist failed")
             await message_text("Error occured", reply_markup=InlineKeyboardMarkup([]))
             return ConversationHandler.END
-        
-        subscription_index = int(callback_query.data)
-        query = user_subscriptions[subscription_index]
+
+        query = user_subscriptions[callback_query.data]['url']
     else:
         message = update.message
         user = message.from_user
