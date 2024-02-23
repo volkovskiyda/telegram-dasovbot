@@ -284,6 +284,7 @@ async def process_query(bot: Bot, query: str) -> dict:
     info = extract_info(query, download=True)
     if not info:
         print(f"{now()} # process_query error: {query}")
+        intents.pop(query, None)
         return info
     caption = info.get('caption')
     file_id = info.get('file_id')
@@ -303,6 +304,7 @@ async def process_query(bot: Bot, query: str) -> dict:
             print(f"{now()} # process_query send_video fnsh: {query}")
         except: 
             print(f"{now()} # process_query send_video error: {query}")
+            intents.pop(query, None)
             return info
         file_id = await post_process(query, info, message)
     
