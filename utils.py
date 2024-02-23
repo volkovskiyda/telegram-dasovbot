@@ -31,12 +31,15 @@ def process_info(info: dict) -> dict:
         filepath = None
         filename = None
     url = extract_url(info)
+    id = info.get('id')
+    if id: thumbnail = f"https://i.ytimg.com/vi/{id}/default.jpg"
+    else: thumbnail = info.get('thumbnail')
     return {
         'file_id': info.get('file_id'),
         'webpage_url': info.get('webpage_url'),
         'title': info.get('title') or url,
         'description': info.get('description'),
-        'thumbnail': info.get('thumbnail'),
+        'thumbnail': thumbnail,
         'duration': int(info.get('duration') or 0),
         'uploader_url': info.get('uploader_url'),
         'width': info.get('width'),
