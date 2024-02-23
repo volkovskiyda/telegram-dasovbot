@@ -286,7 +286,6 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def process_query(bot: Bot, query: str) -> dict:
     info = extract_info(query)
-    intent = intents.pop(query, None)
     if not info:
         print(f"{now()} # process_query error: {query}")
         return info
@@ -309,6 +308,7 @@ async def process_query(bot: Bot, query: str) -> dict:
     video = message.video
     await post_process(query, info, message)
 
+    intent = intents.pop(query, None)
     for item in intent['chat_ids']:
         try: await bot.send_video(chat_id=item, video=video, caption=caption)
         except: print(f"{now()} # process_query send_video error: {query} - {item}")
