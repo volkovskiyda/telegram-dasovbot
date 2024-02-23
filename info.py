@@ -15,14 +15,14 @@ def video(info):
     url = info.get('webpage_url') or info['url']
     duration = int(info.get('duration') or 0)
     download = info.get('url')
-    thumbnail = info['thumbnail']
-    upload_date = info['upload_date']
+    thumbnail = info.get('thumbnail')
+    upload_date = info.get('upload_date')
     channel_url = info['channel_url']
     uploader = info['uploader']
     uploader_url = info['uploader_url']
     live_status = info['live_status']
-    is_live = info['is_live']
-    was_live = info['was_live']
+    is_live = info.get('is_live')
+    was_live = info.get('was_live')
     video = {
         'title': title,
         'url': url,
@@ -41,7 +41,7 @@ def video(info):
 
 async def info(query: str, download: bool) -> None:
     info = ydl.extract_info(query, download=download)
-    json_dumps(info)
+    # json_dumps(info)
     entries = info.get('entries')
     if entries:
         nested_entries = entries[0].get('entries')
