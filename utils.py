@@ -42,8 +42,6 @@ def process_info(info: dict) -> dict:
         'width': info.get('width'),
         'height': info.get('height'),
         'caption': f"{info.get('title')}\n{url}",
-        'created': now(),
-        'requested': now(),
         'url': info.get('url'),
         'filepath': filepath,
         'filename': filename,

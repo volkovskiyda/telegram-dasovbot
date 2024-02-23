@@ -4,7 +4,7 @@ from uuid import uuid4
 from threading import Thread, Condition
 from dotenv import load_dotenv
 from warnings import filterwarnings
-from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Bot, InlineQueryResultCachedVideo, User, Message
+from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove, Bot, InlineQueryResultCachedVideo, User, Message
 from telegram.ext import filters, Application, CommandHandler, MessageHandler, ContextTypes, InlineQueryHandler, ChosenInlineResultHandler, ConversationHandler, CallbackQueryHandler
 from telegram.constants import ParseMode
 from telegram.warnings import PTBUserWarning
@@ -78,7 +78,7 @@ def user_subscriptions(chat_id: str) -> dict:
     user_subscriptions = {}
 
     for url, subscription in subscriptions.copy().items():
-        if subscription['chat_ids'].__contains__(chat_id):
+        if subscription['chat_ids'].__contains__(str(chat_id)):
             user_subscriptions[str(uuid4())] = { 'title': subscription['title'], 'url': url }
 
     return user_subscriptions
@@ -87,11 +87,9 @@ def append_playlist(playlists, title, url):
     id = str(uuid4())
     playlists[id] = { 'title': title, 'url': url }
 
-def extract_info(query: str, download=True) -> dict:
+def extract_info(query: str, download: bool) -> dict:
     info = videos.get(query)
-    if info and (info.get('file_id') or not download):
-        videos[query]['requested'] = now()
-        return info
+    if info and (info.get('file_id') or not download): return info
     
     if not info:
         try:
@@ -99,8 +97,6 @@ def extract_info(query: str, download=True) -> dict:
             url = extract_url(info)
             info_url = videos.get(url)
             if info_url:
-                info_url['requested'] = now()
-                videos[url] = info_url
                 videos[query] = info_url
                 return info_url
         except: print(f"{now()} # extract_info error: {query}")
@@ -110,8 +106,10 @@ def extract_info(query: str, download=True) -> dict:
         except: pass
     return process_info(info)
 
-async def post_process(query: str, info: dict, message: Message, remove_message=True, store_info=True) -> str:
+async def post_process(query: str, info: dict, message: Message, store_info=True) -> str:
     file_id = message.video.file_id
+    try: await message.delete()
+    except: pass
     filepath = info.get('filepath')
     info['file_id'] = file_id
     if store_info:
@@ -122,30 +120,29 @@ async def post_process(query: str, info: dict, message: Message, remove_message=
         info.pop('entries', None)
         videos[query] = info
         videos[url] = info
-    if remove_message:
-        try: await message.delete()
-        except: pass
     if filepath:
         try: os.remove(filepath)
         except: pass
     return file_id
 
-def append_intent(query: str, chat_ids: list = [], inline_message_id: str = ''):
+def append_intent(query: str, chat_ids: list = [], inline_message_id: str = '', message: dict = {}):
     intent = intents.setdefault(query, {
         'chat_ids': [],
         'inline_message_ids': [],
+        'messages': [],
         'priority': 0,
     })
 
     intent_chat_ids = intent['chat_ids']
     intent_inline_message_ids = intent['inline_message_ids']
+    intent_messages = intent['messages']
     
     for item in chat_ids:
         if item not in intent_chat_ids:
             intent_chat_ids.append(item)
-    if inline_message_id and inline_message_id not in intent_inline_message_ids:
-        intent_inline_message_ids.append(inline_message_id)
-    intent['priority'] += 2 if inline_message_id else len(chat_ids)
+    if inline_message_id: intent_inline_message_ids.append(inline_message_id)
+    if message: intent_messages.append(message)
+    intent['priority'] += len(chat_ids) or 2
     with download_video_condition: download_video_condition.notify()
 
 def process_intents(bot: Bot):
@@ -265,7 +262,7 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not query: return
     user = inline_result.from_user
 
-    print(f"{extract_user(user)} # chosen_query_strt: {query}")
+    print(f"{extract_user(user)} # chosen_query strt: {query}")
 
     info = videos.get(query)
     file_id = info.get('file_id') if info else None
@@ -277,50 +274,58 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ),
             inline_message_id=inline_message_id,
         )
-        videos[query]['requested'] = now()
-        print(f"{extract_user(user)} # chosen_query_fnsh: {query}")
+        print(f"{extract_user(user)} # chosen_query fnsh: {query}")
         return
     
     append_intent(query, inline_message_id = inline_message_id)
-    print(f"{extract_user(user)} # chosen_query_append: {query}")
+    print(f"{extract_user(user)} # chosen_query aint: {query}")
 
 async def process_query(bot: Bot, query: str) -> dict:
-    info = extract_info(query)
+    info = extract_info(query, download=True)
     if not info:
         print(f"{now()} # process_query error: {query}")
         return info
-
     caption = info.get('caption')
-
-    try:
-        message = await bot.send_video(
-        chat_id=developer_chat_id,
-        caption=caption,
-        video=info['filepath'],
-        duration=info.get('duration'),
-        width=info.get('width'),
-        height=info.get('height'),
-        filename=info['filename'],
-        disable_notification=True,
-    )
-    except: return info
+    file_id = info.get('file_id')
+    if not file_id:
+        try:
+            print(f"{now()} # process_query send_video strt: {query}")
+            message = await bot.send_video(
+                chat_id=developer_chat_id,
+                caption=caption,
+                video=info['filepath'],
+                duration=info.get('duration'),
+                width=info.get('width'),
+                height=info.get('height'),
+                filename=info['filename'],
+                disable_notification=True,
+        )
+            print(f"{now()} # process_query send_video fnsh: {query}")
+        except: 
+            print(f"{now()} # process_query send_video error: {query}")
+            return info
+        file_id = await post_process(query, info, message)
     
-    video = message.video
-    await post_process(query, info, message)
+    await process_intent(bot, query, file_id, caption)
+    return info
 
+async def process_intent(bot: Bot, query: str, video: str, caption: str) -> dict:
     intent = intents.pop(query, None)
     for item in intent['chat_ids']:
         try: await bot.send_video(chat_id=item, video=video, caption=caption)
-        except: print(f"{now()} # process_query send_video error: {query} - {item}")
+        except: print(f"{now()} # process_intent chat_ids error: {query} - {item}")
     for item in intent['inline_message_ids']:
         try: await bot.edit_message_media(inline_message_id=item, media=InputMediaVideo(media=video, caption=caption))
-        except: print(f"{now()} # process_query edit_message_media error: {query}")
-    return info
+        except: print(f"{now()} # process_intent inline_message_ids error: {query} - {item}")
+    for item in intent['messages']:
+        try: await bot.edit_message_media(chat_id=item['chat'], message_id=item['message'], media=InputMediaVideo(media=video, caption=caption))
+        except: print(f"{now()} # process_intent messages error: {query} - {item}")
+    return intent
 
 async def populate_animation(bot: Bot):
     query = os.getenv('LOADING_VIDEO_ID')
 
-    info = extract_info(query)
+    info = extract_info(query, download=True)
 
     message = await bot.send_video(
         chat_id=developer_chat_id,
@@ -355,36 +360,26 @@ async def download(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
 async def download_url(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
     message = update.message
     user = message.from_user
-    chat_id = message.chat_id
+    chat_id = str(message.chat_id)
     query = remove_command_prefix(message.text)
 
-    print(f"{extract_user(user)} # das: {query}")
+    print(f"{extract_user(user)} # download_url: {query}")
 
     if not query: return ConversationHandler.END
 
-    info = extract_info(query)
+    info = extract_info(query, download=False)
     if not info or info.get('entries'):
         await message.reply_text("Unsupported url", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
-    video = info.get('file_id') or info.get('filepath')
-    if not video:
-        await message.reply_text("Error occured", reply_markup=ReplyKeyboardRemove())
-        return ConversationHandler.END
-
-    video_message = await message.reply_video(
-        video=video,
-        filename=info.get('filename'),
-        duration=info.get('duration'),
+    video = await message.reply_video(
+        video=animation_file_id,
         caption=info.get('caption'),
-        width=info.get("width"),
-        height=info.get("height"),
         reply_to_message_id=message.id,
-        allow_sending_without_reply=True,
     )
 
-    users[str(chat_id)] = user.to_dict()
-    await post_process(query, info, video_message, remove_message=False)
+    users[chat_id] = user.to_dict()
+    append_intent(query, message = { 'chat':chat_id, 'message':str(video.message_id) })
     return ConversationHandler.END
 
 async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -421,7 +416,7 @@ async def subscribe_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             return await subscribe_playlist(update, context)
 
     except:
-        print(f"{extract_user(user)} # subscribe_url_failed: {query}")
+        print(f"{extract_user(user)} # subscribe_url failed: {query}")
         await message.reply_text("Error occured", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
     
@@ -484,8 +479,8 @@ async def subscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await message_text("Invalid selection", reply_markup=InlineKeyboardMarkup([]))
         return ConversationHandler.END
 
-    chat_id = message.chat_id
-    users[str(chat_id)] = user.to_dict()
+    chat_id = str(message.chat_id)
+    users[chat_id] = user.to_dict()
     subscription = subscriptions.get(url)
     reply_markup = InlineKeyboardMarkup(
         [[ InlineKeyboardButton(text='Yes', callback_data='True'), InlineKeyboardButton(text='No', callback_data='False') ]]
@@ -513,7 +508,7 @@ async def subscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYPE)
             uploader = info.get('uploader') or info.get('uploader_id')
             uploader_videos = f"{uploader_url}/videos"
         except:
-            print(f"{extract_user(user)} # subscribe_playlist_failed: {url}")
+            print(f"{extract_user(user)} # subscribe_playlist failed: {url}")
             await message_text("Error occured", reply_markup=InlineKeyboardMarkup([]))
             return ConversationHandler.END
 
@@ -593,7 +588,7 @@ async def unsubscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYP
         message_text = message.reply_text
         query = remove_command_prefix(message.text)
     
-    chat_id = message.chat_id
+    chat_id = str(message.chat_id)
     subscription = subscriptions.get(query)
 
     print(f"{extract_user(user)} # unsubscribe_playlist: {query}")
