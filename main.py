@@ -69,7 +69,10 @@ def remove_command_prefix(command: str) -> str:
 
 def process_entries(entries: list) -> list:
     nested_entries = entries[0].get('entries')
-    return nested_entries if nested_entries else filter(lambda entry: entry.get('duration'), entries)
+    return nested_entries if nested_entries else filter_duration(entries)
+
+def filter_duration(entries: list) -> list:
+    return filter(lambda entry: entry.get('duration'), entries)
 
 def extract_user(user: User) -> str:
     return f"{now()} {user.username} ({user.id})"
@@ -175,7 +178,7 @@ def populate_playlist(channel: str, chat_ids: list):
     if not entries:
         print(f"{now()} # populate_playlist no entries: {channel}")
         return
-    for entry in entries[:5]: populate_video(entry, chat_ids)
+    for entry in filter_duration(entries)[:5]: populate_video(entry, chat_ids)
 
 def populate_video(entry: dict, chat_ids: list):
     query = extract_url(entry)
