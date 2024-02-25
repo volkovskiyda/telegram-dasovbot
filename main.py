@@ -72,7 +72,7 @@ def process_entries(entries: list) -> list:
     return nested_entries if nested_entries else filter_duration(entries)
 
 def filter_duration(entries: list) -> list:
-    return filter(lambda entry: entry.get('duration'), entries)
+    return list(filter(lambda entry: entry.get('duration'), entries))
 
 def extract_user(user: User) -> str:
     return f"{now()} {user.username} ({user.id})"
