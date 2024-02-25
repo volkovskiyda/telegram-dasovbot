@@ -178,7 +178,7 @@ def populate_playlist(channel: str, chat_ids: list):
     if not entries:
         print(f"{now()} # populate_playlist no entries: {channel}")
         return
-    for entry in filter_duration(entries)[:5]: populate_video(entry, chat_ids)
+    for entry in list(filter_duration(entries))[:5]: populate_video(entry, chat_ids)
 
 def populate_video(entry: dict, chat_ids: list):
     query = extract_url(entry)
