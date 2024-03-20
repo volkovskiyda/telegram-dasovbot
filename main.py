@@ -349,7 +349,7 @@ async def populate_animation(bot: Bot):
 
 async def subscription_list(update: Update, _: ContextTypes.DEFAULT_TYPE):
     message = update.message
-    subscription_list = [f"[{item['title']}]({item['url']})" for item in user_subscriptions(message.chat_id).values()]
+    subscription_list = [f"[{item['title'].replace('[','').replace(']','')}]({item['url']})" for item in user_subscriptions(message.chat_id).values()]
 
     if subscription_list: await message.reply_markdown('\n\n'.join(subscription_list))
     else: await message.reply_text('No active subscriptions')
