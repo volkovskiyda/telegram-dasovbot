@@ -1,6 +1,7 @@
 .idea/
 config/
 venv/
+.venv/
 videos/
 vpn/*
 !vpn/.gitkeep
