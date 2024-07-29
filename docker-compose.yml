@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   telegram:
     container_name: telegram
@@ -15,6 +13,7 @@ services:
 
   dasovbot:
     container_name: dasovbot
+    build: .
     image: ghcr.io/volkovskiyda/dasovbot
     restart: unless-stopped
     environment:
