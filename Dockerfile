@@ -4,9 +4,9 @@ RUN mkdir project
 WORKDIR /project
 VOLUME /project/config
 VOLUME /project/videos
-COPY info.py main.py utils.py requirements.txt /project/
+COPY info.py main.py utils.py /project/
 
 RUN python -m pip install --upgrade pip
-RUN pip install -U -r requirements.txt
+RUN pip install -U yt-dlp python-dotenv python-telegram-bot
 
 CMD python main.py
