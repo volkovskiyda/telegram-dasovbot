@@ -15,6 +15,7 @@ def video(info):
     url = info.get('webpage_url') or info['url']
     duration = int(info.get('duration') or 0)
     download = info.get('url')
+    format = info.get('format')
     thumbnail = info.get('thumbnail')
     upload_date = info.get('upload_date')
     channel_url = info['channel_url']
@@ -28,6 +29,7 @@ def video(info):
         'url': url,
         'duration': duration,
         'download': download,
+        'format': format,
         'thumbnail': thumbnail,
         'upload_date': upload_date,
         'channel_url': channel_url,
