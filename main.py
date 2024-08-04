@@ -51,7 +51,6 @@ def read_file(file_path, dict) -> dict:
         return {}
 
 def populate_files():
-    interval_sec = 60 * 10 # 10 mins
     while True:
         time.sleep(interval_sec)
         write_file(video_info_file, videos)
@@ -162,11 +161,11 @@ def process_intents(bot: Bot):
 
 def populate_subscriptions():
     while True:
-        time.sleep(interval_sec)
         for url in list(subscriptions.keys()):
             chat_ids = subscriptions[url]['chat_ids']
             if chat_ids: populate_playlist(url, chat_ids)
             else: subscriptions.pop(url, None)
+        time.sleep(interval_sec)
 
 def populate_playlist(channel: str, chat_ids: list):
     try:
