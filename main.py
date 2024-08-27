@@ -186,13 +186,13 @@ def populate_video(entry: dict, chat_ids: list):
     if file_id: return info
     append_intent(query, chat_ids = chat_ids)
 
-def inline_video(info, inline_query_ids) -> InlineQueryResultCachedVideo:
+def inline_video(info, inline_queries) -> InlineQueryResultCachedVideo:
     id = str(uuid4())
     url = extract_url(info)
     file_id = info.get('file_id')
     video_file_id = file_id or animation_file_id
     reply_markup = InlineKeyboardMarkup([[ InlineKeyboardButton(text='loading', url=url) ]]) if not file_id else None
-    inline_query_ids[id] = url
+    inline_queries[id] = url
 
     return InlineQueryResultCachedVideo(
         id=id,
@@ -242,14 +242,14 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     entries = info.get('entries')
-    inline_query_ids = {}
+    inline_queries = {}
 
     if entries:
-        results = [inline_video(process_info(item), inline_query_ids) for item in process_entries(entries)]
+        results = [inline_video(process_info(item), inline_queries) for item in process_entries(entries)]
     else:
-        results = [inline_video(info, inline_query_ids)]
+        results = [inline_video(info, inline_queries)]
 
-    context.user_data['inline_query_ids'] = inline_query_ids
+    context.user_data['inline_queries'] = inline_queries
 
     try: await inline_query.answer(results=results, cache_time=1)
     except: pass
@@ -257,10 +257,10 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     inline_result = update.chosen_inline_result
     inline_message_id = inline_result.inline_message_id
-    inline_query_ids = context.user_data.pop('inline_query_ids', None)
+    inline_queries = context.user_data.pop('inline_queries', None)
 
-    if not inline_message_id or not inline_query_ids: return
-    query = inline_query_ids[inline_result.result_id]
+    if not inline_message_id or not inline_queries: return
+    query = inline_queries[inline_result.result_id]
     if not query: return
     user = inline_result.from_user
 
