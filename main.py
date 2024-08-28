@@ -327,6 +327,12 @@ async def process_intent(bot: Bot, query: str, video: str, caption: str) -> dict
     return intent
 
 async def populate_animation(bot: Bot):
+    global animation_file_id
+    animation_file_id = os.getenv('ANIMATION_FILE_ID')
+    if animation_file_id:
+        print(f"{now()} # saved animation_file_id = {animation_file_id}")
+        return
+
     query = os.getenv('LOADING_VIDEO_ID')
 
     info = extract_info(query, download=True)
@@ -342,7 +348,6 @@ async def populate_animation(bot: Bot):
         disable_notification=True,
     )
 
-    global animation_file_id
     animation_file_id = await post_process(query, info, message, store_info=False)
     print(f"{now()} # animation_file_id = {animation_file_id}")
 
