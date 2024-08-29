@@ -381,14 +381,17 @@ async def download_url(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
         await message.reply_text("Unsupported url", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
-    video = await message.reply_video(
-        video=animation_file_id,
-        caption=info.get('caption'),
-        reply_to_message_id=message.id,
-    )
+    try:
+        video = await message.reply_video(
+            video=animation_file_id,
+            caption=info.get('caption'),
+            reply_to_message_id=message.id,
+        )
+        append_intent(query, message = { 'chat':chat_id, 'message':str(video.message_id) })
+    except:
+        print(f"{extract_user(user)} # download_url error: {query}")
 
     users[chat_id] = user.to_dict()
-    append_intent(query, message = { 'chat':chat_id, 'message':str(video.message_id) })
     return ConversationHandler.END
 
 async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
