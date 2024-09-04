@@ -4,7 +4,7 @@ def match_filter(info, *, incomplete):
     if info.get('is_live'): return f"{now()} # ignore video {info.get('url')}"
 
 ydl_opts = {
-    'format_sort': 'res:720',
+    'format': 'b[ext=mp4][height<=?720][filesize<2G]',
     'outtmpl': 'videos/%(upload_date)s - %(title).40s [%(id).20s].%(ext)s',
     'noplaylist': True,
     'extract_flat': 'in_playlist',
