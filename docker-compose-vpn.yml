@@ -1,9 +1,7 @@
-version: "3.9"
-
 services:
-  telegram_vpn:
+  vpn:
     image: ghcr.io/wfg/openvpn-client
-    container_name: telegram_vpn
+    container_name: dasovbot_vpn
     cap_add:
       - NET_ADMIN
     devices:
@@ -19,29 +17,32 @@ services:
       interval: 10s
       retries: 3
 
-  telegram:
-    container_name: telegram
+  api:
+    container_name: dasovbot_api
     image: ghcr.io/volkovskiyda/telegram-bot-api
     restart: unless-stopped
     environment:
       - TELEGRAM_API_ID=${TELEGRAM_API_ID}
       - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
     depends_on:
-      telegram_vpn:
+      vpn:
         condition: service_healthy
-    network_mode: "service:telegram_vpn"
+    network_mode: "service:vpn"
 
-  dasovbot:
+  bot:
     container_name: dasovbot
     image: ghcr.io/volkovskiyda/dasovbot
     restart: unless-stopped
+    volumes:
+      - ./config/:/project/config
     environment:
       - READ_TIMEOUT=${READ_TIMEOUT}
       - BASE_URL=${BASE_URL}
       - BOT_TOKEN=${BOT_TOKEN}
       - LOADING_VIDEO_ID=${LOADING_VIDEO_ID}
+      - ANIMATION_FILE_ID=${ANIMATION_FILE_ID}
       - DEVELOPER_CHAT_ID=${DEVELOPER_CHAT_ID}
     depends_on:
-      telegram_vpn:
+      vpn:
         condition: service_healthy
-    network_mode: "service:telegram_vpn"
+    network_mode: "service:vpn"
