@@ -243,6 +243,7 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     info = extract_info(query, download=False)
     if not info:
+        print(f"{now()} # inline_query no info: {query}")
         try: await inline_query.answer(results=[])
         except: pass
         return
@@ -256,6 +257,8 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         results = [inline_video(info, inline_queries)]
 
     context.user_data['inline_queries'] = inline_queries
+
+    if not results: print(f"{now()} # inline_query no results: {query}")
 
     try: await inline_query.answer(results=results, cache_time=1)
     except: pass
