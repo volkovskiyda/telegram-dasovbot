@@ -27,7 +27,7 @@ services:
     depends_on:
       vpn:
         condition: service_healthy
-    network_mode: "service:vpn"
+    network_mode: service:vpn
 
   bot:
     container_name: dasovbot
@@ -36,8 +36,8 @@ services:
     volumes:
       - ./config/:/project/config
     environment:
-      - READ_TIMEOUT=${READ_TIMEOUT}
       - BASE_URL=${BASE_URL}
+      - READ_TIMEOUT=${READ_TIMEOUT}
       - BOT_TOKEN=${BOT_TOKEN}
       - LOADING_VIDEO_ID=${LOADING_VIDEO_ID}
       - ANIMATION_FILE_ID=${ANIMATION_FILE_ID}
@@ -45,4 +45,4 @@ services:
     depends_on:
       vpn:
         condition: service_healthy
-    network_mode: "service:vpn"
+    network_mode: service:vpn

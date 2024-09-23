@@ -6,10 +6,8 @@ services:
     environment:
       - TELEGRAM_API_ID=${TELEGRAM_API_ID}
       - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
-    networks:
-      - dasovbot
     ports:
-      - "8081:8081"
+      - 8081:8081
 
   bot:
     container_name: dasovbot
@@ -17,15 +15,9 @@ services:
     image: ghcr.io/volkovskiyda/dasovbot
     restart: unless-stopped
     environment:
+      - BASE_URL=http://api:8081/bot
       - READ_TIMEOUT=${READ_TIMEOUT}
-      - BASE_URL=${BASE_URL}
       - BOT_TOKEN=${BOT_TOKEN}
       - LOADING_VIDEO_ID=${LOADING_VIDEO_ID}
       - ANIMATION_FILE_ID=${ANIMATION_FILE_ID}
       - DEVELOPER_CHAT_ID=${DEVELOPER_CHAT_ID}
-    networks:
-      - dasovbot
-
-networks:
-  dasovbot:
-    driver: bridge
