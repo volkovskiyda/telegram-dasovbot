@@ -2,7 +2,7 @@ services:
   api:
     container_name: dasovbot_api
     image: ghcr.io/volkovskiyda/telegram-bot-api
-    restart: unless-stopped
+    restart: always
     environment:
       - TELEGRAM_API_ID=${TELEGRAM_API_ID}
       - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
@@ -13,7 +13,7 @@ services:
     container_name: dasovbot
     build: .
     image: ghcr.io/volkovskiyda/dasovbot
-    restart: unless-stopped
+    restart: always
     environment:
       - BASE_URL=http://api:8081/bot
       - READ_TIMEOUT=${READ_TIMEOUT}
