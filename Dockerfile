@@ -8,6 +8,6 @@ COPY info.py main.py utils.py /project/
 
 RUN apk -U add bash
 RUN python -m pip install --upgrade pip
-RUN pip install -U python-dotenv python-telegram-bot --pre "yt-dlp[default]"
+RUN pip install -U python-dotenv python-telegram-bot yt-dlp
 
 CMD python main.py
