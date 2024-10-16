@@ -14,6 +14,8 @@ services:
       - ./vpn:/gluetun
     devices:
       - /dev/net/tun
+    ports:
+      - 8081:8081
     healthcheck:
       test: ["CMD", "nslookup", "google.com", "8.8.8.8"]
       timeout: 10s
@@ -35,6 +37,7 @@ services:
   bot:
     container_name: dasovbot
     image: ghcr.io/volkovskiyda/dasovbot
+    build: .
     restart: always
     volumes:
       - ./config/:/project/config
