@@ -71,13 +71,7 @@ def process_entries(entries: list) -> list:
     return nested_entries if nested_entries else filter_entries(entries)
 
 def filter_entries(entries: list) -> list:
-    return list(filter(lambda entry: entry.get('duration') and entry.get('live_status') is None, entries))
-
-# def filter_duration(entries: list) -> filter:
-#     return filter(lambda entry: entry.get('duration'), entries)
-
-# def filter_status(entries: list) -> filter:
-#     return filter(lambda entry: entry.get('live_status') is None, entries)
+    return list(filter(lambda entry: entry.get('duration') and (entry.get('live_status') is None or entry['live_status'] != 'is_live'), entries))
 
 def extract_user(user: User) -> str:
     return f"{now()} {user.username} ({user.id})"
