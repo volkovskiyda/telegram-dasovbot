@@ -20,10 +20,10 @@ animation_file_id: str
 
 ydl = yt_dlp.YoutubeDL(ydl_opts)
 
-video_info_file = "config/videos.json"
-user_info_file = "config/users.json"
-subscription_info_file = "config/subscriptions.json"
-intent_info_file = "config/intents.json"
+video_info_file = "/data/videos.json"
+user_info_file = "/data/users.json"
+subscription_info_file = "/data/subscriptions.json"
+intent_info_file = "/data/intents.json"
 
 videos = {}
 users = {}

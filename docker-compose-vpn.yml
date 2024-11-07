@@ -40,6 +40,8 @@ services:
     build: .
     restart: always
     volumes:
+      - ./config/data/:/data
+      - ./config/media/:/media
       - ./config/:/project/config
     environment:
       BASE_URL: $BASE_URL

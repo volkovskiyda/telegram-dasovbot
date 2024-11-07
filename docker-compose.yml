@@ -14,6 +14,9 @@ services:
     build: .
     image: ghcr.io/volkovskiyda/dasovbot
     restart: always
+    volumes:
+      - ./config/data/:/data
+      - ./config/media/:/media
     environment:
       BASE_URL: http://api:8081/bot
       READ_TIMEOUT: $READ_TIMEOUT

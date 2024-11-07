@@ -1,9 +1,9 @@
 FROM python
 
-RUN mkdir project
+RUN mkdir project data
+VOLUME /data
+VOLUME /media
 WORKDIR /project
-VOLUME /project/config
-VOLUME /project/videos
 COPY info.py main.py utils.py /project/
 
 RUN python -m pip install --upgrade pip
