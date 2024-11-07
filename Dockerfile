@@ -3,6 +3,8 @@ FROM python
 RUN mkdir project data
 VOLUME /data
 VOLUME /media
+VOLUME /home
+
 WORKDIR /project
 COPY info.py main.py utils.py /project/
 
