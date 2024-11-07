@@ -1,4 +1,4 @@
-import os, re, time, json, asyncio, yt_dlp
+import os, shutil, re, time, json, asyncio, yt_dlp
 from utils import ydl_opts, extract_url, now, process_info
 from uuid import uuid4
 from threading import Thread, Condition
@@ -123,9 +123,15 @@ async def post_process(query: str, info: dict, message: Message, store_info=True
         videos[query] = info
         videos[url] = info
     if filepath:
-        try: os.remove(filepath)
-        except: pass
+        if intents[query]['chat_ids'].__contains__(developer_chat_id):
+            try: shutil.move(filepath, '/home/'.join(filepath.rsplit('/media/', 1)))
+            except: remove(filepath)
+        else: remove(filepath)
     return file_id
+
+def remove(filepath: str):
+    try: os.remove(filepath)
+    except: pass
 
 def append_intent(query: str, chat_ids: list = [], inline_message_id: str = '', message: dict = {}):
     intent = intents.setdefault(query, {
