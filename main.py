@@ -123,7 +123,10 @@ async def post_process(query: str, info: dict, message: Message, store_info=True
         videos[query] = info
         videos[url] = info
     if filepath:
-        if intents[query]['chat_ids'].__contains__(developer_chat_id):
+        chat_ids = []
+        intent = intents[query]
+        if intent: chat_ids = intent['chat_ids'] or [message['chat'] for message in intent['messages']]
+        if chat_ids.__contains__(developer_chat_id) or str(message.chat_id) == developer_chat_id:
             try: shutil.move(filepath, '/home/'.join(filepath.rsplit('/media/', 1)))
             except: remove(filepath)
         else: remove(filepath)
