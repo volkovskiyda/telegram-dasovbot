@@ -16,6 +16,7 @@ DAS_URL, = range(1)
 load_dotenv()
 
 developer_chat_id = os.getenv('DEVELOPER_CHAT_ID')
+developer_id = os.getenv('DEVELOPER_ID') or developer_chat_id
 animation_file_id: str
 
 ydl = yt_dlp.YoutubeDL(ydl_opts)
@@ -126,7 +127,7 @@ async def post_process(query: str, info: dict, message: Message, store_info=True
         chat_ids = []
         intent = intents[query]
         if intent: chat_ids = intent['chat_ids'] or [message['chat'] for message in intent['messages']]
-        if chat_ids.__contains__(developer_chat_id) or str(message.chat_id) == developer_chat_id:
+        if chat_ids.__contains__(developer_id) or str(message.chat_id) == developer_id:
             try: shutil.move(filepath, '/home/'.join(filepath.rsplit('/media/', 1)))
             except: remove(filepath)
         else: remove(filepath)
