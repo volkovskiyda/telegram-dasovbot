@@ -1,11 +1,14 @@
+import os
 from time import strftime
 
 def match_filter(info, *, incomplete):
     if info.get('is_live'): return f"{now()} # ignore video {info.get('url')}"
 
+config_folder = os.getenv('CONFIG_FOLDER') or '/'
+
 ydl_opts = {
     'format': 'mp4[height<=?720][filesize_approx<=?2G]',
-    'outtmpl': '/media/%(upload_date)s - %(title).40s [%(id).20s].%(ext)s',
+    'outtmpl': f'{config_folder}/media/%(upload_date)s - %(title).40s [%(id).20s].%(ext)s',
     'noplaylist': True,
     'extract_flat': 'in_playlist',
     'playlist_items': '1-20',

@@ -1,5 +1,5 @@
 import os, shutil, re, time, json, asyncio, yt_dlp
-from utils import ydl_opts, extract_url, now, process_info
+from utils import ydl_opts, extract_url, now, process_info, config_folder
 from uuid import uuid4
 from threading import Thread, Condition
 from dotenv import load_dotenv
@@ -20,10 +20,10 @@ animation_file_id: str
 
 ydl = yt_dlp.YoutubeDL(ydl_opts)
 
-video_info_file = "/data/videos.json"
-user_info_file = "/data/users.json"
-subscription_info_file = "/data/subscriptions.json"
-intent_info_file = "/data/intents.json"
+video_info_file = f'{config_folder}/data/videos.json'
+user_info_file = f'{config_folder}/data/users.json'
+subscription_info_file = f'{config_folder}/data/subscriptions.json'
+intent_info_file = f'{config_folder}/data/intents.json'
 
 videos = {}
 users = {}
