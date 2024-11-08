@@ -1,7 +1,7 @@
-import os, shutil, re, time, json, asyncio, yt_dlp
+import os, shutil, re, json, asyncio, yt_dlp
+from asyncio import Queue
 from utils import ydl_opts, extract_url, now, process_info, config_folder
 from uuid import uuid4
-from threading import Thread, Condition
 from dotenv import load_dotenv
 from warnings import filterwarnings
 from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove, Bot, InlineQueryResultCachedVideo, User, Message
@@ -31,7 +31,7 @@ subscriptions = {}
 intents = {}
 
 interval_sec = 60 * 60 # an hour
-download_video_condition = Condition()
+download_video_condition = Queue()
 
 filterwarnings(action="ignore", message=r".*CallbackQueryHandler", category=PTBUserWarning)
 
@@ -50,9 +50,9 @@ def read_file(file_path, dict) -> dict:
         write_file(file_path, dict)
         return {}
 
-def populate_files():
+async def populate_files():
     while True:
-        time.sleep(interval_sec)
+        await asyncio.sleep(interval_sec)
         write_file(video_info_file, videos)
         write_file(user_info_file, users)
         write_file(subscription_info_file, subscriptions)
@@ -133,7 +133,7 @@ def remove(filepath: str):
     try: os.remove(filepath)
     except: pass
 
-def append_intent(query: str, chat_ids: list = [], inline_message_id: str = '', message: dict = {}):
+async def append_intent(query: str, chat_ids: list = [], inline_message_id: str = '', message: dict = {}):
     intent = intents.setdefault(query, {
         'chat_ids': [],
         'inline_message_ids': [],
@@ -151,29 +151,27 @@ def append_intent(query: str, chat_ids: list = [], inline_message_id: str = '', 
     if inline_message_id: intent_inline_message_ids.append(inline_message_id)
     if message: intent_messages.append(message)
     intent['priority'] += len(chat_ids) or 2
-    with download_video_condition: download_video_condition.notify()
+    download_video_condition.put_nowait(query)
 
-def process_intents(bot: Bot):
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+async def process_intents(bot: Bot):
     while True:
         if not intents:
-            with download_video_condition: download_video_condition.wait(interval_sec)
+            await download_video_condition.get()
         if not intents:
-            time.sleep(5)
+            await asyncio.sleep(5)
             continue
         max_priority = max(intents, key=lambda key: intents[key]['priority'])
-        loop.run_until_complete(process_query(bot, max_priority))
+        await process_query(bot, max_priority)
 
-def populate_subscriptions():
+async def populate_subscriptions():
     while True:
         for url in list(subscriptions.keys()):
             chat_ids = subscriptions[url]['chat_ids']
-            if chat_ids: populate_playlist(url, chat_ids)
+            if chat_ids: await populate_playlist(url, chat_ids)
             else: subscriptions.pop(url, None)
-        time.sleep(interval_sec)
+        await asyncio.sleep(interval_sec)
 
-def populate_playlist(channel: str, chat_ids: list):
+async def populate_playlist(channel: str, chat_ids: list):
     try:
         info = ydl.extract_info(channel, download=False)
     except:
@@ -183,14 +181,14 @@ def populate_playlist(channel: str, chat_ids: list):
     if not entries:
         print(f"{now()} # populate_playlist no entries: {channel}")
         return
-    for entry in filter_entries(entries)[:5]: populate_video(entry, chat_ids)
+    for entry in filter_entries(entries)[:5]: await populate_video(entry, chat_ids)
 
-def populate_video(entry: dict, chat_ids: list):
+async def populate_video(entry: dict, chat_ids: list):
     query = extract_url(entry)
     info = videos.get(query)
     file_id = info.get('file_id') if info else None
     if file_id: return info
-    append_intent(query, chat_ids = chat_ids)
+    await append_intent(query, chat_ids = chat_ids)
 
 def inline_video(info, inline_queries) -> InlineQueryResultCachedVideo:
     id = str(uuid4())
@@ -288,7 +286,7 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"{extract_user(user)} # chosen_query fnsh: {query}")
         return
     
-    append_intent(query, inline_message_id = inline_message_id)
+    await append_intent(query, inline_message_id = inline_message_id)
     print(f"{extract_user(user)} # chosen_query aint: {query}")
 
 async def process_query(bot: Bot, query: str) -> dict:
@@ -398,7 +396,7 @@ async def download_url(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
             caption=info.get('caption'),
             reply_to_message_id=message.id,
         )
-        append_intent(query, message = { 'chat':chat_id, 'message':str(video.message_id) })
+        await append_intent(query, message = { 'chat':chat_id, 'message':str(video.message_id) })
     except:
         print(f"{extract_user(user)} # download_url error: {query}")
 
@@ -648,7 +646,6 @@ def main():
         .token(token)
         .base_url(base_url)
         .read_timeout(float(timeout))
-        .concurrent_updates(True)
         .build()
     )
     bot = application.bot
@@ -685,10 +682,12 @@ def main():
     application.add_handler(MessageHandler(filters.COMMAND, unknown))
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    loop.run_until_complete(populate_animation(bot))
-    Thread(target=populate_subscriptions, daemon=True).start()
-    Thread(target=populate_files, daemon=True).start()
-    Thread(target=process_intents, args=(bot,), daemon=True).start()
+    asyncio.gather(
+        populate_animation(bot),
+        populate_subscriptions(),
+        populate_files(),
+        process_intents(bot),
+    )
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
