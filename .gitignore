@@ -2,7 +2,6 @@
 config/
 venv/
 .venv/
-videos/
 vpn/*
 !vpn/.gitkeep
 .env
