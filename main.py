@@ -185,7 +185,7 @@ async def populate_playlist(channel: str, chat_ids: list):
     if not entries:
         print(f"{now()} # populate_playlist no entries: {channel}")
         return
-    for entry in filter_entries(entries)[:5]: await populate_video(entry, chat_ids)
+    for entry in filter_entries(entries)[:5][::-1]: await populate_video(entry, chat_ids)
 
 async def populate_video(entry: dict, chat_ids: list):
     query = extract_url(entry)
