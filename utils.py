@@ -1,5 +1,6 @@
 import os
 from time import strftime
+from datetime import datetime
 
 def match_filter(info, *, incomplete):
     if info.get('is_live'): return f"{now()} # ignore video {info.get('url')}"
@@ -37,11 +38,15 @@ def process_info(info: dict) -> dict:
     id = info.get('id')
     if id: thumbnail = f"https://i.ytimg.com/vi/{id}/default.jpg"
     else: thumbnail = info.get('thumbnail')
+    timestamp = info.get('timestamp')
+    if timestamp: timestamp = datetime.fromtimestamp(timestamp).strftime('%Y%m%d_%H%M%S')
     return {
         'file_id': info.get('file_id'),
         'webpage_url': info.get('webpage_url'),
         'title': info.get('title') or url,
         'description': info.get('description'),
+        'upload_date': info.get('upload_date'),
+        'timestamp': timestamp,
         'thumbnail': thumbnail,
         'duration': int(info.get('duration') or 0),
         'uploader_url': info.get('uploader_url'),
