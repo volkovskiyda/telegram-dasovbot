@@ -51,5 +51,6 @@ def process_info(info: dict) -> dict:
         'url': info.get('url'),
         'filepath': filepath,
         'filename': filename,
+        'format': info.get('format'),
         'entries': info.get('entries'),
     }
