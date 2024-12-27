@@ -24,7 +24,7 @@ def extract_url(info: dict) -> str:
     return info.get('webpage_url') or info['url']
 
 def now() -> str:
-    return strftime('%Y-%m-%d %H:%M:%S')
+    return strftime(datetime_format)
 
 def process_info(info: dict) -> dict:
     if not info: return None
@@ -41,7 +41,7 @@ def process_info(info: dict) -> dict:
     if id: thumbnail = f"https://i.ytimg.com/vi/{id}/default.jpg"
     else: thumbnail = info.get('thumbnail')
     timestamp = info.get('timestamp')
-    if timestamp: timestamp = datetime.fromtimestamp(timestamp).strftime('%Y%m%d_%H%M%S')
+    if timestamp: timestamp = datetime.fromtimestamp(timestamp).strftime(datetime_format)
     return {
         'file_id': info.get('file_id'),
         'webpage_url': info.get('webpage_url'),
