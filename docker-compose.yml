@@ -3,6 +3,7 @@ services:
     container_name: dasovbot_api
     image: ghcr.io/volkovskiyda/telegram-bot-api
     restart: always
+    pull_policy: always
     environment:
       TELEGRAM_API_ID: $TELEGRAM_API_ID
       TELEGRAM_API_HASH: $TELEGRAM_API_HASH
@@ -14,6 +15,7 @@ services:
     build: .
     image: ghcr.io/volkovskiyda/dasovbot
     restart: always
+    pull_policy: always
     volumes:
       - ./config/data/:/data
       - ./config/media/:/media
