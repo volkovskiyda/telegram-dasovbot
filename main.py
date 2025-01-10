@@ -185,10 +185,9 @@ async def populate_playlist(channel: str, chat_ids: list):
     if not entries:
         print(f"{now()} # populate_playlist no entries: {channel}")
         return
-    for entry in filter_entries(entries)[:5][::-1]: await populate_video(entry, chat_ids)
+    for entry in filter_entries(entries)[:5][::-1]: await populate_video(extract_url(entry), chat_ids)
 
-async def populate_video(entry: dict, chat_ids: list):
-    query = extract_url(entry)
+async def populate_video(query: str, chat_ids: list):
     info = videos.get(query)
     file_id = info.get('file_id') if info else None
     if file_id: return info
@@ -262,8 +261,12 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not results: print(f"{now()} # inline_query no results: {query}")
 
-    try: await inline_query.answer(results=results, cache_time=1)
-    except: pass
+    try:
+        await inline_query.answer(results=results, cache_time=1)
+    except:
+        single_video = len(results) == 1
+        print(f"{now()} # inline_query answer error: {query}, single: {single_video}")
+        if (single_video): await populate_video(query, chat_ids = [user.id])
 
 async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     inline_result = update.chosen_inline_result
