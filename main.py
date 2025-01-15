@@ -30,6 +30,7 @@ videos = {}
 users = {}
 subscriptions = {}
 intents = {}
+temporary_inline_queries = {}
 
 interval_sec = 60 * 60 # an hour
 download_video_condition = Queue()
@@ -157,6 +158,13 @@ async def append_intent(query: str, chat_ids: list = [], inline_message_id: str 
     intent['priority'] += len(chat_ids) or 2
     download_video_condition.put_nowait(query)
 
+async def clear_temporary_inline_queries():
+    while True:
+        for url in temporary_inline_queries.copy():
+            if temporary_inline_queries[url]['marked']: del temporary_inline_queries[url]
+            else: temporary_inline_queries[url]['marked'] = True
+        await asyncio.sleep(10 * 60)
+
 async def process_intents(bot: Bot):
     while True:
         if not intents:
@@ -242,6 +250,20 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not query: return
 
+    temporary_inline_query = temporary_inline_queries.setdefault(query, {
+        'timestamp': now(),
+        'results': [],
+        'inline_queries': {},
+        'marked': False,
+    })
+
+    results = temporary_inline_query['results']
+    if results:
+        context.user_data['inline_queries'] = temporary_inline_query['inline_queries']
+        try: await inline_query.answer(results=results, cache_time=1)
+        except: pass
+        return
+
     info = extract_info(query, download=False)
     if not info:
         print(f"{now()} # inline_query no info: {query}")
@@ -256,6 +278,9 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         results = [inline_video(process_info(item), inline_queries) for item in process_entries(entries)]
     else:
         results = [inline_video(info, inline_queries)]
+
+    temporary_inline_query['results'] = results
+    temporary_inline_query['inline_queries'] = inline_queries
 
     context.user_data['inline_queries'] = inline_queries
 
@@ -694,6 +719,7 @@ def main():
         populate_subscriptions(),
         populate_files(),
         process_intents(bot),
+        clear_temporary_inline_queries(),
     )
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
