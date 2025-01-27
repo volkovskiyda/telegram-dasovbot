@@ -289,9 +289,10 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         await inline_query.answer(results=results, cache_time=1)
-    except:
+    except Exception as e:
         single_video = len(results) == 1
-        print(f"{now()} # inline_query answer error: {query}, single: {single_video}")
+        traceback.print_exception(e)
+        print(f"{now()} # inline_query answer error: {query}, single: {single_video}, {type(e)=}, {e=}")
         if (single_video): await populate_video(query, chat_ids = [user.id])
 
 async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
