@@ -431,8 +431,9 @@ async def download_url(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
             reply_to_message_id=message.id,
         )
         await append_intent(query, message = { 'chat':chat_id, 'message':str(video.message_id) })
-    except:
-        print(f"{extract_user(user)} # download_url error: {query}")
+    except Exception as e:
+        traceback.print_exception(e)
+        print(f"{extract_user(user)} # download_url error: {query}, {type(e)=}, {e=}")
 
     users[chat_id] = user.to_dict()
     return ConversationHandler.END
