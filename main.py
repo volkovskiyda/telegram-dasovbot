@@ -1,4 +1,4 @@
-import os, shutil, re, json, asyncio, yt_dlp
+import os, shutil, traceback, re, json, asyncio, yt_dlp
 from asyncio import Queue
 from utils import ydl_opts, extract_url, now, process_info, config_folder
 from uuid import uuid4
