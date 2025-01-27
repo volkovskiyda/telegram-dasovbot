@@ -12,7 +12,6 @@ services:
 
   bot:
     container_name: dasovbot
-    build: .
     image: ghcr.io/volkovskiyda/dasovbot
     restart: always
     pull_policy: always
