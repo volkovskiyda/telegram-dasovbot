@@ -258,7 +258,8 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     })
 
     results = temporary_inline_query['results']
-    if results:
+    info = videos.get(query)
+    if results and not info:
         context.user_data['inline_queries'] = temporary_inline_query['inline_queries']
         try: await inline_query.answer(results=results, cache_time=1)
         except: pass
