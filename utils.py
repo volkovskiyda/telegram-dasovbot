@@ -10,7 +10,7 @@ config_folder = os.getenv('CONFIG_FOLDER') or '/'
 datetime_format = '%Y%m%d_%H%M%S'
 
 ydl_opts = {
-    'format': 'mp4[height<=?720][filesize_approx<=?2G]',
+    'format': 'mp4[vcodec!=none][acodec!=none][height<=?720][filesize_approx<=?2G]/mp4[vcodec!=none][height<=?720]+m4a',
     'outtmpl': f'{config_folder}/media/%(timestamp>{datetime_format})s - %(title).80s [%(id).20s].%(ext)s',
     'noplaylist': True,
     'extract_flat': 'in_playlist',
