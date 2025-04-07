@@ -1,6 +1,6 @@
-import os, shutil, traceback, re, json, asyncio, yt_dlp
+import os, shutil, traceback, re, asyncio, yt_dlp
 from asyncio import Queue
-from utils import ydl_opts, extract_url, now, process_info, config_folder
+from utils import ydl_opts, extract_url, now, process_info, config_folder, write_file, read_file
 from uuid import uuid4
 from dotenv import load_dotenv
 from warnings import filterwarnings
@@ -36,21 +36,6 @@ interval_sec = 60 * 60 # an hour
 download_video_condition = Queue()
 
 filterwarnings(action="ignore", message=r".*CallbackQueryHandler", category=PTBUserWarning)
-
-def write_file(file_path, dict):
-    try:
-        file = open(file_path, "w", encoding='utf8')
-        json.dump(dict, file, indent=1, ensure_ascii=False)
-        file.write('\r')
-    except: pass
-
-def read_file(file_path, dict) -> dict:
-    try:
-        with open(file_path, "r", encoding='utf8') as file:
-            return json.load(file)
-    except:
-        write_file(file_path, dict)
-        return {}
 
 async def populate_files():
     while True:

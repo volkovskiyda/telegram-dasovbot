@@ -1,4 +1,4 @@
-import os
+import os, json
 from time import strftime
 from datetime import datetime
 
@@ -62,3 +62,18 @@ def process_info(info: dict) -> dict:
         'format': info.get('format'),
         'entries': info.get('entries'),
     }
+
+def write_file(file_path, dict):
+    try:
+        file = open(file_path, "w", encoding='utf8')
+        json.dump(dict, file, indent=1, ensure_ascii=False)
+        file.write('\r')
+    except: pass
+
+def read_file(file_path, dict) -> dict:
+    try:
+        with open(file_path, "r", encoding='utf8') as file:
+            return json.load(file)
+    except:
+        write_file(file_path, dict)
+        return {}
