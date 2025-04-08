@@ -9,6 +9,7 @@ config_folder = os.getenv('CONFIG_FOLDER') or '/'
 video_info_file = f'{config_folder}/data/videos.json'
 user_info_file = f'{config_folder}/data/users.json'
 subscription_info_file = f'{config_folder}/data/subscriptions.json'
+new_subscriptions_file = f'{config_folder}/data/new_subscriptions.txt'
 intent_info_file = f'{config_folder}/data/intents.json'
 
 datetime_format = '%Y%m%d_%H%M%S'
