@@ -1,5 +1,6 @@
 .idea/
 config/
+data/
 venv/
 .venv/
 vpn/*
