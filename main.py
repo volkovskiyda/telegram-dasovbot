@@ -1,6 +1,6 @@
 import os, shutil, traceback, re, asyncio, yt_dlp
 from asyncio import Queue
-from utils import ydl_opts, extract_url, now, process_info, config_folder, write_file, read_file
+from utils import ydl_opts, extract_url, now, process_info, write_file, read_file, video_info_file, user_info_file, subscription_info_file, intent_info_file
 from uuid import uuid4
 from dotenv import load_dotenv
 from warnings import filterwarnings
@@ -19,13 +19,6 @@ developer_chat_id = os.getenv('DEVELOPER_CHAT_ID')
 developer_id = os.getenv('DEVELOPER_ID') or developer_chat_id
 animation_file_id: str
 
-ydl = yt_dlp.YoutubeDL(ydl_opts)
-
-video_info_file = f'{config_folder}/data/videos.json'
-user_info_file = f'{config_folder}/data/users.json'
-subscription_info_file = f'{config_folder}/data/subscriptions.json'
-intent_info_file = f'{config_folder}/data/intents.json'
-
 videos = {}
 users = {}
 subscriptions = {}
@@ -36,6 +29,8 @@ interval_sec = 60 * 60 # an hour
 download_video_condition = Queue()
 
 filterwarnings(action="ignore", message=r".*CallbackQueryHandler", category=PTBUserWarning)
+
+ydl = yt_dlp.YoutubeDL(ydl_opts)
 
 async def populate_files():
     while True:

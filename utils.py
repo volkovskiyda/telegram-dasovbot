@@ -6,6 +6,10 @@ def match_filter(info, *, incomplete):
     if info.get('is_live'): return f"{now()} # ignore video {info.get('url')}"
 
 config_folder = os.getenv('CONFIG_FOLDER') or '/'
+video_info_file = f'{config_folder}/data/videos.json'
+user_info_file = f'{config_folder}/data/users.json'
+subscription_info_file = f'{config_folder}/data/subscriptions.json'
+intent_info_file = f'{config_folder}/data/intents.json'
 
 datetime_format = '%Y%m%d_%H%M%S'
 
