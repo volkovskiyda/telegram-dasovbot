@@ -6,10 +6,10 @@ ydl = yt_dlp.YoutubeDL(ydl_opts)
 subscriptions = {}
 
 def add_subscription(chat_id, url):
-    check_subscription_local(chat_id, f"{url}/videos")
-    check_subscription_local(chat_id, f"{url}/streams")
+    videos = check_subscription_local(chat_id, f"{url}/videos")
+    streams = check_subscription_local(chat_id, f"{url}/streams")
 
-    if not check_subscription_local(chat_id, url):
+    if not videos and not streams:
         try:
             info = ydl.extract_info(url, download=False)
             uploader_url = info.get('uploader_url')
@@ -17,7 +17,7 @@ def add_subscription(chat_id, url):
             uploader = info.get('uploader') or info.get('uploader_id')
             uploader_videos = f"{uploader_url}/videos"
 
-            subscriptions[url] = {
+            subscriptions[uploader_videos] = {
                 'chat_ids': [chat_id],
                 'title': title,
                 'uploader': uploader,
