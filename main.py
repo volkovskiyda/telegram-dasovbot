@@ -1,4 +1,4 @@
-import os, shutil, traceback, re, dotenv, asyncio, yt_dlp
+import os, shutil, traceback, re, dotenv, asyncio, ffmpeg, yt_dlp
 from threading import Lock
 from utils import ydl_opts, extract_url, now, process_info, write_file, read_file, video_info_file, user_info_file, subscription_info_file, intent_info_file
 from uuid import uuid4
@@ -329,13 +329,35 @@ async def process_query(bot: Bot, query: str) -> dict:
                 height=info.get('height'),
                 filename=info['filename'],
                 disable_notification=True,
-        )
+            )
             print(f"{now()} # process_query send_video fnsh: {query}")
         except Exception as e:
             if isinstance(e, NetworkError) and os.path.getsize(video_path) >> 20 > 2000:
                 try: await bot.send_message(chat_id=developer_id, text=f'[large_video_error]\n{caption}', disable_notification=False)
                 except: pass
-            print(f"{now()} # process_query send_video error: {query}")
+                base, ext = os.path.splitext(video_path)
+                temp_video_path = f'{base}.temp{ext}'
+                ffmpeg.input(video_path).filter('scale', -1, 360).output(temp_video_path, format='mp4', map='0:a:0', loglevel='quiet').run()
+                try:
+                    print(f"{now()} # process_query send_video rsrt: {query}")
+                    message = await bot.send_video(
+                        chat_id=developer_chat_id,
+                        caption=caption,
+                        video=temp_video_path,
+                        duration=info.get('duration'),
+                        width=info.get('width'),
+                        height=info.get('height'),
+                        filename=info['filename'],
+                        disable_notification=True,
+                    )
+                    print(f"{now()} # process_query send_video fnsh: {query}")
+                    try: await bot.send_message(chat_id=developer_id, text=f'[large_video_fixed]\n{caption}', disable_notification=True)
+                    except: pass
+                    file_id = await post_process(query, info, message)
+                    await process_intent(bot, query, file_id, caption)
+                    return info
+                except: pass
+                finally: remove(temp_video_path)
             intents.pop(query, None)
             return info
         file_id = await post_process(query, info, message)
