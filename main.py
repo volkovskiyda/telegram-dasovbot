@@ -7,6 +7,7 @@ from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboa
 from telegram.ext import filters, Application, CommandHandler, MessageHandler, ContextTypes, InlineQueryHandler, ChosenInlineResultHandler, ConversationHandler, CallbackQueryHandler
 from telegram.constants import ParseMode
 from telegram.warnings import PTBUserWarning
+from telegram.error import NetworkError
 
 SUBSCRIBE_URL, SUBSCRIBE_PLAYLIST, SUBSCRIBE_SHOW, = range(3)
 UNSUBSCRIBE_PLAYLIST, = range(1)
@@ -317,11 +318,12 @@ async def process_query(bot: Bot, query: str) -> dict:
     file_id = info.get('file_id')
     if not file_id:
         try:
+            video_path = info['filepath']
             print(f"{now()} # process_query send_video strt: {query}")
             message = await bot.send_video(
                 chat_id=developer_chat_id,
                 caption=caption,
-                video=info['filepath'],
+                video=video_path,
                 duration=info.get('duration'),
                 width=info.get('width'),
                 height=info.get('height'),
@@ -329,7 +331,10 @@ async def process_query(bot: Bot, query: str) -> dict:
                 disable_notification=True,
         )
             print(f"{now()} # process_query send_video fnsh: {query}")
-        except: 
+        except Exception as e:
+            if isinstance(e, NetworkError) and os.path.getsize(video_path) >> 20 > 2000:
+                try: await bot.send_message(chat_id=developer_id, text=f'[large_video_error]\n{caption}', disable_notification=False)
+                except: pass
             print(f"{now()} # process_query send_video error: {query}")
             intents.pop(query, None)
             return info
