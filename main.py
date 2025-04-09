@@ -1,8 +1,7 @@
-import os, shutil, traceback, re, asyncio, yt_dlp
-from asyncio import Queue
+import os, shutil, traceback, re, dotenv, asyncio, yt_dlp
+from threading import Lock
 from utils import ydl_opts, extract_url, now, process_info, write_file, read_file, video_info_file, user_info_file, subscription_info_file, intent_info_file
 from uuid import uuid4
-from dotenv import load_dotenv
 from warnings import filterwarnings
 from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove, Bot, InlineQueryResultCachedVideo, User, Message
 from telegram.ext import filters, Application, CommandHandler, MessageHandler, ContextTypes, InlineQueryHandler, ChosenInlineResultHandler, ConversationHandler, CallbackQueryHandler
@@ -13,7 +12,7 @@ SUBSCRIBE_URL, SUBSCRIBE_PLAYLIST, SUBSCRIBE_SHOW, = range(3)
 UNSUBSCRIBE_PLAYLIST, = range(1)
 DAS_URL, = range(1)
 
-load_dotenv()
+dotenv.load_dotenv()
 
 developer_chat_id = os.getenv('DEVELOPER_CHAT_ID')
 developer_id = os.getenv('DEVELOPER_ID') or developer_chat_id
@@ -26,9 +25,12 @@ intents = {}
 temporary_inline_queries = {}
 
 interval_sec = 60 * 60 # an hour
-download_video_condition = Queue()
+download_video_condition = asyncio.Queue()
 
 filterwarnings(action="ignore", message=r".*CallbackQueryHandler", category=PTBUserWarning)
+
+loop = asyncio.new_event_loop()
+lock = Lock()
 
 ydl = yt_dlp.YoutubeDL(ydl_opts)
 
@@ -71,7 +73,7 @@ def append_playlist(playlists, title, url):
     id = str(uuid4())
     playlists[id] = { 'title': title, 'url': url }
 
-def extract_info(query: str, download: bool) -> dict:
+async def extract_info(query: str, download: bool) -> dict:
     info = videos.get(query)
     if info and (info.get('file_id') or not download): return info
     
@@ -86,8 +88,10 @@ def extract_info(query: str, download: bool) -> dict:
         except: print(f"{now()} # extract_info error: {query}")
 
     if (not info or not info.get('file_id')) and download:
-        try: info = ydl.extract_info(query)
+        lock.acquire()
+        try: info = await loop.run_in_executor(None, ydl.extract_info, query)
         except: pass
+        finally: lock.release()
     return process_info(info)
 
 async def post_process(query: str, info: dict, message: Message, store_info=True) -> str:
@@ -245,7 +249,7 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except: pass
         return
 
-    info = extract_info(query, download=False)
+    info = await extract_info(query, download=False)
     if not info:
         print(f"{now()} # inline_query no info: {query}")
         try: await inline_query.answer(results=[])
@@ -304,7 +308,7 @@ async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     print(f"{extract_user(user)} # chosen_query aint: {query}")
 
 async def process_query(bot: Bot, query: str) -> dict:
-    info = extract_info(query, download=True)
+    info = await extract_info(query, download=True)
     if not info:
         print(f"{now()} # process_query error: {query}")
         intents.pop(query, None)
@@ -356,7 +360,7 @@ async def populate_animation(bot: Bot):
 
     query = os.getenv('LOADING_VIDEO_ID')
 
-    info = extract_info(query, download=True)
+    info = await extract_info(query, download=True)
 
     message = await bot.send_video(
         chat_id=developer_chat_id,
@@ -399,7 +403,7 @@ async def download_url(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
 
     if not query: return ConversationHandler.END
 
-    info = extract_info(query, download=False)
+    info = await extract_info(query, download=False)
     if not info or info.get('entries'):
         await message.reply_text("Unsupported url", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
@@ -652,6 +656,7 @@ async def cancel(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 def main():
+    asyncio.set_event_loop(loop)
     token = os.getenv('BOT_TOKEN')
     base_url = os.getenv('BASE_URL')
     timeout = os.getenv('READ_TIMEOUT') or 30
@@ -695,8 +700,7 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel)],
     ))
     application.add_handler(MessageHandler(filters.COMMAND, unknown))
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+
     asyncio.gather(
         populate_animation(bot),
         populate_subscriptions(),
@@ -704,6 +708,7 @@ def main():
         process_intents(bot),
         clear_temporary_inline_queries(),
     )
+
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
