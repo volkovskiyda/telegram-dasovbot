@@ -341,7 +341,7 @@ async def process_query(bot: Bot, query: str) -> dict:
 async def process_intent(bot: Bot, query: str, video: str, caption: str) -> dict:
     intent = intents.pop(query, None)
     for item in intent['chat_ids']:
-        try: await bot.send_video(chat_id=item, video=video, caption=caption)
+        try: await bot.send_video(chat_id=item, video=video, caption=caption, disable_notification=True)
         except: print(f"{now()} # process_intent chat_ids error: {query} - {item}")
     for item in intent['inline_message_ids']:
         try: await bot.edit_message_media(inline_message_id=item, media=InputMediaVideo(media=video, caption=caption))
