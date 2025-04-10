@@ -23,7 +23,7 @@ ydl_opts = {
     'match_filter': match_filter,
     'no_warnings': True,
     'quiet': True,
-    'postprocessors': [{'key': 'FFmpegMetadata'}],
+    # 'postprocessors': [{'key': 'FFmpegMetadata'}],
 }
 
 def extract_url(info: dict) -> str:
