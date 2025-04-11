@@ -1,4 +1,4 @@
-import os, json
+import os, json, traceback
 from time import strftime
 from datetime import datetime
 
@@ -73,12 +73,14 @@ def write_file(file_path, dict):
         file = open(file_path, "w", encoding='utf8')
         json.dump(dict, file, indent=1, ensure_ascii=False)
         file.write('\r')
-    except: pass
+    except Exception as e:
+        traceback.print_exception(e)
 
 def read_file(file_path, dict) -> dict:
     try:
         with open(file_path, "r", encoding='utf8') as file:
             return json.load(file)
-    except:
+    except Exception as e:
+        traceback.print_exception(e)
         write_file(file_path, dict)
         return {}
