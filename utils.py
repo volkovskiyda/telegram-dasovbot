@@ -3,7 +3,8 @@ from time import strftime
 from datetime import datetime
 
 def match_filter(info, *, incomplete):
-    if info.get('is_live'): return f"{now()} # ignore video {info.get('url')}"
+    if info.get('is_live') or int(info.get('duration') or 0) > 10_000:
+        return f"{now()} # ignore video {info.get('url')}"
 
 config_folder = os.getenv('CONFIG_FOLDER') or '/'
 video_info_file = f'{config_folder}/data/videos.json'
