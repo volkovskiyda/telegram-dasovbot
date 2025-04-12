@@ -152,11 +152,9 @@ async def clear_temporary_inline_queries():
 
 async def process_intents(bot: Bot):
     while True:
-        if not intents:
-            await download_video_condition.get()
-        if not intents:
-            await asyncio.sleep(5)
-            continue
+        await asyncio.sleep(10)
+        if not intents: await download_video_condition.get()
+        if not intents: continue
         max_priority = max(intents, key=lambda key: intents[key]['priority'])
         await process_query(bot, max_priority)
 
