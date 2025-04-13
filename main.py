@@ -1,4 +1,5 @@
 import os, shutil, traceback, re, dotenv, asyncio, ffmpeg, yt_dlp
+from yt_dlp import DownloadError
 from threading import Lock
 from utils import ydl_opts, extract_url, now, process_info, write_file, read_file, video_info_file, user_info_file, subscription_info_file, intent_info_file
 from uuid import uuid4
@@ -27,6 +28,13 @@ temporary_inline_queries = {}
 
 interval_sec = 60 * 60 # an hour
 download_video_condition = asyncio.Queue()
+
+video_error_unavailable = [
+    'This video has been removed for violating',
+    'Sign in to confirm your age',
+    'Private video',
+    'Video unavailable',
+]
 
 filterwarnings(action="ignore", message=r".*CallbackQueryHandler", category=PTBUserWarning)
 
@@ -58,6 +66,18 @@ def process_entries(entries: list) -> list:
 def filter_entries(entries: list) -> list:
     return list(filter(lambda entry: entry.get('duration') and (entry.get('live_status') is None or entry['live_status'] != 'is_live') and (entry.get('availability') is None or entry['availability'] != 'subscriber_only'), entries))
 
+def filter_intents(intents: dict) -> dict:
+    filtered_intents = {}
+    for query, intent in intents.items():
+        if not intent['ignored']:
+            filtered_intents[query] = intent
+    return filtered_intents
+    
+def contains_text(origin: str, text: list[str]) -> bool:
+    for item in text:
+        if origin.lower().__contains__(item.lower()): return True
+    return False
+
 def extract_user(user: User) -> str:
     return f"{now()} {user.username} ({user.id})"
 
@@ -86,7 +106,14 @@ async def extract_info(query: str, download: bool) -> dict:
             if info_url:
                 videos[query] = info_url
                 return info_url
-        except: print(f"{now()} # extract_info error: {query}")
+        except Exception as e:
+            if isinstance(e, DownloadError):
+                if contains_text(e.msg, video_error_unavailable):
+                    intent = intents.get(query)
+                    if not intent: intent = temporary_inline_queries.get(query)
+                    if intent: intent.update({'ignored': True})
+                    return
+            print(f"{now()} # extract_info error: {query}")
 
     if (not info or not info.get('file_id')) and download:
         lock.acquire()
@@ -129,6 +156,7 @@ async def append_intent(query: str, chat_ids: list = [], inline_message_id: str 
         'inline_message_ids': [],
         'messages': [],
         'priority': 0,
+        'ignored': False,
     })
 
     intent_chat_ids = intent['chat_ids']
@@ -153,9 +181,10 @@ async def clear_temporary_inline_queries():
 async def process_intents(bot: Bot):
     while True:
         await asyncio.sleep(10)
-        if not intents: await download_video_condition.get()
-        if not intents: continue
-        max_priority = max(intents, key=lambda key: intents[key]['priority'])
+        filtered_intents = filter_intents(intents)
+        if not filtered_intents: await download_video_condition.get()
+        if not filtered_intents: continue
+        max_priority = max(filtered_intents, key=lambda key: filtered_intents[key]['priority'])
         await process_query(bot, max_priority)
 
 async def populate_subscriptions():
@@ -238,7 +267,14 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'results': [],
         'inline_queries': {},
         'marked': False,
+        'ignored': False,
     })
+
+    if temporary_inline_query['ignored']:
+        print(f"{now()} # inline_query ignored: {query}")
+        try: await inline_query.answer(results=[])
+        except: pass
+        return
 
     results = temporary_inline_query['results']
     info = videos.get(query)
@@ -310,7 +346,7 @@ async def process_query(bot: Bot, query: str) -> dict:
     info = await extract_info(query, download=True)
     if not info:
         print(f"{now()} # process_query error: {query}")
-        intents.pop(query, None)
+        if intents.get(query) and not intents[query]['ignored']: intents.pop(query, None)
         return info
     caption = info.get('caption')
     file_id = info.get('file_id')
