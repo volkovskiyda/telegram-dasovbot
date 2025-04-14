@@ -117,10 +117,15 @@ async def extract_info(query: str, download: bool) -> dict:
             print(f"{now()} # extract_info error: {query}")
 
     if (not info or not info.get('file_id')) and download:
+        print(f"{now()} # lock acquire: {query}")
         lock.acquire()
         try: info = await loop.run_in_executor(None, ydl.extract_info, query)
-        except: pass
-        finally: lock.release()
+        except Exception as e:
+            print(f"{now()} # extract_info download error: {query}")
+            traceback.print_exception(e)
+        finally:
+            print(f"{now()} # lock release: {query}")
+            lock.release()
     return process_info(info)
 
 async def post_process(query: str, info: dict, message: Message, store_info=True) -> str:
