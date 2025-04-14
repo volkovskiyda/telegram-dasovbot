@@ -12,6 +12,7 @@ user_info_file = f'{config_folder}/data/users.json'
 subscription_info_file = f'{config_folder}/data/subscriptions.json'
 new_subscriptions_file = f'{config_folder}/data/new_subscriptions.txt'
 intent_info_file = f'{config_folder}/data/intents.json'
+timestamp_file = f'{config_folder}/data/timestamp.txt'
 
 datetime_format = '%Y%m%d_%H%M%S'
 

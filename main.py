@@ -1,7 +1,7 @@
 import os, shutil, traceback, re, dotenv, asyncio, ffmpeg, yt_dlp
 from yt_dlp import DownloadError
 from threading import Lock
-from utils import ydl_opts, extract_url, now, process_info, write_file, read_file, video_info_file, user_info_file, subscription_info_file, intent_info_file
+from utils import ydl_opts, extract_url, now, process_info, write_file, read_file, video_info_file, user_info_file, subscription_info_file, intent_info_file, timestamp_file
 from uuid import uuid4
 from warnings import filterwarnings
 from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove, Bot, InlineQueryResultCachedVideo, User, Message
@@ -50,6 +50,7 @@ async def populate_files():
         write_file(user_info_file, users)
         write_file(subscription_info_file, subscriptions)
         write_file(intent_info_file, intents)
+        with open(timestamp_file, 'w') as f: f.write(now())
 
 videos = read_file(video_info_file, videos)
 users = read_file(user_info_file, users)
