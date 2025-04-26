@@ -117,14 +117,14 @@ async def extract_info(query: str, download: bool) -> dict:
             print(f"{now()} # extract_info error: {query}")
 
     if (not info or not info.get('file_id')) and download:
-        print(f"{now()} # lock acquire: {query}")
+        print(f"{now()} # lock_acquire: {query}")
         lock.acquire()
         try: info = await loop.run_in_executor(None, ydl.extract_info, query)
         except Exception as e:
             print(f"{now()} # extract_info download error: {query}")
             traceback.print_exception(e)
         finally:
-            print(f"{now()} # lock release: {query}")
+            print(f"{now()} # lock_release: {query}")
             lock.release()
     return process_info(info)
 
@@ -424,7 +424,7 @@ async def populate_animation(bot: Bot):
     global animation_file_id
     animation_file_id = os.getenv('ANIMATION_FILE_ID')
     if animation_file_id:
-        print(f"{now()} # saved animation_file_id = {animation_file_id}")
+        print(f"{now()} # saved_animation_file_id = {animation_file_id}")
         return
 
     query = os.getenv('LOADING_VIDEO_ID')
