@@ -27,6 +27,7 @@ intents = {}
 temporary_inline_queries = {}
 
 interval_sec = 60 * 60 # an hour
+timeout_sec = 60 * 10 # 10 minutes
 download_video_condition = asyncio.Queue()
 
 video_error_unavailable = [
@@ -119,7 +120,11 @@ async def extract_info(query: str, download: bool) -> dict:
     if (not info or not info.get('file_id')) and download:
         print(f"{now()} # lock_acquire: {query}")
         lock.acquire()
-        try: info = await loop.run_in_executor(None, ydl.extract_info, query)
+        try:
+            future = loop.run_in_executor(None, ydl.extract_info, query)
+            info = await asyncio.wait_for(future, timeout_sec)
+        except asyncio.TimeoutError:
+            print(f"{now()} # extract_info timeout: {query}")
         except Exception as e:
             print(f"{now()} # extract_info download error: {query}")
             traceback.print_exception(e)
