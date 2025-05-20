@@ -181,7 +181,7 @@ async def append_intent(query: str, chat_ids: list = [], inline_message_id: str 
             intent_chat_ids.append(item)
     if inline_message_id: intent_inline_message_ids.append(inline_message_id)
     if message: intent_messages.append(message)
-    intent['priority'] += len(chat_ids) or 2
+    if not intent['ignored']: intent['priority'] += len(chat_ids) or 2
     download_video_condition.put_nowait(query)
 
 async def clear_temporary_inline_queries():
