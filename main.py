@@ -200,6 +200,14 @@ async def process_intents(bot: Bot):
         max_priority = max(filtered_intents, key=lambda key: filtered_intents[key]['priority'])
         await process_query(bot, max_priority)
 
+async def monitor_process_intents(bot: Bot):
+    while True:
+        try: await process_intents(bot)
+        except Exception as e:
+            print(f"{now()} # process_intents crashed: {type(e).__name__}, {str(e)}")
+            traceback.print_exception(e)
+        await asyncio.sleep(interval_sec)
+
 async def populate_subscriptions():
     while True:
         for url in list(subscriptions.keys()):
@@ -779,7 +787,7 @@ def main():
         populate_animation(bot),
         populate_subscriptions(),
         populate_files(),
-        process_intents(bot),
+        monitor_process_intents(bot),
         clear_temporary_inline_queries(),
     )
 
