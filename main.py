@@ -387,7 +387,7 @@ async def process_query(bot: Bot, query: str) -> dict:
             )
             print(f"{now()} # process_query send_video fnsh: {query}")
         except Exception as e:
-            if isinstance(e, NetworkError) and os.path.getsize(video_path) >> 20 > 2000:
+            if isinstance(e, NetworkError) and video_path and os.path.getsize(video_path) >> 20 > 2000:
                 try: await bot.send_message(chat_id=developer_id, text=f'[large_video_error]\n{caption}', disable_notification=False)
                 except: pass
                 base, ext = os.path.splitext(video_path)
