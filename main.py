@@ -388,8 +388,7 @@ async def process_query(bot: Bot, query: str) -> dict:
             print(f"{now()} # process_query send_video fnsh: {query}")
         except Exception as e:
             if isinstance(e, NetworkError) and video_path and os.path.getsize(video_path) >> 20 > 2000:
-                try: await bot.send_message(chat_id=developer_id, text=f'[large_video_error]\n{caption}', disable_notification=False)
-                except: pass
+                send_message_developer(bot, f'[large_video_error]\n{caption}')
                 base, ext = os.path.splitext(video_path)
                 temp_video_path = f'{base}.temp{ext}'
                 ffmpeg.input(video_path).filter('scale', -1, 360).output(temp_video_path, format='mp4', map='0:a:0', loglevel='quiet').run()
@@ -406,8 +405,7 @@ async def process_query(bot: Bot, query: str) -> dict:
                         disable_notification=True,
                     )
                     print(f"{now()} # process_query send_video fnsh: {query}")
-                    try: await bot.send_message(chat_id=developer_id, text=f'[large_video_fixed]\n{caption}', disable_notification=True)
-                    except: pass
+                    send_message_developer(bot, f'[large_video_fixed]\n{caption}', notification=False)
                     file_id = await post_process(query, info, message)
                     await process_intent(bot, query, file_id, caption)
                     return info
@@ -736,6 +734,10 @@ async def cancel(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
     print(f"{extract_user(message.from_user)} # cancel")
     await message.reply_text("Cancelled", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
+
+async def send_message_developer(bot: Bot, text: str, notification: bool = True):
+    try: await bot.send_message(chat_id=developer_id, text=text, disable_notification=not notification)
+    except: pass
 
 def main():
     asyncio.set_event_loop(loop)
