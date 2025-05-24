@@ -207,6 +207,7 @@ async def monitor_process_intents(bot: Bot):
             print(f"{now()} # process_intents crashed: {type(e).__name__}, {str(e)}")
             traceback.print_exception(e)
         await asyncio.sleep(interval_sec)
+        send_message_developer(bot, 'monitor_process_intents')
 
 async def populate_subscriptions():
     while True:
