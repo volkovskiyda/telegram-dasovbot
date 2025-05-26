@@ -1,7 +1,7 @@
 import os, shutil, traceback, re, dotenv, asyncio, ffmpeg, yt_dlp
 from yt_dlp import DownloadError
 from threading import Lock
-from utils import ydl_opts, extract_url, now, process_info, write_file, read_file, video_info_file, user_info_file, subscription_info_file, intent_info_file, timestamp_file
+from utils import ydl_opts, extract_url, now, process_info, write_file, read_file, video_info_file, user_info_file, subscription_info_file, intent_info_file, timestamp_file, media_folder
 from uuid import uuid4
 from warnings import filterwarnings
 from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove, Bot, InlineQueryResultCachedVideo, User, Message
@@ -201,13 +201,20 @@ async def process_intents(bot: Bot):
         await process_query(bot, max_priority)
 
 async def monitor_process_intents(bot: Bot):
+    empty_media_folder = os.getenv('EMPTY_MEDIA_FOLDER', 'false').lower() == 'true'
     while True:
         try: await process_intents(bot)
         except Exception as e:
             print(f"{now()} # process_intents crashed: {type(e).__name__}, {str(e)}")
             traceback.print_exception(e)
+            if empty_media_folder: empty_media_folder_files()
         await asyncio.sleep(interval_sec)
         await send_message_developer(bot, 'monitor_process_intents')
+
+def empty_media_folder_files():
+    for file in os.listdir(media_folder):
+        file_path = os.path.join(media_folder, file)
+        remove(file_path)
 
 async def populate_subscriptions():
     while True:
