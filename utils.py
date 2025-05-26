@@ -13,12 +13,13 @@ subscription_info_file = f'{config_folder}/data/subscriptions.json'
 new_subscriptions_file = f'{config_folder}/data/new_subscriptions.txt'
 intent_info_file = f'{config_folder}/data/intents.json'
 timestamp_file = f'{config_folder}/data/timestamp.txt'
+media_folder = f'{config_folder}/media'
 
 datetime_format = '%Y%m%d_%H%M%S'
 
 ydl_opts = {
     'format': 'bv*[ext=mp4][height<=?720][filesize_approx<=?2G]+ba[ext=m4a]/bv*[ext=mp4][height<=?720][filesize_approx<=?2G]+ba[ext=mp4]/b[ext=mp4][height<=?720][filesize_approx<=?2G]',
-    'outtmpl': f'{config_folder}/media/%(timestamp>{datetime_format})s - %(title).80s [%(id).20s].%(ext)s',
+    'outtmpl': f'{media_folder}/%(timestamp>{datetime_format})s - %(title).80s [%(id).20s].%(ext)s',
     'noplaylist': True,
     'extract_flat': 'in_playlist',
     'playlist_items': '1-20',
