@@ -87,3 +87,12 @@ def read_file(file_path, dict) -> dict:
         traceback.print_exception(e)
         write_file(file_path, dict)
         return {}
+
+def remove(filepath: str):
+    try: os.remove(filepath)
+    except: pass
+
+def empty_media_folder_files():
+    for file in os.listdir(media_folder):
+        file_path = os.path.join(media_folder, file)
+        remove(file_path)

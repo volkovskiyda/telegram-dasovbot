@@ -1,7 +1,7 @@
 import os, shutil, traceback, re, dotenv, asyncio, ffmpeg, yt_dlp
 from yt_dlp import DownloadError
 from threading import Lock
-from utils import ydl_opts, extract_url, now, process_info, write_file, read_file, video_info_file, user_info_file, subscription_info_file, intent_info_file, timestamp_file, media_folder
+from utils import ydl_opts, extract_url, now, process_info, write_file, read_file, video_info_file, user_info_file, subscription_info_file, intent_info_file, timestamp_file, remove, empty_media_folder_files
 from uuid import uuid4
 from warnings import filterwarnings
 from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove, Bot, InlineQueryResultCachedVideo, User, Message
@@ -159,10 +159,6 @@ async def post_process(query: str, info: dict, message: Message, store_info=True
         else: remove(filepath)
     return file_id
 
-def remove(filepath: str):
-    try: os.remove(filepath)
-    except: pass
-
 async def append_intent(query: str, chat_ids: list = [], inline_message_id: str = '', message: dict = {}):
     intent = intents.setdefault(query, {
         'chat_ids': [],
@@ -210,11 +206,6 @@ async def monitor_process_intents(bot: Bot):
             if empty_media_folder: empty_media_folder_files()
         await asyncio.sleep(interval_sec)
         await send_message_developer(bot, 'monitor_process_intents')
-
-def empty_media_folder_files():
-    for file in os.listdir(media_folder):
-        file_path = os.path.join(media_folder, file)
-        remove(file_path)
 
 async def populate_subscriptions():
     while True:
