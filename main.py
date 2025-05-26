@@ -207,7 +207,7 @@ async def monitor_process_intents(bot: Bot):
             print(f"{now()} # process_intents crashed: {type(e).__name__}, {str(e)}")
             traceback.print_exception(e)
         await asyncio.sleep(interval_sec)
-        send_message_developer(bot, 'monitor_process_intents')
+        await send_message_developer(bot, 'monitor_process_intents')
 
 async def populate_subscriptions():
     while True:
@@ -389,7 +389,7 @@ async def process_query(bot: Bot, query: str) -> dict:
             print(f"{now()} # process_query send_video fnsh: {query}")
         except Exception as e:
             if isinstance(e, NetworkError) and video_path and os.path.getsize(video_path) >> 20 > 2000:
-                send_message_developer(bot, f'[large_video_error]\n{caption}')
+                await send_message_developer(bot, f'[large_video_error]\n{caption}')
                 base, ext = os.path.splitext(video_path)
                 temp_video_path = f'{base}.temp{ext}'
                 ffmpeg.input(video_path).filter('scale', -1, 360).output(temp_video_path, format='mp4', map='0:a:0', loglevel='quiet').run()
@@ -406,7 +406,7 @@ async def process_query(bot: Bot, query: str) -> dict:
                         disable_notification=True,
                     )
                     print(f"{now()} # process_query send_video fnsh: {query}")
-                    send_message_developer(bot, f'[large_video_fixed]\n{caption}', notification=False)
+                    await send_message_developer(bot, f'[large_video_fixed]\n{caption}', notification=False)
                     file_id = await post_process(query, info, message)
                     await process_intent(bot, query, file_id, caption)
                     return info
