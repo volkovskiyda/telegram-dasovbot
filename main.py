@@ -547,7 +547,13 @@ async def subscribe_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         return ConversationHandler.END
 
     playlists = {}
-    append_playlist(playlists, uploader, uploader_videos)
+    append_playlist(playlists, f"{uploader} Videos", uploader_videos)
+    try:
+        uploader_streams = f"{uploader_url}/streams"
+        info = ydl.extract_info(uploader_streams, download=False)
+        append_playlist(playlists, f"{uploader} Streams", uploader_streams)
+    except: pass
+
     for entry in entries:
         url = extract_url(entry)
         append_playlist(playlists, entry['title'], url)
