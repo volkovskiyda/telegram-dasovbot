@@ -461,7 +461,7 @@ async def subscription_list(update: Update, _: ContextTypes.DEFAULT_TYPE):
 
     try:
         if subscription_list: await message.reply_markdown('\n\n'.join(subscription_list))
-        else: await message.reply_text('No active subscriptions')
+        else: await message.reply_text('No subscriptions')
     except: pass
 
 async def download(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
