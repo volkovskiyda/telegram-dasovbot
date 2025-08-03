@@ -734,6 +734,72 @@ async def unsubscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYP
     await message_text(f"Unsubscribed from {subscription_info}", parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup([]))
     return ConversationHandler.END
 
+async def playlists(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
+    message = update.message
+    subscription_list = [item['url'] for item in user_subscriptions(message.chat_id).values()]
+
+    try:
+        if not subscription_list:
+            await message.reply_text('No subscriptions')
+            return ConversationHandler.END
+    except: pass
+
+    videos = []
+    streams = []
+    both = []
+    none = []
+    for subscription in subscription_list:
+        if subscription in videos or subscription in streams or subscription in both or subscription in none: continue
+        try:
+            info = ydl.extract_info(subscription, download=False)
+            uploader_url = info.get('uploader_url')
+            if not uploader_url: continue
+            uploader_videos = f"{uploader_url}/videos"
+            uploader_streams = f"{uploader_url}/streams"
+            subscription_videos = uploader_url in subscription_list or uploader_videos in subscription_list
+            subscription_streams = uploader_streams in subscription_list
+            if subscription_videos and subscription_streams:
+                both.append(subscription)
+            elif subscription_videos:
+                streams.append(subscription)
+            elif subscription_streams:
+                videos.append(subscription)
+            else:
+                none.append(subscription)
+        except: pass
+
+    for item in videos.copy():
+        try:
+            info = ydl.extract_info(item, download=False)
+            videos.remove(item)
+        except: pass
+    for item in streams.copy():
+        try:
+            info = ydl.extract_info(item, download=False)
+            streams.remove(item)
+        except: pass
+    if videos:
+        output = []
+        output.append("Available **Videos**")
+        output.extend([f"[{item}]({item})" for item in videos])
+        await message.reply_markdown('\n'.join(output))
+    if streams:
+        output = []
+        output.append("Available **Streams**")
+        output.extend([f"[{item}]({item})" for item in streams])
+        await message.reply_markdown('\n'.join(output))
+    if none:
+        output = []
+        output.append("**None**")
+        output.extend([f"[{item}]({item})" for item in none])
+        await message.reply_markdown('\n'.join(output))
+    if both:
+        output = []
+        output.append("**Videos and Streams**")
+        output.extend([f"[{item}]({item})" for item in both])
+        await message.reply_markdown('\n'.join(output))
+    return ConversationHandler.END
+
 async def cancel(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
     message = update.message
     print(f"{extract_user(message.from_user)} # cancel")
@@ -788,6 +854,7 @@ def main():
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     ))
+    application.add_handler(CommandHandler(['playlists'], playlists))
     application.add_handler(MessageHandler(filters.COMMAND, unknown))
 
     asyncio.gather(
