@@ -747,9 +747,9 @@ async def playlists(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
     videos = []
     streams = []
     both = []
-    none = []
+    already_processed = []
     for subscription in subscription_list:
-        if subscription in videos or subscription in streams or subscription in both or subscription in none: continue
+        if subscription in already_processed: continue
         try:
             info = ydl.extract_info(subscription, download=False)
             uploader_url = info.get('uploader_url')
@@ -759,45 +759,33 @@ async def playlists(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
             subscription_videos = uploader_url in subscription_list or uploader_videos in subscription_list
             subscription_streams = uploader_streams in subscription_list
             if subscription_videos and subscription_streams:
-                both.append(subscription)
+                both.append(uploader_url)
+                already_processed.append(uploader_url)
+                already_processed.append(uploader_videos)
+                already_processed.append(uploader_streams)
             elif subscription_videos:
-                streams.append(subscription)
+                try:
+                    info = ydl.extract_info(uploader_streams, download=False)
+                    streams.append(uploader_streams)
+                except: pass
             elif subscription_streams:
-                videos.append(subscription)
-            else:
-                none.append(subscription)
-        except: pass
-
-    for item in videos.copy():
-        try:
-            info = ydl.extract_info(item, download=False)
-            videos.remove(item)
-        except: pass
-    for item in streams.copy():
-        try:
-            info = ydl.extract_info(item, download=False)
-            streams.remove(item)
+                try:
+                    info = ydl.extract_info(uploader_videos, download=False)
+                    videos.append(uploader_videos)
+                except: pass
         except: pass
     if videos:
-        output = []
-        output.append("Available **Videos**")
-        output.extend([f"[{item}]({item})" for item in videos])
-        await message.reply_markdown('\n'.join(output))
+        output = [f"{item}" for item in videos]
+        output.insert(0, "Available *Videos*")
+        await message.reply_text('\n'.join(output))
     if streams:
-        output = []
-        output.append("Available **Streams**")
-        output.extend([f"[{item}]({item})" for item in streams])
-        await message.reply_markdown('\n'.join(output))
-    if none:
-        output = []
-        output.append("**None**")
-        output.extend([f"[{item}]({item})" for item in none])
-        await message.reply_markdown('\n'.join(output))
+        output = [f"{item}" for item in streams]
+        output.insert(0, "Available *Streams*")
+        await message.reply_text('\n'.join(output))
     if both:
-        output = []
-        output.append("**Videos and Streams**")
-        output.extend([f"[{item}]({item})" for item in both])
-        await message.reply_markdown('\n'.join(output))
+        output = [f"{item}" for item in both]
+        output.insert(0, "*Videos and Streams*")
+        await message.reply_text('\n'.join(output))
     return ConversationHandler.END
 
 async def cancel(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
