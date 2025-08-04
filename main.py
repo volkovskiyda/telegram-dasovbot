@@ -12,6 +12,7 @@ from telegram.error import NetworkError
 
 SUBSCRIBE_URL, SUBSCRIBE_PLAYLIST, SUBSCRIBE_SHOW, = range(3)
 UNSUBSCRIBE_PLAYLIST, = range(1)
+MULTIPLE_SUBSCRIBE_URLS = range(1)
 DAS_URL, = range(1)
 
 dotenv.load_dotenv()
@@ -501,6 +502,60 @@ async def download_url(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
     users[chat_id] = user.to_dict()
     return ConversationHandler.END
 
+async def multiple_subscribe(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("Enter urls")
+    return MULTIPLE_SUBSCRIBE_URLS
+
+async def multiple_subscribe_urls(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
+    message = update.message
+    user = message.from_user
+    query = message.text
+    chat_id = str(message.chat_id)
+
+    if not query: return ConversationHandler.END
+
+    urls = query.strip('\n').split('\n')
+    subscribed = []
+    already_subscribed = []
+    failed = []
+
+    print(f"{extract_user(user)} # multiple_subscribe: {len(urls)} urls")
+
+    for url in urls:
+        url = url.strip()
+        if not url:
+            failed.append(url)
+            continue
+        subscription = subscriptions.get(url)
+        if subscription:
+            chat_ids = subscription['chat_ids']
+            if chat_id in chat_ids:
+                already_subscribed.append(url)
+                continue
+            else:
+                chat_ids.append(chat_id)
+                subscribed.append(url)
+        else:
+            try:
+                info = ydl.extract_info(url, download=False)
+                title = info.get('title')
+                uploader = info.get('uploader') or info.get('uploader_id')
+            except:
+                failed.append(url)
+                continue
+            subscriptions[url] = {
+                'chat_ids': [chat_id],
+                'title': title,
+                'uploader': uploader,
+                'uploader_videos': url,
+            }
+            subscribed.append(url)
+    if already_subscribed: await message.reply_text('\n'.join(["Already Subscribed"] + [f"{item}" for item in already_subscribed]))
+    if failed: await message.reply_text('\n'.join(["Failed subscriptions"] + [f"{item}" for item in failed]))
+    print(f"{extract_user(user)} # multiple_subscribe len: {len(urls)}, already_subscribed: {len(already_subscribed)}, failed: {len(failed)}")
+    await message.reply_text(f"Multiple Subscribe" + (f"\n{len(subscribed)} urls successfully" if subscribed else "") + (f"\n{len(failed)} urls failed" if failed else "") + (f"\n{len(already_subscribed)} urls already subscribed" if already_subscribed else ""))
+    return ConversationHandler.END
+
 async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     message = update.message
     if remove_command_prefix(message.text):
@@ -843,6 +898,14 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel)],
     ))
     application.add_handler(CommandHandler(['playlists'], playlists))
+    application.add_handler(ConversationHandler(
+        entry_points=[CommandHandler(['multiple_subscribe'], multiple_subscribe)],
+        states={
+            MULTIPLE_SUBSCRIBE_URLS: [MessageHandler(filters.TEXT, multiple_subscribe_urls)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    ))
+    application.add_handler(CommandHandler(['multiple_subscribe'], multiple_subscribe))
     application.add_handler(MessageHandler(filters.COMMAND, unknown))
 
     asyncio.gather(
