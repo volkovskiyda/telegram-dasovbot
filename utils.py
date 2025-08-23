@@ -16,10 +16,11 @@ timestamp_file = f'{config_folder}/data/timestamp.txt'
 media_folder = f'{config_folder}/media'
 
 datetime_format = '%Y%m%d_%H%M%S'
+date_format = '%Y%m%d'
 
 ydl_opts = {
     'format': 'bv*[ext=mp4][height<=?720][filesize_approx<=?2G]+ba[ext=m4a]/bv*[ext=mp4][height<=?720][filesize_approx<=?2G]+ba[ext=mp4]/b[ext=mp4][height<=?720][filesize_approx<=?2G]',
-    'outtmpl': f'{media_folder}/%(timestamp>{datetime_format})s - %(title).80s [%(id).20s].%(ext)s',
+    'outtmpl': f'{media_folder}/%(timestamp>{datetime_format},upload_date>{date_format}_u,epoch>{datetime_format}_e)s - %(title).80s [%(id).20s].%(ext)s',
     'noplaylist': True,
     'extract_flat': 'in_playlist',
     'playlist_items': '1-20',
