@@ -1,17 +1,25 @@
 FROM python
 
-RUN apt update && apt upgrade -y && apt clean
+LABEL maintainer="volkovskiyda@gmail.com"
+LABEL description="Telegram bot for downloading and sharing online videos"
 
-RUN mkdir project data
-VOLUME /data
-VOLUME /media
-VOLUME /home
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt update && apt upgrade -y && apt install -y ffmpeg && rm -rf /var/lib/apt/lists/* && apt clean
+
+RUN useradd -m -s /bin/bash localuser
+ENV PATH="/home/localuser/.local/bin:${PATH}"
+
+RUN mkdir -p /project /data /media /home && chown -R localuser:localuser /project /data /media /home
 
 WORKDIR /project
-COPY info.py main.py utils.py empty_media_folder.py /project/
+USER localuser
 
-RUN apt update && apt install -y ffmpeg
 RUN python -m pip install --upgrade pip
 RUN pip install -U python-dotenv python-telegram-bot yt-dlp python-ffmpeg
+
+COPY --chown=localuser:localuser *.py ./
+
+VOLUME ["/data", "/media", "/home"]
 
 CMD ["python", "main.py"]
