@@ -2,6 +2,7 @@ import os, shutil, traceback, re, dotenv, asyncio, ffmpeg, yt_dlp
 from yt_dlp import DownloadError
 from threading import Lock
 from utils import ydl_opts, extract_url, now, process_info, write_file, read_file, video_info_file, user_info_file, subscription_info_file, intent_info_file, timestamp_file, remove, empty_media_folder_files
+from constants import VIDEO_ERROR_MESSAGES, INTERVAL_SEC, TIMEOUT_SEC
 from uuid import uuid4
 from warnings import filterwarnings
 from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove, Bot, InlineQueryResultCachedVideo, User, Message
@@ -28,16 +29,7 @@ subscriptions = {}
 intents = {}
 temporary_inline_queries = {}
 
-interval_sec = 60 * 60 # an hour
-timeout_sec = 60 * 10 # 10 minutes
 download_video_condition = asyncio.Queue()
-
-video_error_unavailable = [
-    'This video has been removed for violating',
-    'Sign in to confirm your age',
-    'Private video',
-    'Video unavailable',
-]
 
 filterwarnings(action="ignore", message=r".*CallbackQueryHandler", category=PTBUserWarning)
 
@@ -50,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 async def populate_files():
     while True:
-        await asyncio.sleep(interval_sec)
+        await asyncio.sleep(INTERVAL_SEC)
         write_file(video_info_file, videos)
         write_file(user_info_file, users)
         write_file(subscription_info_file, subscriptions)
@@ -114,7 +106,7 @@ async def extract_info(query: str, download: bool) -> dict:
                 return info_url
         except Exception as e:
             if isinstance(e, DownloadError):
-                if contains_text(e.msg, video_error_unavailable):
+                if contains_text(e.msg, VIDEO_ERROR_MESSAGES):
                     intent = intents.get(query)
                     if not intent: intent = temporary_inline_queries.get(query)
                     if intent: intent.update({'ignored': True})
@@ -208,7 +200,7 @@ async def monitor_process_intents(bot: Bot):
             logger.error(f"{now()} # process_intents crashed: {type(e).__name__}, {str(e)}")
             traceback.print_exception(e)
             if empty_media_folder: empty_media_folder_files()
-        await asyncio.sleep(interval_sec)
+        await asyncio.sleep(INTERVAL_SEC)
         await send_message_developer(bot, 'monitor_process_intents')
 
 async def populate_subscriptions():
@@ -217,7 +209,7 @@ async def populate_subscriptions():
             chat_ids = subscriptions[url]['chat_ids']
             if chat_ids: await populate_playlist(url, chat_ids)
             else: subscriptions.pop(url, None)
-        await asyncio.sleep(interval_sec)
+        await asyncio.sleep(INTERVAL_SEC)
 
 async def populate_playlist(channel: str, chat_ids: list):
     try:
