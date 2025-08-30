@@ -7,7 +7,7 @@ ARG DEBIAN_FRONTEND=noninteractive
 
 RUN apt update && apt upgrade -y && apt install -y ffmpeg && rm -rf /var/lib/apt/lists/* && apt clean
 
-RUN mkdir -p /project /data /media /home
+RUN mkdir -p /project /data /media /export
 
 WORKDIR /project
 
@@ -16,6 +16,6 @@ RUN pip install -U python-dotenv python-telegram-bot yt-dlp python-ffmpeg
 
 COPY *.py ./
 
-VOLUME ["/data", "/media", "/home"]
+VOLUME ["/data", "/media", "/export"]
 
 CMD ["python", "main.py"]

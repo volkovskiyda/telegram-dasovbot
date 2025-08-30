@@ -44,7 +44,7 @@ services:
     volumes:
       - ./config/data/:/data
       - ./config/media/:/media
-      - ./config/home/:/home
+      - ./config/export/:/export
     environment:
       BASE_URL: $BASE_URL
       READ_TIMEOUT: $READ_TIMEOUT

@@ -18,7 +18,7 @@ services:
     volumes:
       - ./config/data/:/data
       - ./config/media/:/media
-      - ./config/home/:/home
+      - ./config/export/:/export
     environment:
       BASE_URL: http://api:8081/bot
       READ_TIMEOUT: $READ_TIMEOUT
