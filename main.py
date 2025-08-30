@@ -1,7 +1,7 @@
 import os, shutil, traceback, re, dotenv, asyncio, ffmpeg, yt_dlp
 from yt_dlp import DownloadError
 from threading import Lock
-from utils import ydl_opts, extract_url, now, process_info, write_file, read_file, video_info_file, user_info_file, subscription_info_file, intent_info_file, timestamp_file, remove, empty_media_folder_files
+from utils import ydl_opts, extract_url, now, process_info, write_file, read_file, video_info_file, user_info_file, subscription_info_file, intent_info_file, timestamp_file, remove, video_lock, empty_media_folder_files
 from constants import VIDEO_ERROR_MESSAGES, INTERVAL_SEC, TIMEOUT_SEC
 from uuid import uuid4
 from warnings import filterwarnings
@@ -34,7 +34,6 @@ download_video_condition = asyncio.Queue()
 filterwarnings(action="ignore", message=r".*CallbackQueryHandler", category=PTBUserWarning)
 
 loop = asyncio.new_event_loop()
-lock = Lock()
 
 ydl = yt_dlp.YoutubeDL(ydl_opts)
 
@@ -94,7 +93,8 @@ def append_playlist(playlists, title, url):
 
 async def extract_info(query: str, download: bool) -> dict:
     info = videos.get(query)
-    if info and (info.get('file_id') or not download): return info
+    if info and (info.get('file_id') or not download):
+        return info
     
     if not info:
         try:
@@ -108,25 +108,23 @@ async def extract_info(query: str, download: bool) -> dict:
             if isinstance(e, DownloadError):
                 if contains_text(e.msg, VIDEO_ERROR_MESSAGES):
                     intent = intents.get(query)
-                    if not intent: intent = temporary_inline_queries.get(query)
-                    if intent: intent.update({'ignored': True})
+                    if not intent:
+                        intent = temporary_inline_queries.get(query)
+                    if intent:
+                        intent.update({'ignored': True})
                     return
             logger.error(f"{now()} # extract_info error: {query}")
 
     if (not info or not info.get('file_id')) and download:
-        logger.debug(f"{now()} # lock_acquire: {query}")
-        lock.acquire()
         try:
-            future = loop.run_in_executor(None, ydl.extract_info, query)
-            info = await asyncio.wait_for(future, TIMEOUT_SEC)
+            async with video_lock():
+                future = loop.run_in_executor(None, ydl.extract_info, query)
+                info = await asyncio.wait_for(future, TIMEOUT_SEC)
         except asyncio.TimeoutError:
             logger.error(f"{now()} # extract_info timeout: {query}")
         except Exception as e:
             logger.error(f"{now()} # extract_info download error: {query}")
             traceback.print_exception(e)
-        finally:
-            logger.debug(f"{now()} # lock_release: {query}")
-            lock.release()
     return process_info(info)
 
 async def post_process(query: str, info: dict, message: Message, store_info=True) -> str:

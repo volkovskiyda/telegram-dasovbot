@@ -1,6 +1,10 @@
 import os, json, traceback
 from time import strftime
 from datetime import datetime
+from contextlib import asynccontextmanager
+from threading import Lock
+
+lock = Lock()
 
 def match_filter(info, *, incomplete):
     if info.get('is_live') or int(info.get('duration') or 0) > 10_000:
@@ -102,3 +106,11 @@ def empty_media_folder_files():
     for file in os.listdir(media_folder):
         file_path = os.path.join(media_folder, file)
         remove(file_path)
+
+@asynccontextmanager
+async def video_lock():
+    try:
+        lock.acquire()
+        yield
+    finally:
+        lock.release()
