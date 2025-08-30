@@ -57,15 +57,17 @@ def process_info(info: dict) -> dict:
     timestamp = info.get('timestamp')
     if timestamp: timestamp = datetime.fromtimestamp(timestamp).strftime(datetime_format)
     upload_date = info.get('upload_date')
+    info_description = info.get('description')
+    description = info_description[:1000] if info_description else ''
     info_title = info.get('title')
     title = info_title or url
     caption_title = info_title[:100] if info_title else ''
-    caption = f"{caption_title}\n{url}\n{upload_date}"
+    caption = f"[{upload_date}] {caption_title}\n{url}"
     return {
         'file_id': info.get('file_id'),
         'webpage_url': info.get('webpage_url'),
         'title': title,
-        'description': info.get('description'),
+        'description': description,
         'upload_date': upload_date,
         'timestamp': timestamp,
         'thumbnail': thumbnail,
