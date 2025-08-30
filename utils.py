@@ -52,19 +52,24 @@ def process_info(info: dict) -> dict:
     else: thumbnail = info.get('thumbnail')
     timestamp = info.get('timestamp')
     if timestamp: timestamp = datetime.fromtimestamp(timestamp).strftime(datetime_format)
+    upload_date = info.get('upload_date')
+    info_title = info.get('title')
+    title = info_title or url
+    caption_title = info_title[:100] if info_title else ''
+    caption = f"{caption_title}\n{url}\n{upload_date}"
     return {
         'file_id': info.get('file_id'),
         'webpage_url': info.get('webpage_url'),
-        'title': info.get('title') or url,
+        'title': title,
         'description': info.get('description'),
-        'upload_date': info.get('upload_date'),
+        'upload_date': upload_date,
         'timestamp': timestamp,
         'thumbnail': thumbnail,
         'duration': int(info.get('duration') or 0),
         'uploader_url': info.get('uploader_url'),
         'width': info.get('width'),
         'height': info.get('height'),
-        'caption': f"{info.get('title')}\n{url}",
+        'caption': caption,
         'url': info.get('url'),
         'filepath': filepath,
         'filename': filename,
