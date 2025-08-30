@@ -13,10 +13,11 @@ ENV PATH="/home/localuser/.local/bin:${PATH}"
 RUN mkdir -p /project /data /media /home && chown -R localuser:localuser /project /data /media /home
 
 WORKDIR /project
-USER localuser
 
 RUN python -m pip install --upgrade pip
 RUN pip install -U python-dotenv python-telegram-bot yt-dlp python-ffmpeg
+
+USER localuser
 
 COPY --chown=localuser:localuser *.py ./
 
