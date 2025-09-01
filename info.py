@@ -2,7 +2,7 @@ import asyncio
 import argparse
 import json
 import yt_dlp
-from utils import ydl_opts
+from utils import ydl_opts, extract_url
 
 ydl_opts.pop('quiet', None)
 ydl = yt_dlp.YoutubeDL(ydl_opts)
@@ -13,7 +13,7 @@ def json_dumps(info):
 def video(info):
     title = info['title']
     description = info['description']
-    url = info.get('webpage_url') or info['url']
+    url = extract_url(info)
     duration = int(info.get('duration') or 0)
     format = info.get('format')
     filesize = sizeof_fmt(int(info.get('filesize') or 0))
