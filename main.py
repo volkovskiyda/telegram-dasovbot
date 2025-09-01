@@ -1,7 +1,8 @@
 import os, shutil, traceback, re, dotenv, asyncio, ffmpeg, yt_dlp
 from yt_dlp import DownloadError
 from threading import Lock
-from utils import ydl_opts, extract_url, now, process_info, write_file, read_file, video_info_file, user_info_file, subscription_info_file, intent_info_file, timestamp_file, remove, video_lock, empty_media_folder_files
+from contextlib import asynccontextmanager
+from utils import ydl_opts, extract_url, now, process_info, write_file, read_file, video_info_file, user_info_file, subscription_info_file, intent_info_file, timestamp_file, remove, empty_media_folder_files
 from constants import VIDEO_ERROR_MESSAGES, INTERVAL_SEC, TIMEOUT_SEC
 from uuid import uuid4
 from warnings import filterwarnings
@@ -34,6 +35,7 @@ download_video_condition = asyncio.Queue()
 filterwarnings(action="ignore", message=r".*CallbackQueryHandler", category=PTBUserWarning)
 
 loop = asyncio.new_event_loop()
+lock = Lock()
 
 ydl = yt_dlp.YoutubeDL(ydl_opts)
 
@@ -117,7 +119,7 @@ async def extract_info(query: str, download: bool) -> dict:
 
     if (not info or not info.get('file_id')) and download:
         try:
-            async with video_lock():
+            async with download_video_lock():
                 future = loop.run_in_executor(None, ydl.extract_info, query)
                 info = await asyncio.wait_for(future, TIMEOUT_SEC)
         except asyncio.TimeoutError:
@@ -910,6 +912,16 @@ def main():
     )
 
     application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+@asynccontextmanager
+async def download_video_lock():
+    try:
+        logger.debug(f"{now()} # lock_acquire")
+        lock.acquire()
+        yield
+    finally:
+        logger.debug(f"{now()} # lock_release")
+        lock.release()
 
 if __name__ == "__main__":
     main()
