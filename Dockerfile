@@ -12,7 +12,7 @@ RUN mkdir -p /project /data /media /export
 WORKDIR /project
 
 RUN python -m pip install --upgrade pip
-RUN pip install -U python-dotenv python-telegram-bot yt-dlp python-ffmpeg
+RUN pip install -U python-dotenv python-telegram-bot yt-dlp ffmpeg-python
 
 COPY *.py ./
 
