@@ -382,7 +382,7 @@ async def process_query(bot: Bot, query: str) -> dict:
             )
             logger.debug(f"{now()} # process_query send_video fnsh: {query}")
         except Exception as e:
-            if isinstance(e, NetworkError) and video_path and os.path.getsize(video_path) >> 20 > 2000:
+            if isinstance(e, NetworkError) and video_path and os.path.getsize(video_path) >> 20 > 2000 and 'youtube' in extract_url(info):
                 await send_message_developer(bot, f'[large_video_error]\n{caption}')
                 base, ext = os.path.splitext(video_path)
                 temp_video_path = f'{base}.temp{ext}'
