@@ -12,8 +12,11 @@ services:
 
   bot:
     container_name: dasovbot
-    image: ghcr.io/volkovskiyda/dasovbot
+    build:
+      context: .
+      dockerfile: Dockerfile
     restart: always
+    image: ghcr.io/volkovskiyda/dasovbot
     pull_policy: always
     volumes:
       - ./config/data/:/data
