@@ -41,6 +41,11 @@ ydl = yt_dlp.YoutubeDL(ydl_opts)
 
 logger = logging.getLogger(__name__)
 
+def validate_config():
+    required_env = ['BOT_TOKEN', 'BASE_URL', 'DEVELOPER_CHAT_ID']
+    missing = [var for var in required_env if not os.getenv(var)]
+    if missing: raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
+
 async def populate_files():
     while True:
         await asyncio.sleep(INTERVAL_SEC)
@@ -845,6 +850,7 @@ async def send_message_developer(bot: Bot, text: str, notification: bool = True)
     except: pass
 
 def main():
+    validate_config()
     asyncio.set_event_loop(loop)
     token = os.getenv('BOT_TOKEN')
     base_url = os.getenv('BASE_URL')
