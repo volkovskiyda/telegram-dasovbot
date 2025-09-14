@@ -66,11 +66,7 @@ def filter_entries(entries: list) -> list:
     return list(filter(lambda entry: entry.get('duration') and (entry.get('live_status') is None or entry['live_status'] != 'is_live') and (entry.get('availability') is None or entry['availability'] != 'subscriber_only'), entries))
 
 def filter_intents(intents: dict) -> dict:
-    filtered_intents = {}
-    for query, intent in intents.items():
-        if not intent['ignored']:
-            filtered_intents[query] = intent
-    return filtered_intents
+    return {query: intent for query, intent in intents.items() if not intent['ignored']}
     
 def contains_text(origin: str, text: list[str]) -> bool:
     for item in text:
