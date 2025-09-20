@@ -369,7 +369,8 @@ async def process_query(bot: Bot, query: str) -> dict:
     file_id = info.get('file_id')
     if not file_id:
         try:
-            video_path = info['filepath']
+            video_path = info.get('filepath')
+            if not video_path: await send_message_developer(bot, f'[no_video_path]\n{caption}')
             logger.debug(f"{now()} # process_query send_video strt: {query}")
             message = await bot.send_video(
                 chat_id=developer_chat_id,
