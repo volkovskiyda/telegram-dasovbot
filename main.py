@@ -202,7 +202,7 @@ async def monitor_process_intents(bot: Bot):
             traceback.print_exception(e)
             if empty_media_folder: empty_media_folder_files()
         await asyncio.sleep(INTERVAL_SEC)
-        await send_message_developer(bot, 'monitor_process_intents')
+        await send_message_developer(bot, '[error_monitor_process_intents]')
 
 async def populate_subscriptions():
     while True:
@@ -370,7 +370,7 @@ async def process_query(bot: Bot, query: str) -> dict:
     if not file_id:
         try:
             video_path = info.get('filepath')
-            if not video_path: await send_message_developer(bot, f'[no_video_path]\n{caption}')
+            if not video_path: await send_message_developer(bot, f'[error_no_video_path]\n{caption}')
             logger.debug(f"{now()} # process_query send_video strt: {query}")
             message = await bot.send_video(
                 chat_id=developer_chat_id,
@@ -385,7 +385,7 @@ async def process_query(bot: Bot, query: str) -> dict:
             logger.debug(f"{now()} # process_query send_video fnsh: {query}")
         except Exception as e:
             if isinstance(e, NetworkError) and video_path and os.path.getsize(video_path) >> 20 > 2000 and 'youtube' in extract_url(info):
-                await send_message_developer(bot, f'[large_video_error]\n{caption}')
+                await send_message_developer(bot, f'[error_large_video]\n{caption}')
                 base, ext = os.path.splitext(video_path)
                 temp_video_path = f'{base}.temp{ext}'
                 ffmpeg.input(video_path).filter('scale', -1, 360).output(temp_video_path, format='mp4', map='0:a:0', loglevel='quiet').run()
@@ -402,7 +402,7 @@ async def process_query(bot: Bot, query: str) -> dict:
                         disable_notification=True,
                     )
                     logger.debug(f"{now()} # process_query send_video fnsh: {query}")
-                    await send_message_developer(bot, f'[large_video_fixed]\n{caption}', notification=False)
+                    await send_message_developer(bot, f'[error_fixed_large_video]\n{caption}', notification=False)
                     file_id = await post_process(query, info, message)
                     await process_intent(bot, query, file_id, caption)
                     return info
