@@ -4,6 +4,6 @@
 	"features": {
 		"ghcr.io/devcontainers/features/docker-in-docker": {}
 	},
-	"postCreateCommand": "pip3 install -U python-dotenv python-telegram-bot yt-dlp ffmpeg-python",
-	"postStartCommand": "docker compose up -d --build"
+	"postCreateCommand": "apt update && apt install -y ffmpeg && pip3 install -U python-dotenv python-telegram-bot yt-dlp ffmpeg-python",
+	"postStartCommand": "docker compose up -d api"
 }
