@@ -7,7 +7,7 @@ from constants import VIDEO_ERROR_MESSAGES, INTERVAL_SEC, TIMEOUT_SEC
 from uuid import uuid4
 from warnings import filterwarnings
 from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove, Bot, InlineQueryResultCachedVideo, User, Message
-from telegram.ext import filters, Application, CommandHandler, MessageHandler, ContextTypes, InlineQueryHandler, ChosenInlineResultHandler, ConversationHandler, CallbackQueryHandler
+from telegram.ext import filters, Application, CommandHandler, MessageHandler, InlineQueryHandler, ChosenInlineResultHandler, ConversationHandler, CallbackQueryHandler
 from telegram.constants import ParseMode
 from telegram.warnings import PTBUserWarning
 from telegram.error import NetworkError
@@ -247,7 +247,7 @@ def inline_video(info, inline_queries) -> InlineQueryResultCachedVideo:
         reply_markup=reply_markup,
     )
 
-async def start(update: Update, _: ContextTypes.DEFAULT_TYPE):
+async def start(update: Update, _):
     message = update.message
     username = message.from_user['username']
     await message.reply_text(f"Hey, @{username}.\n"
@@ -255,7 +255,7 @@ async def start(update: Update, _: ContextTypes.DEFAULT_TYPE):
                                     "Type /download\n\n"
                                     "/help - for more details")
 
-async def help(update: Update, _: ContextTypes.DEFAULT_TYPE):
+async def help(update: Update, _):
     await update.message.reply_markdown(
         "@dasovbot - Download and share video\n\n"
         "/download - Download video\n\n"
@@ -265,12 +265,12 @@ async def help(update: Update, _: ContextTypes.DEFAULT_TYPE):
         "/unsubscribe - Unsubscribe from playlist"
     )
 
-async def unknown(update: Update, _: ContextTypes.DEFAULT_TYPE):
+async def unknown(update: Update, _):
     await update.message.reply_text(
         "Unknown command. Please type /help for available commands"
     )
 
-async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def inline_query(update: Update, context):
     inline_query = update.inline_query
     user = inline_query.from_user
     query = inline_query.query.lstrip()
@@ -331,7 +331,7 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"{now()} # inline_query answer error: {query}, single: {single_video}, {type(e)=}, {e=}")
         if (single_video): await populate_video(query, chat_ids = [user.id])
 
-async def chosen_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def chosen_query(update: Update, context):
     inline_result = update.chosen_inline_result
     inline_message_id = inline_result.inline_message_id
     inline_queries = context.user_data.pop('inline_queries', None)
@@ -453,7 +453,7 @@ async def populate_animation(bot: Bot):
     animation_file_id = await post_process(query, info, message, store_info=False)
     logger.warning(f"{now()} # animation_file_id = {animation_file_id}")
 
-async def subscription_list(update: Update, _: ContextTypes.DEFAULT_TYPE):
+async def subscription_list(update: Update, _):
     message = update.message
     subscription_list = [f"[{item['title'].replace('[','').replace(']','')}]({item['url']})" for item in user_subscriptions(message.chat_id).values()]
 
@@ -462,7 +462,7 @@ async def subscription_list(update: Update, _: ContextTypes.DEFAULT_TYPE):
         else: await message.reply_text('No subscriptions')
     except: pass
 
-async def download(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
+async def download(update: Update, _) -> int:
     message = update.message
     if remove_command_prefix(message.text):
         return await download_url(update, _)
@@ -470,7 +470,7 @@ async def download(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
         await message.reply_text("Enter url")
         return DAS_URL
     
-async def download_url(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
+async def download_url(update: Update, _) -> int:
     message = update.message
     user = message.from_user
     chat_id = str(message.chat_id)
@@ -499,11 +499,11 @@ async def download_url(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
     users[chat_id] = user.to_dict()
     return ConversationHandler.END
 
-async def multiple_subscribe(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
+async def multiple_subscribe(update: Update, _) -> int:
     await update.message.reply_text("Enter urls")
     return MULTIPLE_SUBSCRIBE_URLS
 
-async def multiple_subscribe_urls(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
+async def multiple_subscribe_urls(update: Update, _) -> int:
     message = update.message
     user = message.from_user
     query = message.text
@@ -553,7 +553,7 @@ async def multiple_subscribe_urls(update: Update, _: ContextTypes.DEFAULT_TYPE) 
     await message.reply_text(f"Multiple Subscribe" + (f"\n{len(subscribed)} urls successfully" if subscribed else "") + (f"\n{len(failed)} urls failed" if failed else "") + (f"\n{len(already_subscribed)} urls already subscribed" if already_subscribed else ""))
     return ConversationHandler.END
 
-async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def subscribe(update: Update, context) -> int:
     message = update.message
     if remove_command_prefix(message.text):
         return await subscribe_url(update, context)
@@ -561,7 +561,7 @@ async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await message.reply_text("Enter url")
         return SUBSCRIBE_URL
 
-async def subscribe_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def subscribe_url(update: Update, context) -> int:
     message = update.message
     user = message.from_user
     query = remove_command_prefix(message.text)
@@ -618,7 +618,7 @@ async def subscribe_url(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     ))
     return SUBSCRIBE_PLAYLIST
     
-async def subscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def subscribe_playlist(update: Update, context) -> int:
     playlists = context.user_data.pop('playlists', None)
     uploader_videos = context.user_data.pop('uploader_videos', None)
     callback_query = update.callback_query
@@ -700,7 +700,7 @@ async def subscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await message_text(f"Subscribed to {subscription_info}\nShow latest videos?", parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
     return SUBSCRIBE_SHOW
 
-async def subscribe_show(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def subscribe_show(update: Update, context) -> int:
     callback_query = update.callback_query
     message = callback_query.message
     chat_id = message.chat_id
@@ -722,7 +722,7 @@ async def subscribe_show(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         except: pass
     return ConversationHandler.END
 
-async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def unsubscribe(update: Update, context) -> int:
     message = update.message
     if remove_command_prefix(message.text):
         return await unsubscribe_playlist(update, context)
@@ -739,7 +739,7 @@ async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
             await message.reply_text("No subscription found")
             return ConversationHandler.END
 
-async def unsubscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def unsubscribe_playlist(update: Update, context) -> int:
     callback_query = update.callback_query
     if callback_query:
         await callback_query.answer()
@@ -786,7 +786,7 @@ async def unsubscribe_playlist(update: Update, context: ContextTypes.DEFAULT_TYP
     await message_text(f"Unsubscribed from {subscription_info}", parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup([]))
     return ConversationHandler.END
 
-async def playlists(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
+async def playlists(update: Update, _) -> int:
     message = update.message
     subscription_list = [item['url'] for item in user_subscriptions(message.chat_id).values()]
 
@@ -840,7 +840,7 @@ async def playlists(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
         await message.reply_text('\n'.join(output))
     return ConversationHandler.END
 
-async def cancel(update: Update, _: ContextTypes.DEFAULT_TYPE) -> int:
+async def cancel(update: Update, _) -> int:
     message = update.message
     logger.debug(f"{extract_user(message.from_user)} # cancel")
     await message.reply_text("Cancelled", reply_markup=ReplyKeyboardRemove())
