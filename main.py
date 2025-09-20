@@ -1,4 +1,5 @@
 import os, shutil, traceback, re, dotenv, asyncio, ffmpeg, yt_dlp
+from functools import partial
 from yt_dlp import DownloadError
 from threading import Lock
 from contextlib import asynccontextmanager
@@ -98,7 +99,7 @@ async def extract_info(query: str, download: bool) -> dict:
     info = videos.get(query)
     if info and (info.get('file_id') or not download):
         return info
-    
+
     if not info:
         try:
             info = ydl.extract_info(query, download=False)
@@ -108,26 +109,25 @@ async def extract_info(query: str, download: bool) -> dict:
                 videos[query] = info_url
                 return info_url
         except Exception as e:
-            if isinstance(e, DownloadError):
-                if contains_text(e.msg, VIDEO_ERROR_MESSAGES):
-                    intent = intents.get(query)
-                    if not intent:
-                        intent = temporary_inline_queries.get(query)
-                    if intent:
-                        intent.update({'ignored': True})
-                    return
+            if isinstance(e, DownloadError) and contains_text(e.msg, VIDEO_ERROR_MESSAGES):
+                intent = intents.get(query) or temporary_inline_queries.get(query)
+                if intent: intent.update({'ignored': True})
+                return info
             logger.error(f"{now()} # extract_info error: {query}")
 
-    if (not info or not info.get('file_id')) and download:
+    needs_download = download and (not info or not info.get('file_id'))
+    if needs_download:
         try:
             async with download_video_lock():
-                future = loop.run_in_executor(None, ydl.extract_info, query)
+                future = loop.run_in_executor(None, partial(ydl.extract_info, query, download=True))
                 info = await asyncio.wait_for(future, TIMEOUT_SEC)
+                logger.debug(f"{now()} # extract_info downloaded: {query}")
         except asyncio.TimeoutError:
             logger.error(f"{now()} # extract_info timeout: {query}")
         except Exception as e:
             logger.error(f"{now()} # extract_info download error: {query}")
             traceback.print_exception(e)
+
     return process_info(info)
 
 async def post_process(query: str, info: dict, message: Message, store_info=True) -> str:
@@ -156,7 +156,9 @@ async def post_process(query: str, info: dict, message: Message, store_info=True
         else: remove(filepath)
     return file_id
 
-async def append_intent(query: str, chat_ids: list = [], inline_message_id: str = '', message: dict = {}):
+async def append_intent(query: str, chat_ids=None, inline_message_id: str = '', message=None):
+    if chat_ids is None: chat_ids = []
+    if message is None: message = {}
     intent = intents.setdefault(query, {
         'chat_ids': [],
         'inline_message_ids': [],
@@ -416,7 +418,7 @@ async def process_query(bot: Bot, query: str) -> dict:
     return info
 
 async def process_intent(bot: Bot, query: str, video: str, caption: str) -> dict:
-    intent = intents.pop(query, None)
+    intent = intents.pop(query)
     for item in intent['chat_ids']:
         try: await bot.send_video(chat_id=item, video=video, caption=caption, disable_notification=True)
         except: logger.error(f"{now()} # process_intent chat_ids error: {query} - {item}")
@@ -577,7 +579,7 @@ async def subscribe_url(update: Update, context) -> int:
             await message.reply_text("Unsupported url", reply_markup=ReplyKeyboardRemove())
             return ConversationHandler.END
         if not uploader_url.startswith(query):
-            info = ydl.extract_info(uploader_url, download=False)
+            ydl.extract_info(uploader_url, download=False)
 
         try:
             playlists = f"{uploader_url}/playlists"
@@ -602,7 +604,7 @@ async def subscribe_url(update: Update, context) -> int:
     append_playlist(playlists, f"{uploader} Videos", uploader_videos)
     try:
         uploader_streams = f"{uploader_url}/streams"
-        info = ydl.extract_info(uploader_streams, download=False)
+        ydl.extract_info(uploader_streams, download=False)
         append_playlist(playlists, f"{uploader} Streams", uploader_streams)
     except: pass
 
@@ -817,12 +819,12 @@ async def playlists(update: Update, _) -> int:
                 already_processed.append(uploader_streams)
             elif subscription_videos:
                 try:
-                    info = ydl.extract_info(uploader_streams, download=False)
+                    ydl.extract_info(uploader_streams, download=False)
                     streams.append(uploader_streams)
                 except: pass
             elif subscription_streams:
                 try:
-                    info = ydl.extract_info(uploader_videos, download=False)
+                    ydl.extract_info(uploader_videos, download=False)
                     videos.append(uploader_videos)
                 except: pass
         except: pass
