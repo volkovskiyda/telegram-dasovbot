@@ -1,0 +1,5 @@
+{
+	"name": "Python 3",
+	"image": "python:3.12-bookworm",
+	"postCreateCommand": "apt update && apt install -y ffmpeg && pip3 install -U python-dotenv python-telegram-bot yt-dlp ffmpeg-python"
+}
