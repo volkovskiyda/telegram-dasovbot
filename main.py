@@ -12,7 +12,6 @@ from telegram.ext import filters, Application, CommandHandler, MessageHandler, I
 from telegram.constants import ParseMode
 from telegram.warnings import PTBUserWarning
 from telegram.error import NetworkError
-import logging
 
 SUBSCRIBE_URL, SUBSCRIBE_PLAYLIST, SUBSCRIBE_SHOW, = range(3)
 UNSUBSCRIBE_PLAYLIST, = range(1)
@@ -39,8 +38,6 @@ loop = asyncio.new_event_loop()
 lock = Lock()
 
 ydl = yt_dlp.YoutubeDL(ydl_opts)
-
-logger = logging.getLogger(__name__)
 
 def validate_config():
     required_env = ['BOT_TOKEN', 'BASE_URL', 'DEVELOPER_CHAT_ID']
@@ -113,7 +110,7 @@ async def extract_info(query: str, download: bool) -> dict:
                 intent = intents.get(query) or temporary_inline_queries.get(query)
                 if intent: intent.update({'ignored': True})
                 return info
-            logger.error(f"{now()} # extract_info error: {query}")
+            print(f"{now()} # extract_info error: {query}")
 
     needs_download = download and (not info or not info.get('file_id'))
     if needs_download:
@@ -121,11 +118,11 @@ async def extract_info(query: str, download: bool) -> dict:
             async with download_video_lock():
                 future = loop.run_in_executor(None, partial(ydl.extract_info, query, download=True))
                 info = await asyncio.wait_for(future, TIMEOUT_SEC)
-                logger.debug(f"{now()} # extract_info downloaded: {query}")
+                print(f"{now()} # extract_info downloaded: {query}")
         except asyncio.TimeoutError:
-            logger.error(f"{now()} # extract_info timeout: {query}")
+            print(f"{now()} # extract_info timeout: {query}")
         except Exception as e:
-            logger.error(f"{now()} # extract_info download error: {query}")
+            print(f"{now()} # extract_info download error: {query}")
             traceback.print_exception(e)
 
     return process_info(info)
@@ -151,7 +148,7 @@ async def post_process(query: str, info: dict, message: Message, store_info=True
         if chat_ids.__contains__(developer_id) or str(message.chat_id) == developer_id:
             try: shutil.move(filepath, '/export/'.join(filepath.rsplit('/media/', 1)))
             except: 
-                logger.error(f"{now()} # move_file error: {query}")
+                print(f"{now()} # move_file error: {query}")
                 remove(filepath)
         else: remove(filepath)
     return file_id
@@ -200,7 +197,7 @@ async def monitor_process_intents(bot: Bot):
     while True:
         try: await process_intents(bot)
         except Exception as e:
-            logger.error(f"{now()} # process_intents crashed: {type(e).__name__}, {str(e)}")
+            print(f"{now()} # process_intents crashed: {type(e).__name__}, {str(e)}")
             traceback.print_exception(e)
             if empty_media_folder: empty_media_folder_files()
         await asyncio.sleep(INTERVAL_SEC)
@@ -218,11 +215,11 @@ async def populate_playlist(channel: str, chat_ids: list):
     try:
         info = ydl.extract_info(channel, download=False)
     except:
-        logger.error(f"{now()} # populate_playlist error: {channel}")
+        print(f"{now()} # populate_playlist error: {channel}")
         return
     entries = info.get('entries')
     if not entries:
-        logger.warning(f"{now()} # populate_playlist no entries: {channel}")
+        print(f"{now()} # populate_playlist no entries: {channel}")
         return
     for entry in filter_entries(entries)[:5][::-1]: await populate_video(extract_url(entry), chat_ids)
 
@@ -277,7 +274,7 @@ async def inline_query(update: Update, context):
     user = inline_query.from_user
     query = inline_query.query.lstrip()
 
-    logger.debug(f"{extract_user(user)} # inline_query: {query}")
+    print(f"{extract_user(user)} # inline_query: {query}")
 
     if not query: return
 
@@ -290,7 +287,7 @@ async def inline_query(update: Update, context):
     })
 
     if temporary_inline_query['ignored']:
-        logger.warning(f"{now()} # inline_query ignored: {query}")
+        print(f"{now()} # inline_query ignored: {query}")
         try: await inline_query.answer(results=[])
         except: pass
         return
@@ -305,7 +302,7 @@ async def inline_query(update: Update, context):
 
     info = await extract_info(query, download=False)
     if not info:
-        logger.warning(f"{now()} # inline_query no info: {query}")
+        print(f"{now()} # inline_query no info: {query}")
         try: await inline_query.answer(results=[])
         except: pass
         return
@@ -323,14 +320,14 @@ async def inline_query(update: Update, context):
 
     context.user_data['inline_queries'] = inline_queries
 
-    if not results: logger.warning(f"{now()} # inline_query no results: {query}")
+    if not results: print(f"{now()} # inline_query no results: {query}")
 
     try:
         await inline_query.answer(results=results, cache_time=1)
     except Exception as e:
         single_video = len(results) == 1
         traceback.print_exception(e)
-        logger.error(f"{now()} # inline_query answer error: {query}, single: {single_video}, {type(e)=}, {e=}")
+        print(f"{now()} # inline_query answer error: {query}, single: {single_video}, {type(e)=}, {e=}")
         if (single_video): await populate_video(query, chat_ids = [user.id])
 
 async def chosen_query(update: Update, context):
@@ -343,7 +340,7 @@ async def chosen_query(update: Update, context):
     if not query: return
     user = inline_result.from_user
 
-    logger.debug(f"{extract_user(user)} # chosen_query strt: {query}")
+    print(f"{extract_user(user)} # chosen_query strt: {query}")
 
     info = videos.get(query)
     file_id = info.get('file_id') if info else None
@@ -355,16 +352,16 @@ async def chosen_query(update: Update, context):
             ),
             inline_message_id=inline_message_id,
         )
-        logger.debug(f"{extract_user(user)} # chosen_query fnsh: {query}")
+        print(f"{extract_user(user)} # chosen_query fnsh: {query}")
         return
     
     await append_intent(query, inline_message_id = inline_message_id)
-    logger.debug(f"{extract_user(user)} # chosen_query aint: {query}")
+    print(f"{extract_user(user)} # chosen_query aint: {query}")
 
 async def process_query(bot: Bot, query: str) -> dict:
     info = await extract_info(query, download=True)
     if not info:
-        logger.warning(f"{now()} # process_query error: {query}")
+        print(f"{now()} # process_query error: {query}")
         if intents.get(query) and not intents[query]['ignored']: intents.pop(query, None)
         return info
     caption = info.get('caption')
@@ -373,7 +370,7 @@ async def process_query(bot: Bot, query: str) -> dict:
         try:
             video_path = info.get('filepath')
             if not video_path: await send_message_developer(bot, f'[error_no_video_path]\n{caption}')
-            logger.debug(f"{now()} # process_query send_video strt: {query}")
+            print(f"{now()} # process_query send_video strt: {query}")
             message = await bot.send_video(
                 chat_id=developer_chat_id,
                 caption=caption,
@@ -384,15 +381,17 @@ async def process_query(bot: Bot, query: str) -> dict:
                 filename=info['filename'],
                 disable_notification=True,
             )
-            logger.debug(f"{now()} # process_query send_video fnsh: {query}")
+            print(f"{now()} # process_query send_video fnsh: {query}")
         except Exception as e:
             if isinstance(e, NetworkError) and video_path and os.path.getsize(video_path) >> 20 > 2000 and 'youtube' in extract_url(info):
                 await send_message_developer(bot, f'[error_large_video]\n{caption}')
                 base, ext = os.path.splitext(video_path)
                 temp_video_path = f'{base}.temp{ext}'
+                print(f"{now()} # process_query temp_video_path: {temp_video_path}")
                 ffmpeg.input(video_path).filter('scale', -1, 360).output(temp_video_path, format='mp4', map='0:a:0').run()
+                print(f"{now()} # process_query ffmpeg scale path: {temp_video_path}, file exists: {os.path.exists(temp_video_path)}")
                 try:
-                    logger.debug(f"{now()} # process_query send_video rsrt: {query}")
+                    print(f"{now()} # process_query send_video rsrt: {query}")
                     message = await bot.send_video(
                         chat_id=developer_chat_id,
                         caption=caption,
@@ -403,13 +402,15 @@ async def process_query(bot: Bot, query: str) -> dict:
                         filename=info['filename'],
                         disable_notification=True,
                     )
-                    logger.debug(f"{now()} # process_query send_video fnsh: {query}")
+                    print(f"{now()} # process_query send_video fnsh: {query}")
                     await send_message_developer(bot, f'[error_fixed_large_video]\n{caption}', notification=False)
                     file_id = await post_process(query, info, message)
                     await process_intent(bot, query, file_id, caption)
                     return info
                 except: pass
-                finally: remove(temp_video_path)
+                finally:
+                    print(f"{now()} # process_query remove: temp_video_path")
+                    remove(temp_video_path)
             intents.pop(query, None)
             return info
         file_id = await post_process(query, info, message)
@@ -421,20 +422,20 @@ async def process_intent(bot: Bot, query: str, video: str, caption: str) -> dict
     intent = intents.pop(query)
     for item in intent['chat_ids']:
         try: await bot.send_video(chat_id=item, video=video, caption=caption, disable_notification=True)
-        except: logger.error(f"{now()} # process_intent chat_ids error: {query} - {item}")
+        except: print(f"{now()} # process_intent chat_ids error: {query} - {item}")
     for item in intent['inline_message_ids']:
         try: await bot.edit_message_media(inline_message_id=item, media=InputMediaVideo(media=video, caption=caption))
-        except: logger.error(f"{now()} # process_intent inline_message_ids error: {query} - {item}")
+        except: print(f"{now()} # process_intent inline_message_ids error: {query} - {item}")
     for item in intent['messages']:
         try: await bot.edit_message_media(chat_id=item['chat'], message_id=item['message'], media=InputMediaVideo(media=video, caption=caption))
-        except: logger.error(f"{now()} # process_intent messages error: {query} - {item}")
+        except: print(f"{now()} # process_intent messages error: {query} - {item}")
     return intent
 
 async def populate_animation(bot: Bot):
     global animation_file_id
     animation_file_id = os.getenv('ANIMATION_FILE_ID')
     if animation_file_id:
-        logger.warning(f"{now()} # saved_animation_file_id = {animation_file_id}")
+        print(f"{now()} # saved_animation_file_id = {animation_file_id}")
         return
 
     query = os.getenv('LOADING_VIDEO_ID')
@@ -453,7 +454,7 @@ async def populate_animation(bot: Bot):
     )
 
     animation_file_id = await post_process(query, info, message, store_info=False)
-    logger.warning(f"{now()} # animation_file_id = {animation_file_id}")
+    print(f"{now()} # animation_file_id = {animation_file_id}")
 
 async def subscription_list(update: Update, _):
     message = update.message
@@ -478,7 +479,7 @@ async def download_url(update: Update, _) -> int:
     chat_id = str(message.chat_id)
     query = remove_command_prefix(message.text)
 
-    logger.debug(f"{extract_user(user)} # download_url: {query}")
+    print(f"{extract_user(user)} # download_url: {query}")
 
     if not query: return ConversationHandler.END
 
@@ -496,7 +497,7 @@ async def download_url(update: Update, _) -> int:
         await append_intent(query, message = { 'chat':chat_id, 'message':str(video.message_id) })
     except Exception as e:
         traceback.print_exception(e)
-        logger.error(f"{extract_user(user)} # download_url error: {query}, {type(e)=}, {e=}")
+        print(f"{extract_user(user)} # download_url error: {query}, {type(e)=}, {e=}")
 
     users[chat_id] = user.to_dict()
     return ConversationHandler.END
@@ -518,7 +519,7 @@ async def multiple_subscribe_urls(update: Update, _) -> int:
     already_subscribed = []
     failed = []
 
-    logger.debug(f"{extract_user(user)} # multiple_subscribe: {len(urls)} urls")
+    print(f"{extract_user(user)} # multiple_subscribe: {len(urls)} urls")
 
     for url in urls:
         url = url.strip()
@@ -551,7 +552,7 @@ async def multiple_subscribe_urls(update: Update, _) -> int:
             subscribed.append(url)
     if already_subscribed: await message.reply_text('\n'.join(["Already Subscribed"] + [f"{item}" for item in already_subscribed]))
     if failed: await message.reply_text('\n'.join(["Failed subscriptions"] + [f"{item}" for item in failed]))
-    logger.debug(f"{extract_user(user)} # multiple_subscribe len: {len(urls)}, already_subscribed: {len(already_subscribed)}, failed: {len(failed)}")
+    print(f"{extract_user(user)} # multiple_subscribe len: {len(urls)}, already_subscribed: {len(already_subscribed)}, failed: {len(failed)}")
     await message.reply_text(f"Multiple Subscribe" + (f"\n{len(subscribed)} urls successfully" if subscribed else "") + (f"\n{len(failed)} urls failed" if failed else "") + (f"\n{len(already_subscribed)} urls already subscribed" if already_subscribed else ""))
     return ConversationHandler.END
 
@@ -568,7 +569,7 @@ async def subscribe_url(update: Update, context) -> int:
     user = message.from_user
     query = remove_command_prefix(message.text)
     
-    logger.debug(f"{extract_user(user)} # subscribe_url: {query}")
+    print(f"{extract_user(user)} # subscribe_url: {query}")
 
     if not query: return ConversationHandler.END
 
@@ -589,7 +590,7 @@ async def subscribe_url(update: Update, context) -> int:
             return await subscribe_playlist(update, context)
 
     except:
-        logger.error(f"{extract_user(user)} # subscribe_url failed: {query}")
+        print(f"{extract_user(user)} # subscribe_url failed: {query}")
         await message.reply_text("Error occured", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
     
@@ -637,7 +638,7 @@ async def subscribe_playlist(update: Update, context) -> int:
         message_text = message.edit_text
 
         if not playlists:
-            logger.warning(f"{extract_user(user)} # subscribe_playlist failed")
+            print(f"{extract_user(user)} # subscribe_playlist failed")
             await message_text("Error occured", reply_markup=InlineKeyboardMarkup([]))
             return ConversationHandler.END
 
@@ -652,7 +653,7 @@ async def subscribe_playlist(update: Update, context) -> int:
         if uploader_videos: url = uploader_videos
         else: url = remove_command_prefix(message.text)
 
-    logger.debug(f"{extract_user(user)} # subscribe_playlist: {title} - {url}")
+    print(f"{extract_user(user)} # subscribe_playlist: {title} - {url}")
 
     if not url:
         await message_text("Invalid selection", reply_markup=InlineKeyboardMarkup([]))
@@ -687,7 +688,7 @@ async def subscribe_playlist(update: Update, context) -> int:
             uploader = info.get('uploader') or info.get('uploader_id')
             uploader_videos = f"{uploader_url}/videos"
         except:
-            logger.error(f"{extract_user(user)} # subscribe_playlist failed: {url}")
+            print(f"{extract_user(user)} # subscribe_playlist failed: {url}")
             await message_text("Error occured", reply_markup=InlineKeyboardMarkup([]))
             return ConversationHandler.END
 
@@ -756,7 +757,7 @@ async def unsubscribe_playlist(update: Update, context) -> int:
         user_subscriptions = context.user_data.pop('user_subscriptions', None)
 
         if not user_subscriptions:
-            logger.warning(f"{extract_user(user)} # unsubscribe_playlist failed")
+            print(f"{extract_user(user)} # unsubscribe_playlist failed")
             await message_text("Error occured", reply_markup=InlineKeyboardMarkup([]))
             return ConversationHandler.END
 
@@ -770,7 +771,7 @@ async def unsubscribe_playlist(update: Update, context) -> int:
     chat_id = str(message.chat_id)
     subscription = subscriptions.get(query)
 
-    logger.debug(f"{extract_user(user)} # unsubscribe_playlist: {query}")
+    print(f"{extract_user(user)} # unsubscribe_playlist: {query}")
 
     if not subscription:
         await message_text("Invalid selection", reply_markup=InlineKeyboardMarkup([]))
@@ -844,7 +845,7 @@ async def playlists(update: Update, _) -> int:
 
 async def cancel(update: Update, _) -> int:
     message = update.message
-    logger.debug(f"{extract_user(message.from_user)} # cancel")
+    print(f"{extract_user(message.from_user)} # cancel")
     await message.reply_text("Cancelled", reply_markup=ReplyKeyboardRemove())
     return ConversationHandler.END
 
@@ -921,11 +922,11 @@ def main():
 @asynccontextmanager
 async def download_video_lock():
     try:
-        logger.debug(f"{now()} # lock_acquire")
+        print(f"{now()} # lock_acquire")
         lock.acquire()
         yield
     finally:
-        logger.debug(f"{now()} # lock_release")
+        print(f"{now()} # lock_release")
         lock.release()
 
 if __name__ == "__main__":
