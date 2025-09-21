@@ -1,7 +1,9 @@
+.devcontainer
 .git
 .github
 .gitignore
 .env
 .cache
+.venv
 venv
 .DS_Store
