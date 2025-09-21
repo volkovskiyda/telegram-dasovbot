@@ -20,10 +20,10 @@ media_folder = f'{config_folder}/media'
 
 datetime_format = '%Y%m%d_%H%M%S'
 date_format = '%Y%m%d'
-video_format = 'bv*[ext=mp4][height<=?720][filesize_approx<=?3G]'
+video_format = 'bv*[ext=mp4][height<=?720][filesize_approx<=?2G]'
 
 ydl_opts = {
-    'format': f"{video_format}+ba[ext=m4a]/{video_format}+ba[ext=mp4]/b[ext=mp4][height<=?720]",
+    'format': f"{video_format}+ba[ext=m4a] / {video_format}+ba[ext=mp4] / b[ext=mp4][height<=?720]",
     'outtmpl': f'{media_folder}/%(timestamp>{datetime_format},upload_date>{date_format}_u,epoch>{datetime_format}_e)s - %(title).80s [%(id).20s].%(ext)s',
     'noplaylist': True,
     'extract_flat': 'in_playlist',
