@@ -390,7 +390,7 @@ async def process_query(bot: Bot, query: str) -> dict:
                 await send_message_developer(bot, f'[error_large_video]\n{caption}')
                 base, ext = os.path.splitext(video_path)
                 temp_video_path = f'{base}.temp{ext}'
-                ffmpeg.input(video_path).filter('scale', -1, 360).output(temp_video_path, format='mp4', map='0:a:0', loglevel='quiet').run()
+                ffmpeg.input(video_path).filter('scale', -1, 360).output(temp_video_path, format='mp4', map='0:a:0').run()
                 try:
                     logger.debug(f"{now()} # process_query send_video rsrt: {query}")
                     message = await bot.send_video(
