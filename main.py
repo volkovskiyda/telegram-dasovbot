@@ -1,9 +1,9 @@
-import os, shutil, traceback, re, dotenv, asyncio, ffmpeg, yt_dlp
+import os, shutil, traceback, re, dotenv, asyncio, yt_dlp
 from functools import partial
 from yt_dlp import DownloadError
 from threading import Lock
 from contextlib import asynccontextmanager
-from utils import ydl_opts, extract_url, now, process_info, write_file, read_file, video_info_file, user_info_file, subscription_info_file, intent_info_file, timestamp_file, remove, empty_media_folder_files
+from utils import ydl_opts, extract_url, now, process_info, write_file, read_file, video_info_file, user_info_file, subscription_info_file, intent_info_file, timestamp_file, remove, empty_media_folder_files, add_scaled_after_title
 from constants import VIDEO_ERROR_MESSAGES, INTERVAL_SEC, TIMEOUT_SEC
 from uuid import uuid4
 from warnings import filterwarnings
@@ -127,7 +127,7 @@ async def extract_info(query: str, download: bool) -> dict:
 
     return process_info(info)
 
-async def post_process(query: str, info: dict, message: Message, store_info=True) -> str:
+async def post_process(query: str, info: dict, message: Message, store_info=True, origin_info: dict = None) -> str:
     file_id = message.video.file_id
     try: await message.delete()
     except: pass
@@ -139,6 +139,15 @@ async def post_process(query: str, info: dict, message: Message, store_info=True
         info.pop('filepath', None)
         info.pop('filename', None)
         info.pop('entries', None)
+        if origin_info:
+            width = origin_info.get('width')
+            height = origin_info.get('height')
+            frmt = origin_info.get('format')
+            info['origin'] = {
+                'width': width,
+                'height': height,
+                'format': frmt,
+            }
         videos[query] = info
         videos[url] = info
     if filepath:
@@ -385,11 +394,15 @@ async def process_query(bot: Bot, query: str) -> dict:
         except Exception as e:
             if isinstance(e, NetworkError) and video_path and os.path.getsize(video_path) >> 20 > 2000 and 'youtube' in extract_url(info):
                 await send_message_developer(bot, f'[error_large_video]\n{caption}')
-                base, ext = os.path.splitext(video_path)
-                temp_video_path = f'{base}.scaled{ext}'
-                print(f"{now()} # process_query temp_video_path: {temp_video_path}")
-                ffmpeg.input(video_path).filter('scale', -1, 360).output(temp_video_path, format='mp4', movflags="+faststart", map='0:a:0').run()
-                print(f"{now()} # process_query ffmpeg scale path: {temp_video_path}, file exists: {os.path.exists(temp_video_path)}")
+                temp_ydl_opts = ydl_opts.copy()
+                temp_ydl_opts['format'] = ydl_opts['format'].replace('720', '360')
+                temp_ydl_opts['outtmpl'] = add_scaled_after_title(ydl_opts['outtmpl'])
+                with yt_dlp.YoutubeDL(temp_ydl_opts) as temp_ydl:
+                    try:
+                        temp_info = temp_ydl.extract_info(query, download=True)
+                        temp_info = process_info(temp_info)
+                        temp_video_path = temp_info.get('filepath')
+                    except: pass
                 try:
                     print(f"{now()} # process_query send_video rsrt: {query}")
                     message = await bot.send_video(
@@ -397,20 +410,20 @@ async def process_query(bot: Bot, query: str) -> dict:
                         caption=caption,
                         video=temp_video_path,
                         duration=info.get('duration'),
-                        width=info.get('width'),
-                        height=info.get('height'),
+                        width=temp_info.get('width') or info.get('width'),
+                        height=temp_info.get('height') or info.get('height'),
                         filename=info['filename'],
                         disable_notification=True,
                     )
                     print(f"{now()} # process_query send_video fnsh: {query}")
                     await send_message_developer(bot, f'[error_fixed_large_video]\n{caption}', notification=False)
-                    file_id = await post_process(query, info, message)
+                    file_id = await post_process(query, info, message, origin_info=temp_info)
                     await process_intent(bot, query, file_id, caption)
                     return info
                 except: pass
                 finally:
-                    print(f"{now()} # process_query remove: temp_video_path")
-                    remove(temp_video_path)
+                    print(f"{now()} # process_query remove: {temp_video_path}")
+                    if temp_video_path: remove(temp_video_path)
             intents.pop(query, None)
             return info
         file_id = await post_process(query, info, message)
