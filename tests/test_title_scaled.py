@@ -37,5 +37,25 @@ class TestAddScaledAfterTitle(unittest.TestCase):
         expected = '%(title)s.scaled | %(title).80s.scaled | %(ext)s'
         self.assertEqual(add_scaled_after_title(src), expected)
 
+    def test_dict_with_precision_80s(self):
+        src = {'default': '%(title).80s %(ext)s', 'chapter': '%(title)s - %(section_title)s %(ext)s'}
+        expected = {'default': '%(title).80s.scaled %(ext)s', 'chapter': '%(title)s.scaled - %(section_title)s %(ext)s'}
+        self.assertEqual(add_scaled_after_title(src), expected)
+
+    def test_dict_with_precision_40s(self):
+        src = {'default': 'prefix_%(title).40s_suffix.%(ext)s', 'chapter': 'prefix_%(title).40s_suffix - %(section_title)s.%(ext)s'}
+        expected = {'default': 'prefix_%(title).40s.scaled_suffix.%(ext)s', 'chapter': 'prefix_%(title).40s.scaled_suffix - %(section_title)s.%(ext)s'}
+        self.assertEqual(add_scaled_after_title(src), expected)
+
+    def test_dct_without_precision(self):
+        src = {'default': '%(title)s.%(ext)s', 'chapter': '%(title)s.%(section_title)s.%(ext)s'}
+        expected = {'default': '%(title)s.scaled.%(ext)s', 'chapter': '%(title)s.scaled.%(section_title)s.%(ext)s'}
+        self.assertEqual(add_scaled_after_title(src), expected)
+
+    def test_dict_no_title_placeholder(self):
+        src = {'default': '%(id).20s - %(ext)s', 'chapter': '%(id).20s - %(section_title)s.%(ext)s'}
+        expected = {'default': '%(id).20s - %(ext)s', 'chapter': '%(id).20s - %(section_title)s.%(ext)s'}
+        self.assertEqual(add_scaled_after_title(src), expected)
+
 if __name__ == '__main__':
     unittest.main()

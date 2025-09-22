@@ -109,5 +109,9 @@ def empty_media_folder_files():
         file_path = os.path.join(media_folder, file)
         remove(file_path)
 
-def add_scaled_after_title(s: str) -> str:
-    return re.sub(r'(%\(title\)(?:\.\d+)?s)(?!\.scaled\b)', r'\1.scaled', s)
+def add_scaled_after_title(value: str|dict) -> str|dict:
+    if isinstance(value, dict):
+        return {k: add_scaled_after_title(v) for k, v in value.items()}
+    elif isinstance(value, str):
+        return re.sub(r'(%\(title\)(?:\.\d+)?s)(?!\.scaled\b)', r'\1.scaled', value)
+    return value
