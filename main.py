@@ -369,8 +369,8 @@ async def process_query(bot: Bot, query: str) -> dict:
     if not file_id:
         try:
             video_path = info.get('filepath')
-            if not video_path: await send_message_developer(bot, f'[error_no_video_path]\n{caption}')
-            print(f"{now()} # process_query send_video strt: {query}")
+            if video_path: print(f"{now()} # process_query send_video strt: {query}")
+            else: await send_message_developer(bot, f'[error_no_video_path]\n{caption}')
             message = await bot.send_video(
                 chat_id=developer_chat_id,
                 caption=caption,
@@ -386,9 +386,9 @@ async def process_query(bot: Bot, query: str) -> dict:
             if isinstance(e, NetworkError) and video_path and os.path.getsize(video_path) >> 20 > 2000 and 'youtube' in extract_url(info):
                 await send_message_developer(bot, f'[error_large_video]\n{caption}')
                 base, ext = os.path.splitext(video_path)
-                temp_video_path = f'{base}.temp{ext}'
+                temp_video_path = f'{base}.scaled{ext}'
                 print(f"{now()} # process_query temp_video_path: {temp_video_path}")
-                ffmpeg.input(video_path).filter('scale', -1, 360).output(temp_video_path, format='mp4', map='0:a:0').run()
+                ffmpeg.input(video_path).filter('scale', -1, 360).output(temp_video_path, format='mp4', movflags="+faststart", map='0:a:0').run()
                 print(f"{now()} # process_query ffmpeg scale path: {temp_video_path}, file exists: {os.path.exists(temp_video_path)}")
                 try:
                     print(f"{now()} # process_query send_video rsrt: {query}")
