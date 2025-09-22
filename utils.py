@@ -1,4 +1,4 @@
-import os, json, traceback, dotenv
+import os, json, traceback, dotenv, re
 from time import strftime
 from datetime import datetime
 
@@ -108,3 +108,6 @@ def empty_media_folder_files():
     for file in os.listdir(media_folder):
         file_path = os.path.join(media_folder, file)
         remove(file_path)
+
+def add_scaled_after_title(s: str) -> str:
+    return re.sub(r'(%\(title\)(?:\.\d+)?s)(?!\.scaled\b)', r'\1.scaled', s)
