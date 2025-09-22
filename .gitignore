@@ -7,3 +7,4 @@ vpn/*
 !vpn/.gitkeep
 .env
 *.pyc
+.DS_Store
