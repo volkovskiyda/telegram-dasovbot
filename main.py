@@ -379,7 +379,7 @@ async def process_query(bot: Bot, query: str) -> dict:
         try:
             video_path = info.get('filepath')
             if video_path: print(f"{now()} # process_query send_video strt: {query}")
-            else: await send_message_developer(bot, f'[error_no_video_path]\n{caption}')
+            elif 'youtube' in extract_url(info): await send_message_developer(bot, f'[error_no_video_path]\n{caption}')
             message = await bot.send_video(
                 chat_id=developer_chat_id,
                 caption=caption,
