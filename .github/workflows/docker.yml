@@ -3,7 +3,7 @@ name: Docker Image Build Release
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 0 * * 1'
+    - cron: '0 0 * * *'  # daily at midnight
   push:
     branches: [ "main" ]
   repository_dispatch:
