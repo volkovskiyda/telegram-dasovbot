@@ -5,7 +5,7 @@ LABEL description="Telegram bot for downloading and sharing online videos"
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-RUN apt update && apt upgrade -y && apt install -y ffmpeg && rm -rf /var/lib/apt/lists/* && apt clean
+RUN apt update && apt upgrade -y && apt install -y ffmpeg jq && rm -rf /var/lib/apt/lists/* && apt clean
 
 RUN mkdir -p /project /data /media /export
 
