@@ -11,7 +11,7 @@ from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboa
 from telegram.ext import filters, Application, CommandHandler, MessageHandler, InlineQueryHandler, ChosenInlineResultHandler, ConversationHandler, CallbackQueryHandler
 from telegram.constants import ParseMode
 from telegram.warnings import PTBUserWarning
-from telegram.error import NetworkError
+from telegram.error import NetworkError, BadRequest
 
 SUBSCRIBE_URL, SUBSCRIBE_PLAYLIST, SUBSCRIBE_SHOW, = range(3)
 UNSUBSCRIBE_PLAYLIST, = range(1)
@@ -333,6 +333,8 @@ async def inline_query(update: Update, context):
 
     try:
         await inline_query.answer(results=results, cache_time=1)
+    except BadRequest as e:
+        traceback.print_exception(e)
     except Exception as e:
         single_video = len(results) == 1
         traceback.print_exception(e)
