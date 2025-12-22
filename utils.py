@@ -24,7 +24,7 @@ video_format = 'bv*[ext=mp4][height<=?720][filesize_approx<=?2G]'
 
 ydl_opts = {
     'format': f"{video_format}+ba[ext=m4a] / {video_format}+ba[ext=mp4] / b[ext=mp4][height<=?720]",
-    'outtmpl': f'{media_folder}/%(timestamp>{datetime_format},upload_date>{date_format}_u,epoch>{datetime_format}_e)s - %(title).80s [%(id).20s].%(ext)s',
+    'outtmpl': f'{media_folder}/%(timestamp>{datetime_format},upload_date>{date_format}_u,epoch>{date_format}_e)s - %(title).80s [%(id).20s].%(ext)s',
     'noplaylist': True,
     'extract_flat': 'in_playlist',
     'playlist_items': '1-20',
