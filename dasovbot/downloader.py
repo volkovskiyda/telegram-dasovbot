@@ -22,12 +22,10 @@ logger = logging.getLogger(__name__)
 
 _ydl: yt_dlp.YoutubeDL | None = None
 _lock = Lock()
-_loop: asyncio.AbstractEventLoop | None = None
 
 
 def init_downloader(config: Config):
-    global _ydl, _loop
-    _loop = asyncio.new_event_loop()
+    global _ydl
     ydl_opts = make_ydl_opts(config)
     _ydl = yt_dlp.YoutubeDL(ydl_opts)
 
@@ -156,7 +154,8 @@ async def extract_info(query: str, download: bool, state: BotState) -> VideoInfo
     if needs_download:
         try:
             async with download_video_lock():
-                future = _loop.run_in_executor(None, partial(_ydl.extract_info, query, download=True))
+                loop = asyncio.get_running_loop()
+                future = loop.run_in_executor(None, partial(_ydl.extract_info, query, download=True))
                 raw_info = await asyncio.wait_for(future, TIMEOUT_SEC)
                 logger.info("extract_info downloaded: %s", query)
                 info = process_info(raw_info)
