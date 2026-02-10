@@ -83,6 +83,11 @@ You can pass parameter `-d` (`--download`) to dowload video
 python info.py '<url>' --download=True
 ```
 
+### **Tests:**
+```bash
+python -m unittest discover -s tests -v
+```
+
 ### **Docker container**
 
 ```bash
