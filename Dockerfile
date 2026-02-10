@@ -12,9 +12,12 @@ RUN mkdir -p /project /data /media /export
 WORKDIR /project
 
 RUN python -m pip install --upgrade pip
-RUN pip install -U python-dotenv python-telegram-bot yt-dlp ffmpeg-python
 
-COPY *.py ./
+COPY requirements.txt ./
+RUN pip install -r requirements.txt
+
+COPY dasovbot/ ./dasovbot/
+COPY main.py info.py subscriptions.py empty_media_folder.py ./
 
 VOLUME ["/data", "/media", "/export"]
 
