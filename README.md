@@ -30,24 +30,57 @@
 - `DEVELOPER_CHAT_ID` and `LOADING_VIDEO_ID` environment variables are used to populate loading animation
 - For local server you can use [docker telegram bot api image](https://github.com/volkovskiyda/docker-telegram-bot-api)
 
+#### **Environment variables:**
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `BOT_TOKEN` | Yes | | Telegram bot token from @BotFather |
+| `BASE_URL` | Yes | | Telegram Bot API base URL |
+| `DEVELOPER_CHAT_ID` | Yes | | Chat ID for developer notifications |
+| `DEVELOPER_ID` | No | `DEVELOPER_CHAT_ID` | Developer user ID for export permissions |
+| `READ_TIMEOUT` | No | `30` | Request timeout in seconds |
+| `LOADING_VIDEO_ID` | No | | Video URL used for loading animation |
+| `ANIMATION_FILE_ID` | No | | Pre-cached animation file ID (skips loading upload) |
+| `CONFIG_FOLDER` | No | `/` | Root folder for data/media/export directories |
+| `EMPTY_MEDIA_FOLDER` | No | `false` | Clear media folder on process crash recovery |
+
+### **Project structure:**
+```
+dasovbot/              # Main package
+  __main__.py          # Entry point
+  config.py            # Config loading, ydl_opts
+  constants.py         # Error messages, timeouts, states
+  models.py            # Dataclasses for video, intent, subscription
+  persistence.py       # JSON file I/O
+  state.py             # BotState (mutable state container)
+  downloader.py        # yt-dlp wrapper
+  helpers.py           # Shared utilities
+  handlers/            # Telegram handler modules
+  services/            # Background tasks and intent processing
+main.py                # Thin wrapper entry point
+info.py                # CLI: video info lookup
+subscriptions.py       # CLI: bulk subscription management
+empty_media_folder.py  # CLI: clear media folder
+```
+
 ### **Run:**
-Note: Use Python 3.6 or above to install and run the Bot, previous version are unsupported.
+Note: Use Python 3.10 or above to install and run the Bot.
 - Install requirements
 ```bash
-pip3 install -r requirements.txt
+pip install -r requirements.txt
 ```
 - Run the bot
 ```bash
-python3 main.py
+python main.py
 ```
 
 - Show info
 ```bash
-python3 info.py '<url>' -d=False
+python info.py '<url>' -d=False
 ```
 You can pass parameter `-d` (`--download`) to dowload video
 ```bash
-python3 info.py '<url>' --download=True
+python info.py '<url>' --download=True
 ```
 
 ### **Docker container**
@@ -61,7 +94,7 @@ docker run -dit --rm --name telegram --pull=always -e TELEGRAM_API_ID=<api_id> -
 ##### **Note**: Populate `.env` based on `.env.example`. See [Configuration](#configuration) for details
 ### Normal mode (without vpn)
 #### Change `BASE_URL` in `.env`:
-`BASE_URL=http://host.docker.internal:8081/bot`
+`BASE_URL=http://api:8081/bot`
 ```bash
 docker-compose up -d
 ```
