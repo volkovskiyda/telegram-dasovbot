@@ -2,13 +2,18 @@ import asyncio
 import argparse
 import json
 import yt_dlp
-from utils import ydl_opts, extract_url
+from dasovbot.config import load_config, make_ydl_opts
+from dasovbot.downloader import extract_url
 
+config = load_config()
+ydl_opts = make_ydl_opts(config)
 ydl_opts.pop('quiet', None)
 ydl = yt_dlp.YoutubeDL(ydl_opts)
 
+
 def json_dumps(info):
     print(json.dumps(info, indent=1, ensure_ascii=False))
+
 
 def video(info):
     title = info['title']
@@ -47,6 +52,7 @@ def video(info):
     }
     return video
 
+
 async def info(query: str, download: bool) -> None:
     info = ydl.extract_info(query, download=download)
     # json_dumps(info)
@@ -58,8 +64,9 @@ async def info(query: str, download: bool) -> None:
         output = [video(item) for item in reversed(entries)]
     else:
         output = video(info)
-    
+
     json_dumps(output)
+
 
 def sizeof_fmt(num, suffix="B"):
     if (num == 0.0): return "N/A"
@@ -68,6 +75,7 @@ def sizeof_fmt(num, suffix="B"):
             return f"{num:3.1f}{unit}{suffix}"
         num /= 1024.0
     return f"{num:.1f}Yi{suffix}"
+
 
 def main() -> None:
     parser = argparse.ArgumentParser()

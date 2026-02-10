@@ -1,5 +1,5 @@
 import unittest
-from utils import add_scaled_after_title
+from dasovbot.downloader import add_scaled_after_title
 
 class TestAddScaledAfterTitle(unittest.TestCase):
     def test_with_precision_80s(self):
