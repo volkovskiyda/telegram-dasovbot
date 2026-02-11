@@ -46,7 +46,7 @@ async def login_post(request: web.Request) -> web.Response:
     expected = get_password()
     if password == expected:
         response = web.HTTPFound('/')
-        response.set_cookie(COOKIE_NAME, make_token(password), httponly=True, samesite='Lax')
+        response.set_cookie(COOKIE_NAME, make_token(password), httponly=True, secure=True, samesite='Lax')
         raise response
     raise web.HTTPFound('/login?error=1')
 
