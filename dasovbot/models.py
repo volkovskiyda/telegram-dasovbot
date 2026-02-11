@@ -43,6 +43,8 @@ class VideoInfo:
     format: str | None = None
     entries: list | None = None
     origin: VideoOrigin | None = None
+    source: str | None = None
+    processed_at: str | None = None
 
     def to_dict(self) -> dict:
         d = {
@@ -63,6 +65,8 @@ class VideoInfo:
             'filename': self.filename,
             'format': self.format,
             'entries': self.entries,
+            'source': self.source,
+            'processed_at': self.processed_at,
         }
         if self.origin is not None:
             d['origin'] = self.origin.to_dict()
@@ -91,6 +95,8 @@ class VideoInfo:
             format=data.get('format'),
             entries=data.get('entries'),
             origin=origin,
+            source=data.get('source'),
+            processed_at=data.get('processed_at'),
         )
 
 
@@ -114,6 +120,7 @@ class Intent:
     messages: list[IntentMessage] = field(default_factory=list)
     priority: int = 0
     ignored: bool = False
+    source: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -122,6 +129,7 @@ class Intent:
             'messages': [m.to_dict() for m in self.messages],
             'priority': self.priority,
             'ignored': self.ignored,
+            'source': self.source,
         }
 
     @classmethod
@@ -133,6 +141,7 @@ class Intent:
             messages=messages,
             priority=data.get('priority', 0),
             ignored=data.get('ignored', False),
+            source=data.get('source'),
         )
 
 

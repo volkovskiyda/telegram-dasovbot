@@ -16,6 +16,11 @@ VIDEO_ERROR_MESSAGES = [
 INTERVAL_SEC = 60 * 60  # an hour
 TIMEOUT_SEC = 60 * 10  # 10 minutes
 
+# Sources
+SOURCE_SUBSCRIPTION = 'subscription'
+SOURCE_DOWNLOAD = 'download'
+SOURCE_INLINE = 'inline'
+
 # Format strings
 DATETIME_FORMAT = '%Y%m%d_%H%M%S'
 DATE_FORMAT = '%Y%m%d'
