@@ -53,13 +53,26 @@ async def index(request: web.Request) -> web.Response:
     except FileNotFoundError:
         pass
 
+    filtered = filter_intents(state.intents)
+    intents = []
+    for url, intent in sorted(filtered.items(), key=lambda x: x[1].priority, reverse=True):
+        intents.append({
+            'url': url,
+            'priority': intent.priority,
+            'chat_ids_count': len(intent.chat_ids),
+            'inline_msg_ids_count': len(intent.inline_message_ids),
+            'messages_count': len(intent.messages),
+            'source': intent.source or '',
+        })
+
     context = {
         'video_count': len(state.videos),
         'subscription_count': len(state.subscriptions),
-        'intent_count': len(filter_intents(state.intents)),
+        'intent_count': len(filtered),
         'user_count': len(state.users),
         'last_persistence': timestamp_raw,
         'last_persistence_relative': relative_time(timestamp_raw),
+        'intents': intents,
     }
     return aiohttp_jinja2.render_template('index.html', request, context)
 

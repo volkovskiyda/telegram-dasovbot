@@ -26,9 +26,36 @@
 <div class="card">
     <p>Last persistence: <strong>{{ last_persistence or 'never' }}</strong> <span class="text-muted">({{ last_persistence_relative }})</span></p>
 </div>
-<div class="card">
-    <p><a href="/videos">View latest videos</a></p>
-    <p><a href="/queue">View processing queue</a></p>
-    <p><a href="/system">View system status</a></p>
-</div>
+
+<h2 style="font-size: 18px; margin: 24px 0 12px; color: #94a3b8;">Processing Queue</h2>
+<table>
+    <thead>
+        <tr>
+            <th>URL</th>
+            <th>Priority</th>
+            <th>Chat IDs</th>
+            <th>Inline Msgs</th>
+            <th>Messages</th>
+            <th>Source</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for intent in intents %}
+        <tr>
+            <td><a href="{{ intent.url }}" target="_blank" rel="noopener">{{ intent.url[:60] }}{% if intent.url|length > 60 %}...{% endif %}</a></td>
+            <td>{{ intent.priority }}</td>
+            <td>{{ intent.chat_ids_count }}</td>
+            <td>{{ intent.inline_msg_ids_count }}</td>
+            <td>{{ intent.messages_count }}</td>
+            <td>
+                {% if intent.source %}
+                <span class="badge badge-{{ intent.source }}">{{ intent.source }}</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="text-muted" style="text-align: center;">Queue is empty</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
 {% endblock %}
