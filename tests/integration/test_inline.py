@@ -105,37 +105,28 @@ class TestInlineQueries(IntegrationTestBase):
     async def test_inline_query_caching(self):
         """Test that inline queries are cached"""
         from dasovbot.models import TemporaryInlineQuery
+        from telegram import InlineQueryResultCachedVideo
+        from unittest.mock import MagicMock
 
         test_url = self.test_config.test_video_url
 
         with patch('dasovbot.handlers.inline.extract_info') as mock_extract:
-            mock_info = VideoInfo(
-                title="Test Video",
-                webpage_url=test_url,
-                caption="Test caption"
-            )
-            mock_extract.return_value = mock_info
-
             self.state.animation_file_id = "test_animation_id"
 
-            # First query - should extract
-            update1 = self._create_inline_query_update(test_url, "query1")
-            await self.simulate_update(update1)
-
-            # Manually add to cache (simulating what the handler does)
+            # Create a cached result with actual results list
+            cached_result = MagicMock(spec=InlineQueryResultCachedVideo)
             tiq = TemporaryInlineQuery(
                 timestamp="20240101_120000",
-                results=[],
+                results=[cached_result],  # Must have results for cache to work
                 inline_queries={"result_id": test_url}
             )
             self.state.temporary_inline_queries[test_url] = tiq
 
-            # Second query - should use cache
-            mock_extract.reset_mock()
-            update2 = self._create_inline_query_update(test_url, "query2")
-            await self.simulate_update(update2)
+            # Query with cache present - should NOT call extract_info
+            update = self._create_inline_query_update(test_url, "query1")
+            await self.simulate_update(update)
 
-            # Should not call extract_info again
+            # Should not call extract_info when cache exists
             mock_extract.assert_not_called()
             print("\n✓ Inline query caching works")
 
@@ -170,6 +161,9 @@ class TestInlineQueries(IntegrationTestBase):
         """Test chosen inline result handling"""
         test_url = self.test_config.test_video_url
 
+        from dasovbot.handlers.inline import chosen_query
+        from unittest.mock import MagicMock
+
         with patch('dasovbot.handlers.inline.append_intent') as mock_append:
             # Set up state with video info
             video_info = VideoInfo(
@@ -180,18 +174,19 @@ class TestInlineQueries(IntegrationTestBase):
             )
             self.state.videos[test_url] = video_info
 
-            # Create context with inline_queries
+            # Create update
             update = self._create_chosen_inline_result_update("result_123")
 
-            # Manually set up user_data (normally done by inline query handler)
-            if not hasattr(self.application, 'user_data'):
-                self.application.user_data = {}
-            user_key = (self.test_config.user_id, self.test_config.user_id)
-            self.application.user_data[user_key] = {
+            # Create a mock context with user_data
+            context = MagicMock()
+            context.bot_data = {'state': self.state}
+            context.user_data = {
                 'inline_queries': {'result_123': test_url}
             }
+            context.bot = self.bot
 
-            await self.simulate_update(update)
+            # Call the handler directly
+            await chosen_query(update, context)
 
             # Should append intent since no file_id
             mock_append.assert_called_once()
@@ -200,6 +195,9 @@ class TestInlineQueries(IntegrationTestBase):
     async def test_chosen_inline_result_with_cached_file(self):
         """Test chosen inline result with cached file ID"""
         test_url = self.test_config.test_video_url
+
+        from dasovbot.handlers.inline import chosen_query
+        from unittest.mock import MagicMock, AsyncMock
 
         # Set up state with cached file
         video_info = VideoInfo(
@@ -212,16 +210,20 @@ class TestInlineQueries(IntegrationTestBase):
 
         update = self._create_chosen_inline_result_update("result_123")
 
-        # Set up user_data
-        if not hasattr(self.application, 'user_data'):
-            self.application.user_data = {}
-        user_key = (self.test_config.user_id, self.test_config.user_id)
-        self.application.user_data[user_key] = {
+        # Create a mock context with user_data
+        context = MagicMock()
+        context.bot_data = {'state': self.state}
+        context.user_data = {
             'inline_queries': {'result_123': test_url}
         }
+        # Mock the bot.edit_message_media call
+        context.bot = AsyncMock()
 
-        await self.simulate_update(update)
+        # Call the handler directly
+        await chosen_query(update, context)
 
+        # Should call edit_message_media with the cached file_id
+        context.bot.edit_message_media.assert_called_once()
         print(f"\n✓ Chosen inline result with cached file processed for {test_url}")
 
     async def test_inline_query_error_handling(self):

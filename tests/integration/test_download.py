@@ -71,15 +71,16 @@ class TestDownloadConversation(IntegrationTestBase):
             print(f"\n✓ /download with URL processed: {test_url}")
 
     async def test_download_conversation_flow(self):
-        """Test the full download conversation flow"""
+        """Test the full download conversation flow by calling handlers directly"""
         test_url = self.test_config.test_video_url
 
-        # Step 1: Start conversation with /download
-        update1 = self._create_update("/download", message_id=1)
-        await self.simulate_update(update1)
+        from dasovbot.handlers.download import download, download_url
+        from dasovbot.constants import DAS_URL
+        from unittest.mock import MagicMock
+        from telegram.ext import ConversationHandler
 
-        # Step 2: Send URL
-        with patch('dasovbot.handlers.download.extract_info') as mock_extract:
+        with patch('dasovbot.handlers.download.extract_info') as mock_extract, \
+             patch('dasovbot.handlers.download.append_intent', new_callable=AsyncMock):
             # Mock the extract_info
             mock_info = AsyncMock()
             mock_info.title = "Test Video"
@@ -92,15 +93,56 @@ class TestDownloadConversation(IntegrationTestBase):
             # Set animation file ID
             self.state.animation_file_id = "test_animation_id"
 
-            update2 = self._create_update(test_url, message_id=2)
-            await self.simulate_update(update2)
+            # Step 1: Call download handler (entry point)
+            # Create a fully mocked update with a mocked message
+            mock_user = MagicMock()
+            mock_user.id = self.test_config.user_id
+            mock_user.username = 'testuser'
+            mock_user.__getitem__ = lambda self, key: {'id': mock_user.id, 'username': mock_user.username}[key]
+            mock_user.to_dict = lambda: {'id': self.test_config.user_id, 'username': 'testuser'}
 
-            # Verify extract_info was called
+            mock_message1 = AsyncMock()
+            mock_message1.text = "/download"
+            mock_message1.from_user = mock_user
+            mock_message1.chat_id = self.test_config.chat_id
+            mock_message1.reply_text = AsyncMock()
+
+            mock_update1 = MagicMock()
+            mock_update1.message = mock_message1
+
+            context = MagicMock()
+            context.bot_data = {'state': self.state}
+
+            result = await download(mock_update1, context)
+            self.assertEqual(result, DAS_URL)  # Should return the next state
+            mock_message1.reply_text.assert_called_once_with("Enter url")
+
+            # Step 2: Call download_url handler (receives URL)
+            mock_message2 = AsyncMock()
+            mock_message2.text = test_url
+            mock_message2.from_user = mock_user
+            mock_message2.chat_id = self.test_config.chat_id
+            mock_message2.id = 2
+            mock_message2.reply_text = AsyncMock()
+            mock_message2.reply_video = AsyncMock(return_value=AsyncMock(message_id=123))
+
+            mock_update2 = MagicMock()
+            mock_update2.message = mock_message2
+
+            result = await download_url(mock_update2, context)
+
+            # Verify extract_info was called with the URL
             mock_extract.assert_called_once()
             call_args = mock_extract.call_args
             self.assertEqual(call_args[0][0], test_url)
 
-        print(f"\n✓ Download conversation flow completed for {test_url}")
+            # Verify reply_video was called
+            mock_message2.reply_video.assert_called_once()
+
+            # Should return ConversationHandler.END
+            self.assertEqual(result, ConversationHandler.END)
+
+            print(f"\n✓ Download conversation flow completed for {test_url}")
 
     async def test_download_with_invalid_url(self):
         """Test download with invalid/unsupported URL"""
