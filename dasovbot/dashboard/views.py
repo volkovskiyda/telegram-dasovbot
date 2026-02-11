@@ -115,24 +115,6 @@ async def videos(request: web.Request) -> web.Response:
     return aiohttp_jinja2.render_template('videos.html', request, context)
 
 
-async def queue(request: web.Request) -> web.Response:
-    state = get_state(request)
-    filtered = filter_intents(state.intents)
-
-    items = []
-    for url, intent in sorted(filtered.items(), key=lambda x: x[1].priority, reverse=True):
-        items.append({
-            'url': url,
-            'priority': intent.priority,
-            'chat_ids_count': len(intent.chat_ids),
-            'inline_msg_ids_count': len(intent.inline_message_ids),
-            'messages_count': len(intent.messages),
-            'source': intent.source or '',
-        })
-
-    return aiohttp_jinja2.render_template('queue.html', request, {'intents': items})
-
-
 async def system(request: web.Request) -> web.Response:
     state = get_state(request)
 
