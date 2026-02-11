@@ -1,16 +1,16 @@
-import asyncio
-import os
 import unittest
 from typing import Optional
 
 from dotenv import load_dotenv
-from telegram import Bot, Update, User
+from telegram import Bot, Chat, Message, Update, User
 from telegram.ext import Application
 
 from dasovbot.config import Config
 from dasovbot.downloader import init_downloader
 from dasovbot.handlers import register_handlers
 from dasovbot.state import BotState
+
+import os
 
 
 class IntegrationTestConfig:
@@ -22,7 +22,7 @@ class IntegrationTestConfig:
 
         self.bot_token = os.getenv('TEST_BOT_TOKEN')
         self.user_id = int(os.getenv('TEST_USER_ID', '0'))
-        self.chat_id = int(os.getenv('TEST_CHAT_ID', self.user_id))
+        self.chat_id = int(os.getenv('TEST_CHAT_ID', str(self.user_id)))
         self.base_url = os.getenv('TEST_BASE_URL', '')
         self.read_timeout = int(os.getenv('TEST_READ_TIMEOUT', '30'))
         self.test_video_url = os.getenv('TEST_VIDEO_URL', 'https://example.com/video')
@@ -56,10 +56,15 @@ class IntegrationTestBase(unittest.IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls):
         """Set up test configuration once for all tests"""
-        cls.test_config = IntegrationTestConfig()
+        try:
+            cls.test_config = IntegrationTestConfig()
+        except ValueError as e:
+            raise unittest.SkipTest(str(e))
 
     async def asyncSetUp(self):
         """Set up bot application before each test"""
+        self.sent_message_ids = []
+
         # Create a minimal config for testing
         config = self.test_config.to_bot_config()
 
@@ -93,24 +98,27 @@ class IntegrationTestBase(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self):
         """Clean up after each test"""
+        for msg_id in self.sent_message_ids:
+            try:
+                await self.bot.delete_message(self.test_config.chat_id, msg_id)
+            except Exception:
+                pass
+
         if self.application:
             await self.application.stop()
             await self.application.shutdown()
 
-    async def send_message(self, text: str) -> Update:
-        """
-        Send a message to the bot and get the update
-        Note: This requires manual interaction - you'll need to send the message
-        """
-        # For now, this is a helper to document the expected flow
-        # In a real integration test, you would:
-        # 1. Send message via bot.send_message to yourself
-        # 2. Then manually send a message back to the bot
-        # 3. Or use a test client that simulates updates
-        raise NotImplementedError(
-            "Direct message sending requires manual interaction or a test client. "
-            "Use send_command_and_wait() or simulate_update() instead."
-        )
+    def track_message(self, message):
+        """Track a sent message for cleanup in tearDown"""
+        self.sent_message_ids.append(message.message_id)
+        return message
+
+    def make_update(self, text, message_id=1):
+        """Create a fake Update with a message for handler testing"""
+        user = User(id=self.test_config.user_id, first_name='Test', is_bot=False, username='testuser')
+        chat = Chat(id=self.test_config.chat_id, type='private')
+        message = Message(message_id=message_id, date=None, chat=chat, from_user=user, text=text)
+        return Update(update_id=message_id, message=message)
 
     async def simulate_update(self, update: Update):
         """Simulate processing an update through the application"""
@@ -136,28 +144,3 @@ class IntegrationTestBase(unittest.IsolatedAsyncioTestCase):
         if updates:
             last_update_id = updates[-1].update_id
             await self.bot.get_updates(offset=last_update_id + 1)
-
-
-class IntegrationTestHelper:
-    """Helper utilities for integration testing"""
-
-    @staticmethod
-    async def wait_for_condition(condition_fn, timeout: float = 5.0, interval: float = 0.1):
-        """Wait for a condition to become true"""
-        start = asyncio.get_event_loop().time()
-        while True:
-            if await condition_fn() if asyncio.iscoroutinefunction(condition_fn) else condition_fn():
-                return True
-            if asyncio.get_event_loop().time() - start > timeout:
-                raise TimeoutError(f"Condition not met within {timeout}s")
-            await asyncio.sleep(interval)
-
-    @staticmethod
-    def assert_message_contains(message, text: str):
-        """Assert that message contains text"""
-        assert text in message.text, f"Expected '{text}' in message '{message.text}'"
-
-    @staticmethod
-    def assert_message_equals(message, text: str):
-        """Assert that message equals text"""
-        assert message.text == text, f"Expected '{text}', got '{message.text}'"

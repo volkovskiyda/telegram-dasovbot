@@ -90,6 +90,12 @@ python info.py '<url>' --download=True
 python -m unittest discover -s tests -v
 ```
 
+### **Integration tests:**
+Requires `.env.test` with test bot credentials. See `tests/integration/README.md` for setup.
+```bash
+python -m unittest discover -s tests/integration -v
+```
+
 ### **Docker container**
 
 ```bash
