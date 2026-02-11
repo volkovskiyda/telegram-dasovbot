@@ -130,7 +130,15 @@ async def chosen_query(update: Update, context):
         logger.info("%s # chosen_query fnsh: %s", extract_user(user), query)
         return
 
-    await append_intent(query, state, inline_message_id=inline_message_id, source=SOURCE_INLINE)
+    title = None
+    for tiq in state.temporary_inline_queries.values():
+        for result in tiq.results:
+            if result.id == inline_result.result_id:
+                title = result.title
+                break
+        if title:
+            break
+    await append_intent(query, state, inline_message_id=inline_message_id, source=SOURCE_INLINE, title=title)
     logger.info("%s # chosen_query aint: %s", extract_user(user), query)
 
 
