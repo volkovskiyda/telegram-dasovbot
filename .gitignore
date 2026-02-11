@@ -6,5 +6,6 @@ venv/
 vpn/*
 !vpn/.gitkeep
 .env
+.env.test
 *.pyc
 .DS_Store

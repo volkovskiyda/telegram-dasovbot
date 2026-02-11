@@ -5,3 +5,5 @@ ffmpeg-python
 aiohttp
 aiohttp-jinja2
 jinja2
+pytest
+pytest-asyncio
