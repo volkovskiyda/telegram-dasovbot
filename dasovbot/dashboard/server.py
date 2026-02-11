@@ -1,0 +1,52 @@
+from __future__ import annotations
+
+import logging
+import os
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+import aiohttp_jinja2
+import jinja2
+from aiohttp import web
+
+from dasovbot.dashboard.auth import auth_middleware, login_page, login_post, logout, get_password
+from dasovbot.dashboard.views import index, videos, queue, system
+
+if TYPE_CHECKING:
+    from dasovbot.state import BotState
+
+logger = logging.getLogger(__name__)
+
+TEMPLATES_DIR = Path(__file__).parent / 'templates'
+
+
+def create_app(state: BotState) -> web.Application:
+    app = web.Application(middlewares=[auth_middleware])
+    app['state'] = state
+
+    aiohttp_jinja2.setup(app, loader=jinja2.FileSystemLoader(str(TEMPLATES_DIR)))
+
+    app.router.add_get('/login', login_page)
+    app.router.add_post('/login', login_post)
+    app.router.add_get('/logout', logout)
+    app.router.add_get('/', index)
+    app.router.add_get('/videos', videos)
+    app.router.add_get('/queue', queue)
+    app.router.add_get('/system', system)
+
+    return app
+
+
+async def start_dashboard(state: BotState):
+    password = get_password()
+    if not password:
+        logger.info('DASHBOARD_PASSWORD not set, skipping dashboard')
+        return
+
+    port = int(os.getenv('DASHBOARD_PORT', '8080'))
+    app = create_app(state)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    logger.info('Dashboard started on port %d', port)

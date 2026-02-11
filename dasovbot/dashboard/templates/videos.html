@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% set active = "videos" %}
+
+{% block title %}Videos - DasovBot{% endblock %}
+
+{% block content %}
+<h1>Videos</h1>
+
+<div class="filters">
+    <strong style="padding: 6px 0; font-size: 13px; color: #94a3b8;">Sort:</strong>
+    <a href="/videos?sort=processed_at&source={{ source_filter }}&limit={{ limit }}" class="{% if sort_by == 'processed_at' %}active{% endif %}">Processed At</a>
+    <a href="/videos?sort=upload_date&source={{ source_filter }}&limit={{ limit }}" class="{% if sort_by == 'upload_date' %}active{% endif %}">Upload Date</a>
+</div>
+
+<div class="filters">
+    <strong style="padding: 6px 0; font-size: 13px; color: #94a3b8;">Source:</strong>
+    <a href="/videos?sort={{ sort_by }}&source=all&limit={{ limit }}" class="{% if source_filter == 'all' %}active{% endif %}">All</a>
+    <a href="/videos?sort={{ sort_by }}&source=subscription&limit={{ limit }}" class="{% if source_filter == 'subscription' %}active{% endif %}">Subscription</a>
+    <a href="/videos?sort={{ sort_by }}&source=download&limit={{ limit }}" class="{% if source_filter == 'download' %}active{% endif %}">Download</a>
+    <a href="/videos?sort={{ sort_by }}&source=inline&limit={{ limit }}" class="{% if source_filter == 'inline' %}active{% endif %}">Inline</a>
+</div>
+
+<table>
+    <thead>
+        <tr>
+            <th>Title</th>
+            <th>Upload Date</th>
+            <th>Processed At</th>
+            <th>Source</th>
+            <th>Duration</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for v in videos %}
+        <tr>
+            <td><a href="{{ v.webpage_url }}" target="_blank" rel="noopener">{{ v.title[:60] }}{% if v.title|length > 60 %}...{% endif %}</a></td>
+            <td>{{ v.upload_date }}</td>
+            <td>{{ v.processed_at }}</td>
+            <td>
+                {% if v.source %}
+                <span class="badge badge-{{ v.source }}">{{ v.source }}</span>
+                {% endif %}
+            </td>
+            <td>{{ v.duration }}s</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="text-muted" style="text-align: center;">No videos found</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

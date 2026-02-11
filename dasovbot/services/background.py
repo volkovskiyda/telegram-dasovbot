@@ -103,6 +103,7 @@ async def clear_temporary_inline_queries(state: BotState):
 
 
 def start_background_tasks(bot: Bot, state: BotState):
+    from dasovbot.dashboard.server import start_dashboard
     from dasovbot.services.intent_processor import monitor_process_intents
     asyncio.gather(
         populate_animation(bot, state),
@@ -110,4 +111,5 @@ def start_background_tasks(bot: Bot, state: BotState):
         populate_files(state),
         monitor_process_intents(bot, state),
         clear_temporary_inline_queries(state),
+        start_dashboard(state),
     )

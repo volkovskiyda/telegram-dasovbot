@@ -2,3 +2,6 @@ python-dotenv
 python-telegram-bot
 yt-dlp
 ffmpeg-python
+aiohttp
+aiohttp-jinja2
+jinja2

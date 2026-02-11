@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% set active = "system" %}
+
+{% block title %}System - DasovBot{% endblock %}
+
+{% block content %}
+<h1>System Status</h1>
+
+<div class="card">
+    <h2 style="font-size: 16px; margin-bottom: 12px; color: #94a3b8;">Persistence</h2>
+    <p>Timestamp file: <strong>{{ timestamp_raw or 'N/A' }}</strong> <span class="text-muted">({{ timestamp_relative }})</span></p>
+</div>
+
+<h2 style="font-size: 16px; margin-bottom: 12px; margin-top: 24px; color: #94a3b8;">Background Tasks</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Task</th>
+            <th>Description</th>
+            <th>Interval</th>
+            <th>Last Run</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for task in tasks %}
+        <tr>
+            <td>{{ task.name }}</td>
+            <td>{{ task.description }}</td>
+            <td>{{ task.interval }}</td>
+            <td>{{ task.last_run or 'never' }} <span class="text-muted">({{ task.last_run_relative }})</span></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h2 style="font-size: 16px; margin-bottom: 12px; margin-top: 24px; color: #94a3b8;">State Sizes</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Collection</th>
+            <th>Count</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr><td>Videos</td><td>{{ video_count }}</td></tr>
+        <tr><td>Subscriptions</td><td>{{ subscription_count }}</td></tr>
+        <tr><td>Users</td><td>{{ user_count }}</td></tr>
+        <tr><td>Intents</td><td>{{ intent_count }}</td></tr>
+        <tr><td>Temporary Inline Queries</td><td>{{ tiq_count }}</td></tr>
+        <tr><td>Download Queue</td><td>{{ queue_size }}</td></tr>
+    </tbody>
+</table>
+{% endblock %}

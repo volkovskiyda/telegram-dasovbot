@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% set active = "index" %}
+
+{% block title %}Overview - DasovBot{% endblock %}
+
+{% block content %}
+<h1>Overview</h1>
+<div class="stats">
+    <div class="stat">
+        <div class="value">{{ video_count }}</div>
+        <div class="label">Videos</div>
+    </div>
+    <div class="stat">
+        <div class="value">{{ subscription_count }}</div>
+        <div class="label">Subscriptions</div>
+    </div>
+    <div class="stat">
+        <div class="value">{{ intent_count }}</div>
+        <div class="label">Active Intents</div>
+    </div>
+    <div class="stat">
+        <div class="value">{{ user_count }}</div>
+        <div class="label">Users</div>
+    </div>
+</div>
+<div class="card">
+    <p>Last persistence: <strong>{{ last_persistence or 'never' }}</strong> <span class="text-muted">({{ last_persistence_relative }})</span></p>
+</div>
+<div class="card">
+    <p><a href="/videos">View latest videos</a></p>
+    <p><a href="/queue">View processing queue</a></p>
+    <p><a href="/system">View system status</a></p>
+</div>
+{% endblock %}

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="30">
+    <title>{% block title %}DasovBot{% endblock %}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #1a1a2e; color: #e0e0e0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+        nav { background: #16213e; padding: 12px 24px; display: flex; gap: 20px; align-items: center; border-bottom: 1px solid #0f3460; }
+        nav a { color: #94a3b8; text-decoration: none; font-size: 14px; padding: 6px 12px; border-radius: 6px; transition: all 0.2s; }
+        nav a:hover, nav a.active { color: #e0e0e0; background: #0f3460; }
+        nav .brand { color: #e94560; font-weight: bold; font-size: 16px; margin-right: 12px; }
+        nav .brand:hover { background: none; color: #e94560; }
+        nav .spacer { flex: 1; }
+        .container { max-width: 1200px; margin: 24px auto; padding: 0 24px; }
+        h1 { font-size: 22px; margin-bottom: 20px; color: #e94560; }
+        table { width: 100%; border-collapse: collapse; background: #16213e; border-radius: 8px; overflow: hidden; }
+        th { background: #0f3460; text-align: left; padding: 10px 14px; font-size: 13px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; }
+        td { padding: 10px 14px; border-top: 1px solid #1a1a3e; font-size: 14px; }
+        tr:hover td { background: #1a1a3e; }
+        a { color: #53a8e2; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+        .badge-subscription { background: #1b4332; color: #95d5b2; }
+        .badge-download { background: #1a3a5c; color: #7ec8e3; }
+        .badge-inline { background: #4a1942; color: #d4a5d0; }
+        .card { background: #16213e; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .stat { background: #16213e; border-radius: 8px; padding: 20px; text-align: center; }
+        .stat .value { font-size: 32px; font-weight: bold; color: #e94560; }
+        .stat .label { font-size: 13px; color: #94a3b8; margin-top: 4px; }
+        .filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+        .filters a { padding: 6px 14px; border-radius: 6px; font-size: 13px; background: #16213e; color: #94a3b8; }
+        .filters a.active { background: #0f3460; color: #e0e0e0; }
+        .text-muted { color: #64748b; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="/" class="brand">DasovBot</a>
+        <a href="/" class="{% if active == 'index' %}active{% endif %}">Overview</a>
+        <a href="/videos" class="{% if active == 'videos' %}active{% endif %}">Videos</a>
+        <a href="/queue" class="{% if active == 'queue' %}active{% endif %}">Queue</a>
+        <a href="/system" class="{% if active == 'system' %}active{% endif %}">System</a>
+        <span class="spacer"></span>
+        <a href="/logout">Logout</a>
+    </nav>
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>
