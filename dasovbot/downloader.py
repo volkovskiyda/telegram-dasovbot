@@ -3,10 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from contextlib import asynccontextmanager
 from datetime import datetime
 from functools import partial
-from threading import Lock
 from typing import TYPE_CHECKING
 
 import yt_dlp
@@ -21,7 +19,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _ydl: yt_dlp.YoutubeDL | None = None
-_lock = Lock()
+_lock = asyncio.Lock()
 
 
 def init_downloader(config: Config):
@@ -135,7 +133,8 @@ async def extract_info(query: str, download: bool, state: BotState) -> VideoInfo
 
     if not info:
         try:
-            raw_info = _ydl.extract_info(query, download=False)
+            loop = asyncio.get_running_loop()
+            raw_info = await loop.run_in_executor(None, partial(_ydl.extract_info, query, download=False))
             url = extract_url(raw_info)
             info_url = state.videos.get(url)
             if info_url:
@@ -153,7 +152,8 @@ async def extract_info(query: str, download: bool, state: BotState) -> VideoInfo
     needs_download = download and (not info or not info.file_id)
     if needs_download:
         try:
-            async with download_video_lock():
+            async with _lock:
+                logger.debug("lock_acquire")
                 loop = asyncio.get_running_loop()
                 future = loop.run_in_executor(None, partial(_ydl.extract_info, query, download=True))
                 raw_info = await asyncio.wait_for(future, TIMEOUT_SEC)
@@ -163,16 +163,7 @@ async def extract_info(query: str, download: bool, state: BotState) -> VideoInfo
             logger.warning("extract_info timeout: %s", query)
         except Exception as e:
             logger.error("extract_info download error: %s", query, exc_info=e)
+        finally:
+            logger.debug("lock_release")
 
     return info
-
-
-@asynccontextmanager
-async def download_video_lock():
-    try:
-        logger.debug("lock_acquire")
-        _lock.acquire()
-        yield
-    finally:
-        logger.debug("lock_release")
-        _lock.release()

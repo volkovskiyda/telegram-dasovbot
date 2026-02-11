@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from functools import partial
 from typing import TYPE_CHECKING
 
 from telegram import Bot
@@ -44,7 +45,8 @@ async def populate_subscriptions(state: BotState):
 async def populate_playlist(channel: str, chat_ids: list, state: BotState):
     ydl = get_ydl()
     try:
-        info = ydl.extract_info(channel, download=False)
+        loop = asyncio.get_running_loop()
+        info = await loop.run_in_executor(None, partial(ydl.extract_info, channel, download=False))
     except Exception:
         logger.error("populate_playlist error: %s", channel, exc_info=True)
         return
