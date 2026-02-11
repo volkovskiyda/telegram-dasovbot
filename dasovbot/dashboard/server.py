@@ -50,10 +50,9 @@ def create_app(state: BotState) -> web.Application:
 
 
 async def start_dashboard(state: BotState):
-    password = get_password()
-    if not password:
-        logger.info('DASHBOARD_PASSWORD not set, skipping dashboard')
-        return
+    if not os.getenv('DASHBOARD_PASSWORD'):
+        password = get_password()
+        logger.info('DASHBOARD_PASSWORD not set, generated password: %s', password)
 
     port = int(os.getenv('DASHBOARD_PORT', '8080'))
     app = create_app(state)

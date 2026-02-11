@@ -43,7 +43,7 @@
 | `ANIMATION_FILE_ID` | No | | Pre-cached animation file ID (skips loading upload) |
 | `CONFIG_FOLDER` | No | `/` | Root folder for data/media/export directories |
 | `EMPTY_MEDIA_FOLDER` | No | `false` | Clear media folder on process crash recovery |
-| `DASHBOARD_PASSWORD` | No | | Password for web dashboard access (dashboard disabled if not set) |
+| `DASHBOARD_PASSWORD` | No | | Password for web dashboard access (auto-generated if not set) |
 | `DASHBOARD_PORT` | No | `8080` | Port for web dashboard server |
 
 ### **Project structure:**

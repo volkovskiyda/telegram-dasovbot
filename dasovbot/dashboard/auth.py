@@ -1,14 +1,23 @@
 import hashlib
 import os
+import secrets
 
 from aiohttp import web
 
 
 COOKIE_NAME = 'dasovbot_token'
 
+_generated_password: str | None = None
 
-def get_password() -> str | None:
-    return os.getenv('DASHBOARD_PASSWORD')
+
+def get_password() -> str:
+    global _generated_password
+    password = os.getenv('DASHBOARD_PASSWORD')
+    if password:
+        return password
+    if _generated_password is None:
+        _generated_password = secrets.token_urlsafe(16)
+    return _generated_password
 
 
 def make_token(password: str) -> str:
@@ -16,11 +25,8 @@ def make_token(password: str) -> str:
 
 
 def check_token(request: web.Request) -> bool:
-    password = get_password()
-    if not password:
-        return False
     token = request.cookies.get(COOKIE_NAME)
-    return token == make_token(password)
+    return token == make_token(get_password())
 
 
 @web.middleware
