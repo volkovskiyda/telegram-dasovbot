@@ -52,7 +52,7 @@ async def inline_query_handler(update: Update, context):
         logger.info("inline_query ignored: %s", query)
         try:
             await query_obj.answer(results=[])
-        except:
+        except Exception:
             pass
         return
 
@@ -62,7 +62,7 @@ async def inline_query_handler(update: Update, context):
         context.user_data['inline_queries'] = temporary_inline_query.inline_queries
         try:
             await query_obj.answer(results=results, cache_time=1)
-        except:
+        except Exception:
             pass
         return
 
@@ -71,7 +71,7 @@ async def inline_query_handler(update: Update, context):
         logger.info("inline_query no info: %s", query)
         try:
             await query_obj.answer(results=[])
-        except:
+        except Exception:
             pass
         return
 
