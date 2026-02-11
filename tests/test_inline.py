@@ -232,6 +232,109 @@ class TestChosenQuery(unittest.IsolatedAsyncioTestCase):
 
         self.assertNotIn('inline_queries', context.user_data)
 
+    async def test_dict_format_query_data_edits_message(self):
+        info = VideoInfo(title='Test', file_id='fid123', caption='cap', webpage_url='https://example.com/v1')
+        state = make_state(videos={'https://example.com/v1': info})
+
+        result = make_chosen_inline_result(result_id='rid1', inline_message_id='imid1')
+        update = make_update(chosen_inline_result=result)
+        context = make_context(
+            state=state,
+            user_data={'inline_queries': {'rid1': {'url': 'https://example.com/v1', 'upload_date': '20240101'}}},
+        )
+
+        from dasovbot.handlers.inline import chosen_query
+        await chosen_query(update, context)
+
+        context.bot.edit_message_media.assert_awaited_once()
+        call_kwargs = context.bot.edit_message_media.call_args[1]
+        self.assertEqual(call_kwargs['inline_message_id'], 'imid1')
+
+    @patch('dasovbot.handlers.inline.append_intent', new_callable=AsyncMock)
+    async def test_dict_format_passes_upload_date_to_intent(self, mock_append):
+        state = make_state(videos={})
+
+        result = make_chosen_inline_result(result_id='rid1', inline_message_id='imid1')
+        update = make_update(chosen_inline_result=result)
+        context = make_context(
+            state=state,
+            user_data={'inline_queries': {'rid1': {'url': 'https://example.com/v1', 'upload_date': '20240515'}}},
+        )
+
+        from dasovbot.handlers.inline import chosen_query
+        await chosen_query(update, context)
+
+        mock_append.assert_awaited_once()
+        call_kwargs = mock_append.call_args[1]
+        self.assertEqual(call_kwargs['upload_date'], '20240515')
+        self.assertEqual(call_kwargs['source'], 'inline')
+
+    @patch('dasovbot.handlers.inline.append_intent', new_callable=AsyncMock)
+    async def test_title_lookup_from_temporary_inline_queries(self, mock_append):
+        cached_result = MagicMock()
+        cached_result.id = 'rid1'
+        cached_result.title = 'Found Title'
+        tiq = TemporaryInlineQuery(
+            timestamp='20240101_120000',
+            results=[cached_result],
+            inline_queries={'rid1': {'url': 'https://example.com/v1', 'upload_date': '20240101'}},
+        )
+        state = make_state(
+            videos={},
+            temporary_inline_queries={'https://example.com/v1': tiq},
+        )
+
+        result = make_chosen_inline_result(result_id='rid1', inline_message_id='imid1')
+        update = make_update(chosen_inline_result=result)
+        context = make_context(
+            state=state,
+            user_data={'inline_queries': {'rid1': {'url': 'https://example.com/v1', 'upload_date': '20240101'}}},
+        )
+
+        from dasovbot.handlers.inline import chosen_query
+        await chosen_query(update, context)
+
+        mock_append.assert_awaited_once()
+        call_kwargs = mock_append.call_args[1]
+        self.assertEqual(call_kwargs['title'], 'Found Title')
+
+    @patch('dasovbot.handlers.inline.append_intent', new_callable=AsyncMock)
+    async def test_title_none_when_not_in_cache(self, mock_append):
+        state = make_state(videos={}, temporary_inline_queries={})
+
+        result = make_chosen_inline_result(result_id='rid1', inline_message_id='imid1')
+        update = make_update(chosen_inline_result=result)
+        context = make_context(
+            state=state,
+            user_data={'inline_queries': {'rid1': {'url': 'https://example.com/v1', 'upload_date': '20240101'}}},
+        )
+
+        from dasovbot.handlers.inline import chosen_query
+        await chosen_query(update, context)
+
+        mock_append.assert_awaited_once()
+        call_kwargs = mock_append.call_args[1]
+        self.assertIsNone(call_kwargs['title'])
+
+    @patch('dasovbot.handlers.inline.append_intent', new_callable=AsyncMock)
+    async def test_string_format_backward_compat(self, mock_append):
+        """String query_data (legacy format) sets upload_date to None"""
+        state = make_state(videos={})
+
+        result = make_chosen_inline_result(result_id='rid1', inline_message_id='imid1')
+        update = make_update(chosen_inline_result=result)
+        context = make_context(
+            state=state,
+            user_data={'inline_queries': {'rid1': 'https://example.com/v1'}},
+        )
+
+        from dasovbot.handlers.inline import chosen_query
+        await chosen_query(update, context)
+
+        mock_append.assert_awaited_once()
+        call_kwargs = mock_append.call_args[1]
+        self.assertIsNone(call_kwargs['upload_date'])
+
 
 if __name__ == '__main__':
     unittest.main()
