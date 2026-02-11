@@ -97,16 +97,8 @@ docker run -dit --rm --name telegram --pull=always -e TELEGRAM_API_ID=<api_id> -
 
 ### **Docker compose**
 ##### **Note**: Populate `.env` based on `.env.example`. See [Configuration](#configuration) for details
-### Normal mode (without vpn)
 #### Change `BASE_URL` in `.env`:
 `BASE_URL=http://api:8081/bot`
 ```bash
 docker-compose up -d
-```
-### Using vpn
-#### Put *.ovpn files into `vpn` folder
-#### Change `BASE_URL` in `.env`:
-`BASE_URL=http://localhost:8081/bot`
-```bash
-docker-compose -f docker-compose-vpn.yml up -d
 ```
