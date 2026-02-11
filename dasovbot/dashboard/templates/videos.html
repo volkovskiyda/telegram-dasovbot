@@ -41,7 +41,7 @@
                 <span class="badge badge-{{ v.source }}">{{ v.source }}</span>
                 {% endif %}
             </td>
-            <td>{{ v.duration }}s</td>
+            <td>{{ v.duration|duration }}</td>
         </tr>
         {% else %}
         <tr><td colspan="5" class="text-muted" style="text-align: center;">No videos found</td></tr>

@@ -20,11 +20,24 @@ logger = logging.getLogger(__name__)
 TEMPLATES_DIR = Path(__file__).parent / 'templates'
 
 
+def format_duration(seconds: int) -> str:
+    if not seconds:
+        return '0:00'
+    h, remainder = divmod(seconds, 3600)
+    m, s = divmod(remainder, 60)
+    if h:
+        return f'{h}:{m:02d}:{s:02d}'
+    if m:
+        return f'{m}:{s:02d}'
+    return f'0:{s:02d}'
+
+
 def create_app(state: BotState) -> web.Application:
     app = web.Application(middlewares=[auth_middleware])
     app['state'] = state
 
-    aiohttp_jinja2.setup(app, loader=jinja2.FileSystemLoader(str(TEMPLATES_DIR)))
+    env = aiohttp_jinja2.setup(app, loader=jinja2.FileSystemLoader(str(TEMPLATES_DIR)))
+    env.filters['duration'] = format_duration
 
     app.router.add_get('/login', login_page)
     app.router.add_post('/login', login_post)
