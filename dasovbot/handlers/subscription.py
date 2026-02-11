@@ -30,7 +30,7 @@ async def subscription_list(update: Update, context):
             await message.reply_markdown('\n\n'.join(sub_list))
         else:
             await message.reply_text('No subscriptions')
-    except:
+    except Exception:
         pass
 
 
@@ -67,11 +67,11 @@ async def subscribe_url(update: Update, context) -> int:
         try:
             playlists_url = f"{uploader_url}/playlists"
             info = ydl.extract_info(playlists_url, download=False)
-        except:
+        except Exception:
             context.user_data['uploader_videos'] = f"{uploader_url}/videos"
             return await subscribe_playlist(update, context)
 
-    except:
+    except Exception:
         logger.error("%s # subscribe_url failed: %s", extract_user(user), query)
         await message.reply_text("Error occured", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
@@ -89,7 +89,7 @@ async def subscribe_url(update: Update, context) -> int:
         uploader_streams = f"{uploader_url}/streams"
         ydl.extract_info(uploader_streams, download=False)
         append_playlist(playlists, f"{uploader} Streams", uploader_streams)
-    except:
+    except Exception:
         pass
 
     for entry in entries:
@@ -123,7 +123,7 @@ async def subscribe_playlist(update: Update, context) -> int:
         if callback_data == 'cancel':
             try:
                 await message.delete()
-            except:
+            except Exception:
                 pass
             return ConversationHandler.END
         user = callback_query.from_user
@@ -181,8 +181,8 @@ async def subscribe_playlist(update: Update, context) -> int:
             title = info.get('title')
             uploader = info.get('uploader') or info.get('uploader_id')
             uploader_videos = f"{uploader_url}/videos"
-        except:
-            logger.error("%s # subscribe_playlist failed: %s", extract_user(user), url)
+        except Exception:
+            logger.error("%s # subscribe_playlist failed: %s", extract_user(user), url, exc_info=True)
             await message_text("Error occured", reply_markup=InlineKeyboardMarkup([]))
             return ConversationHandler.END
 
@@ -220,7 +220,7 @@ async def subscribe_show(update: Update, context) -> int:
                 file_id = video.file_id if video else None
                 if file_id:
                     await context.bot.send_video(chat_id, file_id, caption=video.caption)
-        except:
+        except Exception:
             pass
     return ConversationHandler.END
 
@@ -254,7 +254,7 @@ async def unsubscribe_playlist(update: Update, context) -> int:
         if callback_data == 'cancel':
             try:
                 await message.delete()
-            except:
+            except Exception:
                 pass
             return ConversationHandler.END
         user = callback_query.from_user
@@ -306,7 +306,7 @@ async def playlists(update: Update, context) -> int:
         if not sub_list:
             await message.reply_text('No subscriptions')
             return ConversationHandler.END
-    except:
+    except Exception:
         pass
 
     videos = []
@@ -334,15 +334,15 @@ async def playlists(update: Update, context) -> int:
                 try:
                     ydl.extract_info(uploader_streams, download=False)
                     streams.append(uploader_streams)
-                except:
+                except Exception:
                     pass
             elif subscription_streams:
                 try:
                     ydl.extract_info(uploader_videos, download=False)
                     videos.append(uploader_videos)
-                except:
+                except Exception:
                     pass
-        except:
+        except Exception:
             pass
     if videos:
         output = [f"{item}" for item in videos]
@@ -401,7 +401,7 @@ async def multiple_subscribe_urls(update: Update, context) -> int:
                 info = ydl.extract_info(url, download=False)
                 title = info.get('title')
                 uploader = info.get('uploader') or info.get('uploader_id')
-            except:
+            except Exception:
                 failed.append(url)
                 continue
             state.subscriptions[url] = Subscription(
