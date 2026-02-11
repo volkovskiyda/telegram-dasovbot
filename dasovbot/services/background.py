@@ -53,15 +53,15 @@ async def populate_playlist(channel: str, chat_ids: list, state: BotState):
         logger.info("populate_playlist no entries: %s", channel)
         return
     for entry in filter_entries(entries)[:5][::-1]:
-        await populate_video(extract_url(entry), chat_ids, state)
+        await populate_video(extract_url(entry), chat_ids, state, title=entry.get('title'), upload_date=entry.get('upload_date'))
 
 
-async def populate_video(query: str, chat_ids: list, state: BotState):
+async def populate_video(query: str, chat_ids: list, state: BotState, title: str = None, upload_date: str = None):
     info = state.videos.get(query)
     file_id = info.file_id if info else None
     if file_id:
         return info
-    await append_intent(query, state, chat_ids=chat_ids, source=SOURCE_SUBSCRIPTION)
+    await append_intent(query, state, chat_ids=chat_ids, source=SOURCE_SUBSCRIPTION, title=title, upload_date=upload_date)
 
 
 async def populate_animation(bot: Bot, state: BotState):
