@@ -7,9 +7,9 @@ logger = logging.getLogger(__name__)
 
 def write_file(file_path: str, data: dict):
     try:
-        file = open(file_path, "w", encoding='utf8')
-        json.dump(data, file, indent=1, ensure_ascii=False)
-        file.write('\r')
+        with open(file_path, "w", encoding='utf8') as file:
+            json.dump(data, file, indent=1, ensure_ascii=False)
+            file.write('\r')
     except Exception as e:
         logger.error("write_file error: %s", file_path, exc_info=e)
 
@@ -27,7 +27,7 @@ def read_file(file_path: str, default: dict) -> dict:
 def remove(filepath: str):
     try:
         os.remove(filepath)
-    except:
+    except Exception:
         pass
 
 
