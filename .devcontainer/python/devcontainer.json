@@ -1,5 +1,5 @@
 {
 	"name": "Python 3",
 	"image": "python:3.12-bookworm",
-	"postCreateCommand": "apt update && apt install -y ffmpeg && pip install -U -r requirements.txt"
+	"postCreateCommand": "apt update && apt install -y ffmpeg && pip install -U -r requirements-test.txt"
 }
