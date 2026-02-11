@@ -56,8 +56,11 @@ async def index(request: web.Request) -> web.Response:
     filtered = filter_intents(state.intents)
     intents = []
     for url, intent in sorted(filtered.items(), key=lambda x: x[1].priority, reverse=True):
+        video = state.videos.get(url)
         intents.append({
             'url': url,
+            'title': intent.title or (video.title if video else ''),
+            'upload_date': intent.upload_date or (video.upload_date or '' if video else ''),
             'priority': intent.priority,
             'chat_ids_count': len(intent.chat_ids),
             'inline_msg_ids_count': len(intent.inline_message_ids),

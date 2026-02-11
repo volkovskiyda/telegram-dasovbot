@@ -121,6 +121,8 @@ class Intent:
     priority: int = 0
     ignored: bool = False
     source: str | None = None
+    title: str | None = None
+    upload_date: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -130,6 +132,8 @@ class Intent:
             'priority': self.priority,
             'ignored': self.ignored,
             'source': self.source,
+            'title': self.title,
+            'upload_date': self.upload_date,
         }
 
     @classmethod
@@ -142,6 +146,8 @@ class Intent:
             priority=data.get('priority', 0),
             ignored=data.get('ignored', False),
             source=data.get('source'),
+            title=data.get('title'),
+            upload_date=data.get('upload_date'),
         )
 
 

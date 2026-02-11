@@ -32,6 +32,8 @@
     <thead>
         <tr>
             <th>URL</th>
+            <th>Title</th>
+            <th>Upload Date</th>
             <th>Priority</th>
             <th>Chat IDs</th>
             <th>Inline Msgs</th>
@@ -43,6 +45,8 @@
         {% for intent in intents %}
         <tr>
             <td><a href="{{ intent.url }}" target="_blank" rel="noopener">{{ intent.url[:60] }}{% if intent.url|length > 60 %}...{% endif %}</a></td>
+            <td>{{ intent.title }}</td>
+            <td>{{ intent.upload_date }}</td>
             <td>{{ intent.priority }}</td>
             <td>{{ intent.chat_ids_count }}</td>
             <td>{{ intent.inline_msg_ids_count }}</td>
@@ -54,7 +58,7 @@
             </td>
         </tr>
         {% else %}
-        <tr><td colspan="6" class="text-muted" style="text-align: center;">Queue is empty</td></tr>
+        <tr><td colspan="8" class="text-muted" style="text-align: center;">Queue is empty</td></tr>
         {% endfor %}
     </tbody>
 </table>

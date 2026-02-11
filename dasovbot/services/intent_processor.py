@@ -29,7 +29,7 @@ def filter_intents(intents: dict) -> dict:
     return {query: intent for query, intent in intents.items() if not intent.ignored}
 
 
-async def append_intent(query: str, state: BotState, chat_ids=None, inline_message_id: str = '', message=None, source: str = None):
+async def append_intent(query: str, state: BotState, chat_ids=None, inline_message_id: str = '', message=None, source: str = None, title: str = None, upload_date: str = None):
     if chat_ids is None:
         chat_ids = []
     if message is None:
@@ -42,6 +42,10 @@ async def append_intent(query: str, state: BotState, chat_ids=None, inline_messa
 
     if source and intent.source is None:
         intent.source = source
+    if title and intent.title is None:
+        intent.title = title
+    if upload_date and intent.upload_date is None:
+        intent.upload_date = upload_date
 
     for item in chat_ids:
         if item not in intent.chat_ids:
