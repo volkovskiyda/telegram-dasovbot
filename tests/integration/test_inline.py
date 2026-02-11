@@ -49,7 +49,7 @@ class TestInlineQueries(IntegrationTestBase):
         chosen_result = ChosenInlineResult(
             result_id=result_id,
             from_user=user,
-            query="https://example.com/video",
+            query=self.test_config.test_video_url,
             inline_message_id=inline_message_id
         )
 
@@ -78,11 +78,13 @@ class TestInlineQueries(IntegrationTestBase):
 
     async def test_inline_query_with_url(self):
         """Test inline query with video URL"""
+        test_url = self.test_config.test_video_url
+
         with patch('dasovbot.handlers.inline.extract_info') as mock_extract:
             # Mock the extract_info response
             mock_info = VideoInfo(
                 title="Test Video",
-                webpage_url="https://example.com/video",
+                webpage_url=test_url,
                 caption="Test caption",
                 upload_date="20240101"
             )
@@ -91,23 +93,25 @@ class TestInlineQueries(IntegrationTestBase):
             # Set animation file ID for results
             self.state.animation_file_id = "test_animation_id"
 
-            update = self._create_inline_query_update("https://example.com/video")
+            update = self._create_inline_query_update(test_url)
 
             await self.simulate_update(update)
 
             # Should call extract_info
             mock_extract.assert_called_once()
-            print("\n✓ Inline query with URL processed")
+            print(f"\n✓ Inline query with URL processed: {test_url}")
             print(f"  extract_info called with: {mock_extract.call_args[0][0]}")
 
     async def test_inline_query_caching(self):
         """Test that inline queries are cached"""
         from dasovbot.models import TemporaryInlineQuery
 
+        test_url = self.test_config.test_video_url
+
         with patch('dasovbot.handlers.inline.extract_info') as mock_extract:
             mock_info = VideoInfo(
                 title="Test Video",
-                webpage_url="https://example.com/video",
+                webpage_url=test_url,
                 caption="Test caption"
             )
             mock_extract.return_value = mock_info
@@ -115,20 +119,20 @@ class TestInlineQueries(IntegrationTestBase):
             self.state.animation_file_id = "test_animation_id"
 
             # First query - should extract
-            update1 = self._create_inline_query_update("https://example.com/video", "query1")
+            update1 = self._create_inline_query_update(test_url, "query1")
             await self.simulate_update(update1)
 
             # Manually add to cache (simulating what the handler does)
             tiq = TemporaryInlineQuery(
                 timestamp="20240101_120000",
                 results=[],
-                inline_queries={"result_id": "https://example.com/video"}
+                inline_queries={"result_id": test_url}
             )
-            self.state.temporary_inline_queries["https://example.com/video"] = tiq
+            self.state.temporary_inline_queries[test_url] = tiq
 
             # Second query - should use cache
             mock_extract.reset_mock()
-            update2 = self._create_inline_query_update("https://example.com/video", "query2")
+            update2 = self._create_inline_query_update(test_url, "query2")
             await self.simulate_update(update2)
 
             # Should not call extract_info again
@@ -164,15 +168,17 @@ class TestInlineQueries(IntegrationTestBase):
 
     async def test_chosen_inline_result(self):
         """Test chosen inline result handling"""
+        test_url = self.test_config.test_video_url
+
         with patch('dasovbot.handlers.inline.append_intent') as mock_append:
             # Set up state with video info
             video_info = VideoInfo(
                 title="Test Video",
-                webpage_url="https://example.com/video",
+                webpage_url=test_url,
                 caption="Test caption",
                 file_id=None  # No file_id yet
             )
-            self.state.videos["https://example.com/video"] = video_info
+            self.state.videos[test_url] = video_info
 
             # Create context with inline_queries
             update = self._create_chosen_inline_result_update("result_123")
@@ -182,25 +188,27 @@ class TestInlineQueries(IntegrationTestBase):
                 self.application.user_data = {}
             user_key = (self.test_config.user_id, self.test_config.user_id)
             self.application.user_data[user_key] = {
-                'inline_queries': {'result_123': 'https://example.com/video'}
+                'inline_queries': {'result_123': test_url}
             }
 
             await self.simulate_update(update)
 
             # Should append intent since no file_id
             mock_append.assert_called_once()
-            print("\n✓ Chosen inline result processed")
+            print(f"\n✓ Chosen inline result processed for {test_url}")
 
     async def test_chosen_inline_result_with_cached_file(self):
         """Test chosen inline result with cached file ID"""
+        test_url = self.test_config.test_video_url
+
         # Set up state with cached file
         video_info = VideoInfo(
             title="Test Video",
-            webpage_url="https://example.com/video",
+            webpage_url=test_url,
             caption="Test caption",
             file_id="cached_file_id_123"
         )
-        self.state.videos["https://example.com/video"] = video_info
+        self.state.videos[test_url] = video_info
 
         update = self._create_chosen_inline_result_update("result_123")
 
@@ -209,12 +217,12 @@ class TestInlineQueries(IntegrationTestBase):
             self.application.user_data = {}
         user_key = (self.test_config.user_id, self.test_config.user_id)
         self.application.user_data[user_key] = {
-            'inline_queries': {'result_123': 'https://example.com/video'}
+            'inline_queries': {'result_123': test_url}
         }
 
         await self.simulate_update(update)
 
-        print("\n✓ Chosen inline result with cached file processed")
+        print(f"\n✓ Chosen inline result with cached file processed for {test_url}")
 
     async def test_inline_query_error_handling(self):
         """Test inline query error handling"""

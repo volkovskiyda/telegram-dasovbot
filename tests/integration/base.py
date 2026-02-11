@@ -25,6 +25,7 @@ class IntegrationTestConfig:
         self.chat_id = int(os.getenv('TEST_CHAT_ID', self.user_id))
         self.base_url = os.getenv('TEST_BASE_URL', '')
         self.read_timeout = int(os.getenv('TEST_READ_TIMEOUT', '30'))
+        self.test_video_url = os.getenv('TEST_VIDEO_URL', 'https://example.com/video')
 
         if not self.bot_token:
             raise ValueError('TEST_BOT_TOKEN not set in .env.test')

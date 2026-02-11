@@ -48,11 +48,13 @@ class TestDownloadConversation(IntegrationTestBase):
 
     async def test_download_with_url_in_command(self):
         """Test /download with URL directly in command"""
+        test_url = self.test_config.test_video_url
+
         with patch('dasovbot.handlers.download.extract_info') as mock_extract:
             # Mock the extract_info to avoid actual download
             mock_extract.return_value = AsyncMock(
                 title="Test Video",
-                webpage_url="https://example.com/video",
+                webpage_url=test_url,
                 caption="Test caption",
                 entries=None,
                 upload_date="20240101"
@@ -61,15 +63,17 @@ class TestDownloadConversation(IntegrationTestBase):
             # Set animation file ID in state
             self.state.animation_file_id = "test_animation_id"
 
-            update = self._create_update("/download https://example.com/video")
+            update = self._create_update(f"/download {test_url}")
 
             # Process the update
             await self.simulate_update(update)
 
-            print("\n✓ /download with URL processed")
+            print(f"\n✓ /download with URL processed: {test_url}")
 
     async def test_download_conversation_flow(self):
         """Test the full download conversation flow"""
+        test_url = self.test_config.test_video_url
+
         # Step 1: Start conversation with /download
         update1 = self._create_update("/download", message_id=1)
         await self.simulate_update(update1)
@@ -79,7 +83,7 @@ class TestDownloadConversation(IntegrationTestBase):
             # Mock the extract_info
             mock_info = AsyncMock()
             mock_info.title = "Test Video"
-            mock_info.webpage_url = "https://example.com/video"
+            mock_info.webpage_url = test_url
             mock_info.caption = "Test caption"
             mock_info.entries = None
             mock_info.upload_date = "20240101"
@@ -88,15 +92,15 @@ class TestDownloadConversation(IntegrationTestBase):
             # Set animation file ID
             self.state.animation_file_id = "test_animation_id"
 
-            update2 = self._create_update("https://example.com/video", message_id=2)
+            update2 = self._create_update(test_url, message_id=2)
             await self.simulate_update(update2)
 
             # Verify extract_info was called
             mock_extract.assert_called_once()
             call_args = mock_extract.call_args
-            self.assertEqual(call_args[0][0], "https://example.com/video")
+            self.assertEqual(call_args[0][0], test_url)
 
-        print("\n✓ Download conversation flow completed")
+        print(f"\n✓ Download conversation flow completed for {test_url}")
 
     async def test_download_with_invalid_url(self):
         """Test download with invalid/unsupported URL"""

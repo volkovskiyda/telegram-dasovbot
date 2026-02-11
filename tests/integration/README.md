@@ -36,6 +36,9 @@ Unlike unit tests that mock Telegram components, these integration tests:
    TEST_BOT_TOKEN=your_test_bot_token_here
    TEST_USER_ID=your_telegram_user_id
    TEST_CHAT_ID=your_telegram_user_id  # Can be same as USER_ID for private chats
+
+   # Optional: Use a real video URL for testing (defaults to example.com)
+   TEST_VIDEO_URL=https://example.com/video
    ```
 
 ### 4. Install Test Dependencies
@@ -90,6 +93,22 @@ These tests simulate Telegram updates and verify handler behavior:
 - **test_inline.py**: Tests inline query handling
 
 These tests mock the `extract_info` function to avoid actual video downloads.
+
+#### Configuring Test Video URL
+
+By default, tests use `https://example.com/video` as a placeholder URL. You can configure a real video URL for more realistic testing:
+
+1. Set `TEST_VIDEO_URL` in `.env.test`:
+   ```bash
+   TEST_VIDEO_URL=https://www.youtube.com/watch?v=isYrvIAsAUU
+   ```
+
+2. All tests will automatically use this URL instead of the default
+
+3. This is useful for:
+   - Testing with real video extraction (if you remove mocks)
+   - Verifying bot behavior with actual URLs
+   - Debugging issues with specific video formats
 
 ### 2. End-to-End Tests (Manual)
 
