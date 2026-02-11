@@ -25,7 +25,7 @@ def remove_command_prefix(command: str) -> str:
 async def send_message_developer(bot: Bot, text: str, developer_id: str, notification: bool = True):
     try:
         await bot.send_message(chat_id=developer_id, text=text, disable_notification=not notification)
-    except:
+    except Exception:
         pass
 
 

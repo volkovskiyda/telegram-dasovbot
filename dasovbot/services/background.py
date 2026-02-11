@@ -45,8 +45,8 @@ async def populate_playlist(channel: str, chat_ids: list, state: BotState):
     ydl = get_ydl()
     try:
         info = ydl.extract_info(channel, download=False)
-    except:
-        logger.error("populate_playlist error: %s", channel)
+    except Exception:
+        logger.error("populate_playlist error: %s", channel, exc_info=True)
         return
     entries = info.get('entries')
     if not entries:
