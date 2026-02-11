@@ -20,7 +20,7 @@ def inline_video(info: VideoInfo, inline_queries: dict, animation_file_id: str) 
     file_id = info.file_id
     video_file_id = file_id or animation_file_id
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton(text='loading', url=url)]]) if not file_id else None
-    inline_queries[id] = url
+    inline_queries[id] = {'url': url, 'upload_date': info.upload_date}
 
     return InlineQueryResultCachedVideo(
         id=id,
@@ -110,9 +110,15 @@ async def chosen_query(update: Update, context):
 
     if not inline_message_id or not inline_queries:
         return
-    query = inline_queries[inline_result.result_id]
-    if not query:
+    query_data = inline_queries[inline_result.result_id]
+    if not query_data:
         return
+    if isinstance(query_data, str):
+        query = query_data
+        upload_date = None
+    else:
+        query = query_data['url']
+        upload_date = query_data.get('upload_date')
     user = inline_result.from_user
 
     logger.info("%s # chosen_query strt: %s", extract_user(user), query)
@@ -138,7 +144,7 @@ async def chosen_query(update: Update, context):
                 break
         if title:
             break
-    await append_intent(query, state, inline_message_id=inline_message_id, source=SOURCE_INLINE, title=title)
+    await append_intent(query, state, inline_message_id=inline_message_id, source=SOURCE_INLINE, title=title, upload_date=upload_date)
     logger.info("%s # chosen_query aint: %s", extract_user(user), query)
 
 
