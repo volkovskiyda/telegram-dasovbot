@@ -63,7 +63,7 @@ async def post_process(query: str, info: VideoInfo, message: Message, state: Bot
     file_id = message.video.file_id
     try:
         await message.delete()
-    except:
+    except Exception:
         pass
     filepath = info.filepath
     info.file_id = file_id
@@ -94,8 +94,8 @@ async def post_process(query: str, info: VideoInfo, message: Message, state: Bot
         if developer_id in chat_ids or str(message.chat_id) == developer_id:
             try:
                 shutil.move(filepath, '/export/'.join(filepath.rsplit('/media/', 1)))
-            except:
-                logger.error("move_file error: %s", query)
+            except Exception:
+                logger.error("move_file error: %s", query, exc_info=True)
                 remove(filepath)
         else:
             remove(filepath)
@@ -169,7 +169,7 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
                         temp_info_raw = temp_ydl.extract_info(query, download=True)
                         temp_info = process_info(temp_info_raw)
                         temp_video_path = temp_info.filepath
-                    except:
+                    except Exception:
                         pass
                 try:
                     logger.info("process_query send_video rsrt: %s", query)
@@ -188,7 +188,7 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
                     file_id = await post_process(query, info, message, state, origin_info=temp_info)
                     await process_intent(bot, query, file_id, caption, state)
                     return info
-                except:
+                except Exception:
                     pass
                 finally:
                     logger.info("process_query remove: %s", temp_video_path)
@@ -207,16 +207,16 @@ async def process_intent(bot: Bot, query: str, video: str, caption: str, state: 
     for item in intent.chat_ids:
         try:
             await bot.send_video(chat_id=item, video=video, caption=caption, disable_notification=True)
-        except:
-            logger.error("process_intent chat_ids error: %s - %s", query, item)
+        except Exception:
+            logger.error("process_intent chat_ids error: %s - %s", query, item, exc_info=True)
     for item in intent.inline_message_ids:
         try:
             await bot.edit_message_media(inline_message_id=item, media=InputMediaVideo(media=video, caption=caption))
-        except:
-            logger.error("process_intent inline_message_ids error: %s - %s", query, item)
+        except Exception:
+            logger.error("process_intent inline_message_ids error: %s - %s", query, item, exc_info=True)
     for item in intent.messages:
         try:
             await bot.edit_message_media(chat_id=item.chat, message_id=item.message, media=InputMediaVideo(media=video, caption=caption))
-        except:
-            logger.error("process_intent messages error: %s - %s", query, item)
+        except Exception:
+            logger.error("process_intent messages error: %s - %s", query, item, exc_info=True)
     return intent
