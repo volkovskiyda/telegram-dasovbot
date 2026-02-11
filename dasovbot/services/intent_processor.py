@@ -15,7 +15,7 @@ from dasovbot.downloader import (
     extract_info, extract_url, process_info,
     add_scaled_after_title,
 )
-from dasovbot.helpers import send_message_developer
+from dasovbot.helpers import send_message_developer, now
 from dasovbot.models import VideoInfo, VideoOrigin, Intent, IntentMessage
 from dasovbot.persistence import remove
 
@@ -29,7 +29,7 @@ def filter_intents(intents: dict) -> dict:
     return {query: intent for query, intent in intents.items() if not intent.ignored}
 
 
-async def append_intent(query: str, state: BotState, chat_ids=None, inline_message_id: str = '', message=None):
+async def append_intent(query: str, state: BotState, chat_ids=None, inline_message_id: str = '', message=None, source: str = None):
     if chat_ids is None:
         chat_ids = []
     if message is None:
@@ -39,6 +39,9 @@ async def append_intent(query: str, state: BotState, chat_ids=None, inline_messa
     if not intent:
         intent = Intent()
         state.intents[query] = intent
+
+    if source and intent.source is None:
+        intent.source = source
 
     for item in chat_ids:
         if item not in intent.chat_ids:
@@ -62,6 +65,10 @@ async def post_process(query: str, info: VideoInfo, message: Message, state: Bot
     info.file_id = file_id
     if store_info:
         url = extract_url(info)
+        intent = state.intents.get(query)
+        if intent and intent.source:
+            info.source = intent.source
+        info.processed_at = now()
         info.url = None
         info.filepath = None
         info.filename = None
@@ -94,6 +101,7 @@ async def post_process(query: str, info: VideoInfo, message: Message, state: Bot
 async def process_intents(bot: Bot, state: BotState):
     while True:
         await asyncio.sleep(10)
+        state.background_task_status['monitor_process_intents'] = now()
         filtered_intents = filter_intents(state.intents)
         if not filtered_intents:
             await state.download_queue.get()

@@ -4,6 +4,7 @@ from uuid import uuid4
 from telegram import Update, InputMediaVideo, InlineKeyboardMarkup, InlineKeyboardButton, InlineQueryResultCachedVideo
 from telegram.error import BadRequest
 
+from dasovbot.constants import SOURCE_INLINE
 from dasovbot.downloader import extract_info, extract_url, process_info, process_entries
 from dasovbot.helpers import extract_user, now
 from dasovbot.models import VideoInfo, TemporaryInlineQuery
@@ -129,7 +130,7 @@ async def chosen_query(update: Update, context):
         logger.info("%s # chosen_query fnsh: %s", extract_user(user), query)
         return
 
-    await append_intent(query, state, inline_message_id=inline_message_id)
+    await append_intent(query, state, inline_message_id=inline_message_id, source=SOURCE_INLINE)
     logger.info("%s # chosen_query aint: %s", extract_user(user), query)
 
 
@@ -138,4 +139,4 @@ async def _populate_video(query: str, chat_ids: list, state: BotState):
     file_id = info.file_id if info else None
     if file_id:
         return info
-    await append_intent(query, state, chat_ids=chat_ids)
+    await append_intent(query, state, chat_ids=chat_ids, source=SOURCE_INLINE)

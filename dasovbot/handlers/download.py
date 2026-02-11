@@ -3,7 +3,7 @@ import logging
 from telegram import Update, ReplyKeyboardRemove
 from telegram.ext import ConversationHandler
 
-from dasovbot.constants import DAS_URL
+from dasovbot.constants import DAS_URL, SOURCE_DOWNLOAD
 from dasovbot.downloader import extract_info
 from dasovbot.helpers import extract_user, remove_command_prefix
 from dasovbot.state import BotState
@@ -44,7 +44,7 @@ async def download_url(update: Update, context) -> int:
             caption=info.caption,
             reply_to_message_id=message.id,
         )
-        await append_intent(query, state, message={'chat': chat_id, 'message': str(video.message_id)})
+        await append_intent(query, state, message={'chat': chat_id, 'message': str(video.message_id)}, source=SOURCE_DOWNLOAD)
     except Exception as e:
         logger.error("%s # download_url error: %s", extract_user(user), query, exc_info=e)
 

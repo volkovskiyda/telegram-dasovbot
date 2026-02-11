@@ -20,6 +20,7 @@ class BotState:
     download_queue: asyncio.Queue = field(default_factory=asyncio.Queue)
     config: Config = field(default=None)
     animation_file_id: str | None = None
+    background_task_status: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_files(cls, config: Config) -> 'BotState':

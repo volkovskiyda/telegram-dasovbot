@@ -6,7 +6,9 @@ from typing import TYPE_CHECKING
 
 from telegram import Bot
 
+from dasovbot.constants import SOURCE_SUBSCRIPTION
 from dasovbot.downloader import extract_info, extract_url, filter_entries, get_ydl
+from dasovbot.helpers import now
 from dasovbot.services.intent_processor import append_intent, post_process
 
 if TYPE_CHECKING:
@@ -20,6 +22,7 @@ async def populate_files(state: BotState):
     while True:
         await asyncio.sleep(INTERVAL_SEC)
         state.save()
+        state.background_task_status['populate_files'] = now()
 
 
 async def populate_subscriptions(state: BotState):
@@ -34,6 +37,7 @@ async def populate_subscriptions(state: BotState):
                 await populate_playlist(url, chat_ids, state)
             else:
                 state.subscriptions.pop(url, None)
+        state.background_task_status['populate_subscriptions'] = now()
         await asyncio.sleep(INTERVAL_SEC)
 
 
@@ -57,7 +61,7 @@ async def populate_video(query: str, chat_ids: list, state: BotState):
     file_id = info.file_id if info else None
     if file_id:
         return info
-    await append_intent(query, state, chat_ids=chat_ids)
+    await append_intent(query, state, chat_ids=chat_ids, source=SOURCE_SUBSCRIPTION)
 
 
 async def populate_animation(bot: Bot, state: BotState):
@@ -94,6 +98,7 @@ async def clear_temporary_inline_queries(state: BotState):
                 del state.temporary_inline_queries[url]
             else:
                 tiq.marked = True
+        state.background_task_status['clear_temporary_inline_queries'] = now()
         await asyncio.sleep(10 * 60)
 
 
