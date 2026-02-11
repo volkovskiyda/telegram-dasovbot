@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 TEMPLATES_DIR = Path(__file__).parent / 'templates'
+STATIC_DIR = Path(__file__).parent / 'static'
 
 
 def format_duration(seconds: int) -> str:
@@ -39,6 +40,7 @@ def create_app(state: BotState) -> web.Application:
     env = aiohttp_jinja2.setup(app, loader=jinja2.FileSystemLoader(str(TEMPLATES_DIR)))
     env.filters['duration'] = format_duration
 
+    app.router.add_static('/static', STATIC_DIR, name='static')
     app.router.add_get('/login', login_page)
     app.router.add_post('/login', login_post)
     app.router.add_get('/logout', logout)
