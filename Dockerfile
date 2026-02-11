@@ -21,4 +21,6 @@ COPY main.py info.py subscriptions.py empty_media_folder.py ./
 
 VOLUME ["/data", "/media", "/export"]
 
+EXPOSE 8080
+
 CMD ["python", "main.py"]
