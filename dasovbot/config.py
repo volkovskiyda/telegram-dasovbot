@@ -17,6 +17,7 @@ class Config:
     animation_file_id: str = ""
     config_folder: str = "/"
     empty_media_folder: bool = False
+    cookies_file: str = ""
 
     @property
     def video_info_file(self) -> str:
@@ -64,6 +65,7 @@ def load_config() -> Config:
         animation_file_id=os.getenv('ANIMATION_FILE_ID') or '',
         config_folder=config_folder,
         empty_media_folder=os.getenv('EMPTY_MEDIA_FOLDER', 'false').lower() == 'true',
+        cookies_file=os.getenv('COOKIES_FILE') or '',
     )
 
 
@@ -75,7 +77,7 @@ def match_filter(info, *, incomplete):
 
 def make_ydl_opts(config: Config) -> dict:
     media_folder = config.media_folder
-    return {
+    opts = {
         'format': f"{VIDEO_FORMAT}+ba[ext=m4a] / {VIDEO_FORMAT}+ba[ext=mp4] / b[ext=mp4][height<=?720]",
         'outtmpl': f'{media_folder}/%(timestamp>{DATETIME_FORMAT},upload_date>{DATE_FORMAT}_u,epoch>{DATE_FORMAT}_e)s - %(title).80s [%(id).20s].%(ext)s',
         'noplaylist': True,
@@ -86,3 +88,6 @@ def make_ydl_opts(config: Config) -> dict:
         'quiet': True,
         'postprocessors': [{'key': 'FFmpegMetadata'}],
     }
+    if config.cookies_file:
+        opts['cookiefile'] = config.cookies_file
+    return opts
