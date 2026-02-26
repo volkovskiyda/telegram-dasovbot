@@ -61,7 +61,7 @@ def make_context(state=None, user_data=None, bot=None):
 
 
 def make_state(**overrides):
-    state = BotState()
+    state = BotState(db=AsyncMock())
     for key, value in overrides.items():
         setattr(state, key, value)
     return state

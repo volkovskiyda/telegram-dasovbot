@@ -36,9 +36,9 @@ async def append_intent(query: str, state: BotState, chat_ids=None, inline_messa
         message = {}
 
     intent = state.intents.get(query)
-    if not intent:
+    is_new = not intent
+    if is_new:
         intent = Intent()
-        state.intents[query] = intent
 
     if source and intent.source is None:
         intent.source = source
@@ -56,6 +56,11 @@ async def append_intent(query: str, state: BotState, chat_ids=None, inline_messa
         intent.messages.append(IntentMessage.from_dict(message))
     if not intent.ignored:
         intent.priority += len(chat_ids) or 2
+
+    if is_new:
+        await state.set_intent(query, intent)
+    else:
+        await state.save_intent(query)
     state.download_queue.put_nowait(query)
 
 
@@ -83,8 +88,8 @@ async def post_process(query: str, info: VideoInfo, message: Message, state: Bot
                 height=origin_info.height,
                 format=origin_info.format,
             )
-        state.videos[query] = info
-        state.videos[url] = info
+        await state.set_video(query, info)
+        await state.set_video(url, info)
     if filepath:
         chat_ids = []
         intent = state.intents.get(query)
@@ -135,7 +140,7 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
     if not info:
         logger.error("process_query error: %s", query)
         if state.intents.get(query) and not state.intents[query].ignored:
-            state.intents.pop(query, None)
+            await state.pop_intent(query)
         return info
     caption = info.caption
     file_id = info.file_id
@@ -194,7 +199,7 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
                     logger.info("process_query remove: %s", temp_video_path)
                     if temp_video_path:
                         remove(temp_video_path)
-            state.intents.pop(query, None)
+            await state.pop_intent(query)
             return info
         file_id = await post_process(query, info, message, state)
 
@@ -203,7 +208,7 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
 
 
 async def process_intent(bot: Bot, query: str, video: str, caption: str, state: BotState) -> Intent:
-    intent = state.intents.pop(query)
+    intent = await state.pop_intent(query)
     for item in intent.chat_ids:
         try:
             await bot.send_video(chat_id=item, video=video, caption=caption, disable_notification=True)

@@ -53,8 +53,9 @@ dasovbot/              # Main package
   config.py            # Config loading, ydl_opts
   constants.py         # Error messages, timeouts, states
   models.py            # Dataclasses for video, intent, subscription
-  persistence.py       # JSON file I/O
-  state.py             # BotState (mutable state container)
+  database.py          # SQLite persistence (aiosqlite)
+  persistence.py       # File utilities (remove, empty media)
+  state.py             # BotState (mutable state container, write-through DB)
   downloader.py        # yt-dlp wrapper
   helpers.py           # Shared utilities
   handlers/            # Telegram handler modules
@@ -67,9 +68,9 @@ empty_media_folder.py  # CLI: clear media folder
 
 ### **Architecture**
 
-**Entry flow:** `main.py` → `dasovbot/__main__.py` → loads config from env vars → initializes yt-dlp → loads persisted state from JSON files → builds Telegram Application → registers handlers → starts background tasks → runs polling loop.
+**Entry flow:** `main.py` → `dasovbot/__main__.py` → loads config from env vars → initializes yt-dlp → opens SQLite database and loads persisted state → builds Telegram Application → registers handlers → starts background tasks → runs polling loop.
 
-**State management:** Central `BotState` dataclass (`state.py`) holds all mutable state: video cache, intents, subscriptions, users, download queue (`asyncio.Queue`). State is accessed via `context.bot_data['state']` in handlers. Persisted to JSON files under `{CONFIG_FOLDER}/data/` hourly by a background task.
+**State management:** Central `BotState` dataclass (`state.py`) holds all mutable state: video cache, intents, subscriptions, users, download queue (`asyncio.Queue`). State is accessed via `context.bot_data['state']` in handlers. Changes are persisted immediately (write-through) to a SQLite database (`{CONFIG_FOLDER}/data/bot.db`) via `database.py`. On first run, existing JSON files are automatically migrated to SQLite.
 
 **Intent system:** Video download requests are modeled as `Intent` objects (not processed immediately). Intents accumulate `chat_ids` and `inline_message_ids` from multiple requesters, with priority based on requester count. A background worker (`intent_processor.py`) processes the queue in priority order — this deduplicates downloads when multiple users request the same video.
 
@@ -78,7 +79,6 @@ empty_media_folder.py  # CLI: clear media folder
 **Background tasks:** Started in `services/background.py:start_background_tasks()` via `asyncio.gather`:
 - Subscription polling (hourly)
 - Intent queue processing
-- State persistence (hourly)
 - Inline query cache cleanup
 - Web dashboard server
 
@@ -88,11 +88,11 @@ empty_media_folder.py  # CLI: clear media folder
 3. `intent_processor.py` extracts metadata and downloads via yt-dlp (blocking calls run in executor)
 4. Video posted to Telegram, `file_id` cached for future reuse
 
-**Models:** All domain objects (`models.py`) are dataclasses with manual `to_dict()`/`from_dict()` serialization — no ORM or external serialization library.
+**Models:** All domain objects (`models.py`) are dataclasses with manual `to_dict()`/`from_dict()` serialization (stored as JSON within SQLite) — no ORM or external serialization library.
 
 **Key modules:**
 - `handlers/` — Telegram command and inline query handlers (`download.py`, `inline.py`, `subscription.py`, `common.py`)
-- `services/background.py` — Hourly subscription polling, state persistence, intent queue processing
+- `services/background.py` — Hourly subscription polling, intent queue processing
 - `services/intent_processor.py` — Download execution and Telegram posting
 - `downloader.py` — yt-dlp wrapper with `asyncio.Lock` for synchronized access
 - `dashboard/` — aiohttp web server with session auth, jinja2 templates, system/video status views

@@ -48,5 +48,5 @@ async def download_url(update: Update, context) -> int:
     except Exception as e:
         logger.error("%s # download_url error: %s", extract_user(user), query, exc_info=e)
 
-    state.users[chat_id] = user.to_dict()
+    await state.set_user(chat_id, user.to_dict())
     return ConversationHandler.END

@@ -40,6 +40,10 @@ class Config:
         return f'{self.config_folder}/data/timestamp.txt'
 
     @property
+    def db_file(self) -> str:
+        return f'{self.config_folder}/data/bot.db'
+
+    @property
     def media_folder(self) -> str:
         return f'{self.config_folder}/media'
 

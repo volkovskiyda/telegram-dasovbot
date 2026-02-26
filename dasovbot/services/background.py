@@ -18,14 +18,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def populate_files(state: BotState):
-    from dasovbot.constants import INTERVAL_SEC
-    while True:
-        await asyncio.sleep(INTERVAL_SEC)
-        state.save()
-        state.background_task_status['populate_files'] = now()
-
-
 async def populate_subscriptions(state: BotState):
     from dasovbot.constants import INTERVAL_SEC
     while True:
@@ -37,7 +29,7 @@ async def populate_subscriptions(state: BotState):
             if chat_ids:
                 await populate_playlist(url, chat_ids, state)
             else:
-                state.subscriptions.pop(url, None)
+                await state.pop_subscription(url)
         state.background_task_status['populate_subscriptions'] = now()
         await asyncio.sleep(INTERVAL_SEC)
 
@@ -110,7 +102,6 @@ def start_background_tasks(bot: Bot, state: BotState):
     asyncio.gather(
         populate_animation(bot, state),
         populate_subscriptions(state),
-        populate_files(state),
         monitor_process_intents(bot, state),
         clear_temporary_inline_queries(state),
         start_dashboard(state),

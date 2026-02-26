@@ -22,10 +22,14 @@ def main():
 
     config = load_config()
     init_downloader(config)
-    state = BotState.from_files(config)
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
+    try:
+        state = loop.run_until_complete(BotState.from_database(config))
+    except Exception as e:
+        logging.error(f"Failed to initialize state from database: {e}")
+        return
 
     application = (
         Application.builder()

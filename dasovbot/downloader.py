@@ -138,7 +138,7 @@ async def extract_info(query: str, download: bool, state: BotState) -> VideoInfo
             url = extract_url(raw_info)
             info_url = state.videos.get(url)
             if info_url:
-                state.videos[query] = info_url
+                await state.set_video(query, info_url)
                 return info_url
             info = process_info(raw_info)
         except Exception as e:

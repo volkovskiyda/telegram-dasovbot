@@ -154,7 +154,7 @@ async def subscribe_playlist(update: Update, context) -> int:
         return ConversationHandler.END
 
     chat_id = str(message.chat_id)
-    state.users[chat_id] = user.to_dict()
+    await state.set_user(chat_id, user.to_dict())
     subscription = state.subscriptions.get(url)
     reply_markup = InlineKeyboardMarkup(
         [[InlineKeyboardButton(text='Yes', callback_data='True'), InlineKeyboardButton(text='No', callback_data='False')]]
@@ -166,7 +166,7 @@ async def subscribe_playlist(update: Update, context) -> int:
             await message_text(f"Already subscribed to {subscription_info}", parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup([]))
             return ConversationHandler.END
         else:
-            chat_ids.append(chat_id)
+            await state.add_subscriber(url, chat_id)
             context.user_data['subscription_url'] = url
             await message_text(f"Subscribed to {subscription_info}\nShow latest videos?", parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
             return SUBSCRIBE_SHOW
@@ -186,12 +186,12 @@ async def subscribe_playlist(update: Update, context) -> int:
             await message_text("Error occured", reply_markup=InlineKeyboardMarkup([]))
             return ConversationHandler.END
 
-    state.subscriptions[url] = Subscription(
+    await state.set_subscription(url, Subscription(
         chat_ids=[chat_id],
         title=title,
         uploader=uploader,
         uploader_videos=uploader_videos,
-    )
+    ))
     subscription_info = f"[{title}]({url})"
     context.user_data['subscription_url'] = url
     await message_text(f"Subscribed to {subscription_info}\nShow latest videos?", parse_mode=ParseMode.MARKDOWN, reply_markup=reply_markup)
@@ -287,9 +287,7 @@ async def unsubscribe_playlist(update: Update, context) -> int:
         await message_text("No subscription found", reply_markup=InlineKeyboardMarkup([]))
         return ConversationHandler.END
 
-    chat_ids[:] = (item for item in chat_ids if item != chat_id)
-    if not chat_ids:
-        state.subscriptions.pop(query, None)
+    await state.remove_subscriber(query, chat_id)
 
     subscription_info = f"[{subscription.title}]({query})"
     await message_text(f"Unsubscribed from {subscription_info}", parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup([]))
@@ -389,12 +387,11 @@ async def multiple_subscribe_urls(update: Update, context) -> int:
             continue
         subscription = state.subscriptions.get(url)
         if subscription:
-            chat_ids = subscription.chat_ids
-            if chat_id in chat_ids:
+            if chat_id in subscription.chat_ids:
                 already_subscribed.append(url)
                 continue
             else:
-                chat_ids.append(chat_id)
+                await state.add_subscriber(url, chat_id)
                 subscribed.append(url)
         else:
             try:
@@ -404,12 +401,12 @@ async def multiple_subscribe_urls(update: Update, context) -> int:
             except Exception:
                 failed.append(url)
                 continue
-            state.subscriptions[url] = Subscription(
+            await state.set_subscription(url, Subscription(
                 chat_ids=[chat_id],
                 title=title,
                 uploader=uploader,
                 uploader_videos=url,
-            )
+            ))
             subscribed.append(url)
     if already_subscribed:
         await message.reply_text('\n'.join(["Already Subscribed"] + [f"{item}" for item in already_subscribed]))

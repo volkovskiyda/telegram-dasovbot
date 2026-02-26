@@ -46,12 +46,6 @@ def relative_time(ts: str | None) -> str:
 
 async def index(request: web.Request) -> web.Response:
     state = get_state(request)
-    timestamp_raw = ''
-    try:
-        with open(state.config.timestamp_file) as f:
-            timestamp_raw = f.read().strip()
-    except FileNotFoundError:
-        pass
 
     filtered = filter_intents(state.intents)
     intents = []
@@ -73,8 +67,6 @@ async def index(request: web.Request) -> web.Response:
         'subscription_count': len(state.subscriptions),
         'intent_count': len(filtered),
         'user_count': len(state.users),
-        'last_persistence': timestamp_raw,
-        'last_persistence_relative': relative_time(timestamp_raw),
         'intents': intents,
     }
     return aiohttp_jinja2.render_template('index.html', request, context)
@@ -121,15 +113,7 @@ async def videos(request: web.Request) -> web.Response:
 async def system(request: web.Request) -> web.Response:
     state = get_state(request)
 
-    timestamp_raw = ''
-    try:
-        with open(state.config.timestamp_file) as f:
-            timestamp_raw = f.read().strip()
-    except FileNotFoundError:
-        pass
-
     tasks = [
-        {'name': 'populate_files', 'description': 'Persists state to JSON files', 'interval': '1 hour'},
         {'name': 'populate_subscriptions', 'description': 'Checks subscriptions for new videos', 'interval': '1 hour'},
         {'name': 'clear_temporary_inline_queries', 'description': 'Cleans up stale inline queries', 'interval': '10 min'},
         {'name': 'monitor_process_intents', 'description': 'Processes download queue', 'interval': 'continuous'},
@@ -140,8 +124,6 @@ async def system(request: web.Request) -> web.Response:
         task['last_run_relative'] = relative_time(last_run)
 
     context = {
-        'timestamp_raw': timestamp_raw,
-        'timestamp_relative': relative_time(timestamp_raw),
         'tasks': tasks,
         'video_count': len(state.videos),
         'subscription_count': len(state.subscriptions),
