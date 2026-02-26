@@ -9,3 +9,4 @@ vpn/*
 .env.test
 *.pyc
 .DS_Store
+CLAUDE.md
