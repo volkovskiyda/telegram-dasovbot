@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import time
 
 import aiosqlite
 
@@ -44,6 +45,8 @@ async def migrate_from_json(db: aiosqlite.Connection, config: Config):
         return
 
     migrated = False
+    migration_start = time.monotonic()
+    batch_size = 500
     for filepath, table, transform in [
         (config.video_info_file, 'videos', lambda k, v: (k, json.dumps(v))),
         (config.intent_info_file, 'intents', lambda k, v: (k, json.dumps(v))),
@@ -57,19 +60,28 @@ async def migrate_from_json(db: aiosqlite.Connection, config: Config):
                 data = json.load(f)
             if not data:
                 continue
+            total = len(data)
             column = 'chat_id' if table == 'users' else 'key'
+            logger.info("Migrating %s: %d entries from %s", table, total, filepath)
             rows = [transform(k, v) for k, v in data.items()]
-            await db.executemany(
-                f"INSERT OR IGNORE INTO {table} ({column}, data) VALUES (?, ?)",
-                rows,
-            )
+            for i in range(0, total, batch_size):
+                batch = rows[i:i + batch_size]
+                await db.executemany(
+                    f"INSERT OR IGNORE INTO {table} ({column}, data) VALUES (?, ?)",
+                    batch,
+                )
+                done = min(i + batch_size, total)
+                if done < total or total <= batch_size:
+                    logger.info("  %s: %d/%d (%.0f%%)", table, done, total, done / total * 100)
+            logger.info("  %s: done (%d entries)", table, total)
             migrated = True
-            logger.info("Migrated %d entries from %s", len(rows), filepath)
         except Exception:
             logger.error("Failed to migrate %s", filepath, exc_info=True)
 
     if migrated:
         await db.commit()
+        elapsed = time.monotonic() - migration_start
+        logger.info("Migration completed in %.2fs", elapsed)
         for filepath in [
             config.video_info_file,
             config.intent_info_file,
