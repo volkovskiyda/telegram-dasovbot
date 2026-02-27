@@ -1,0 +1,1 @@
+0 */12 * * * /usr/local/bin/python /project/backup.py >> /proc/1/fd/1 2>&1

@@ -148,3 +148,8 @@ docker run -dit --rm --name telegram --pull=always -e TELEGRAM_API_ID=<api_id> -
 ```bash
 docker-compose up -d
 ```
+
+#### **Database backup:**
+```bash
+docker exec dasovbot python backup.py
+```

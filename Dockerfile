@@ -5,7 +5,7 @@ LABEL description="Telegram bot for downloading and sharing online videos"
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends ffmpeg jq && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends ffmpeg jq cron && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /project /data /media /export
 
@@ -18,9 +18,11 @@ RUN pip install -r requirements.txt
 
 COPY . .
 
+COPY backup-cron /etc/cron.d/backup-cron
+
 VOLUME ["/data", "/media", "/export"]
 
 ARG DASHBOARD_PORT=8080
 EXPOSE ${DASHBOARD_PORT}
 
-CMD ["python", "main.py"]
+CMD ["./entrypoint.sh"]
