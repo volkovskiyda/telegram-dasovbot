@@ -8,7 +8,7 @@
 {% block content %}
 <h1>System Status</h1>
 
-{% if migration %}
+{% if migration and migration.get('status') != 'skipped' %}
 <h2 style="font-size: 16px; margin-bottom: 12px; color: #94a3b8;">Migration</h2>
 <div class="card" style="margin-bottom: 24px;">
     <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
