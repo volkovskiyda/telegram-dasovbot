@@ -38,15 +38,19 @@ async def init_db(db_path: str) -> aiosqlite.Connection:
     return db
 
 
-async def migrate_from_json(db: aiosqlite.Connection, config: Config):
+async def migrate_from_json(db: aiosqlite.Connection, config: Config, progress: dict | None = None):
     cursor = await db.execute("SELECT COUNT(*) FROM videos")
     row = await cursor.fetchone()
     if row[0] > 0:
+        if progress is not None:
+            progress['status'] = 'skipped'
         return
 
     migrated = False
     migration_start = time.monotonic()
     batch_size = 500
+    if progress is not None:
+        progress['status'] = 'in_progress'
     for filepath, table, transform in [
         (config.video_info_file, 'videos', lambda k, v: (k, json.dumps(v))),
         (config.intent_info_file, 'intents', lambda k, v: (k, json.dumps(v))),
@@ -63,6 +67,8 @@ async def migrate_from_json(db: aiosqlite.Connection, config: Config):
             total = len(data)
             column = 'chat_id' if table == 'users' else 'key'
             logger.info("Migrating %s: %d entries from %s", table, total, filepath)
+            if progress is not None:
+                progress['tables'][table] = {'total': total, 'done': 0}
             rows = [transform(k, v) for k, v in data.items()]
             for i in range(0, total, batch_size):
                 batch = rows[i:i + batch_size]
@@ -71,6 +77,9 @@ async def migrate_from_json(db: aiosqlite.Connection, config: Config):
                     batch,
                 )
                 done = min(i + batch_size, total)
+                if progress is not None:
+                    progress['tables'][table]['done'] = done
+                    progress['elapsed'] = time.monotonic() - migration_start
                 if done < total or total <= batch_size:
                     logger.info("  %s: %d/%d (%.0f%%)", table, done, total, done / total * 100)
             logger.info("  %s: done (%d entries)", table, total)
@@ -82,6 +91,8 @@ async def migrate_from_json(db: aiosqlite.Connection, config: Config):
         await db.commit()
         elapsed = time.monotonic() - migration_start
         logger.info("Migration completed in %.2fs", elapsed)
+        if progress is not None:
+            progress['elapsed'] = elapsed
         for filepath in [
             config.video_info_file,
             config.intent_info_file,
@@ -97,6 +108,9 @@ async def migrate_from_json(db: aiosqlite.Connection, config: Config):
                     logger.info("Renamed %s -> %s", filepath, backup)
                 except Exception:
                     logger.error("Failed to rename %s", filepath, exc_info=True)
+
+    if progress is not None and progress['status'] != 'completed':
+        progress['status'] = 'completed' if migrated else 'skipped'
 
 
 # --- Videos ---

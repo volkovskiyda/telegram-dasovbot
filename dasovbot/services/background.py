@@ -102,7 +102,6 @@ def _log_task_exception(task: asyncio.Task):
 
 
 def start_background_tasks(bot: Bot, state: BotState):
-    from dasovbot.dashboard.server import start_dashboard
     from dasovbot.services.intent_processor import monitor_process_intents
 
     tasks = [
@@ -110,7 +109,6 @@ def start_background_tasks(bot: Bot, state: BotState):
         asyncio.create_task(populate_subscriptions(state), name="populate_subscriptions"),
         asyncio.create_task(monitor_process_intents(bot, state), name="monitor_process_intents"),
         asyncio.create_task(clear_temporary_inline_queries(state), name="clear_temporary_inline_queries"),
-        asyncio.create_task(start_dashboard(state), name="start_dashboard"),
     ]
     for task in tasks:
         task.add_done_callback(_log_task_exception)

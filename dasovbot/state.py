@@ -21,31 +21,36 @@ class BotState:
     config: Config = field(default=None)
     animation_file_id: str | None = None
     background_task_status: dict[str, str] = field(default_factory=dict)
+    migration_progress: dict = field(default_factory=dict)
     db: aiosqlite.Connection = field(default=None)
 
     @classmethod
-    async def from_database(cls, config: Config) -> 'BotState':
-        from dasovbot.database import init_db, migrate_from_json, load_videos, load_intents, load_users, load_subscriptions
+    async def create(cls, config: Config) -> 'BotState':
+        from dasovbot.database import init_db
 
         db = await init_db(config.db_file)
-        await migrate_from_json(db, config)
-
-        videos = await load_videos(db)
-        users = await load_users(db)
-        subscriptions = await load_subscriptions(db)
-        intents = await load_intents(db)
-
         return cls(
-            videos=videos,
-            users=users,
-            subscriptions=subscriptions,
-            intents=intents,
-            temporary_inline_queries={},
-            download_queue=asyncio.Queue(),
             config=config,
             animation_file_id=config.animation_file_id or None,
             db=db,
+            migration_progress={'status': 'pending', 'tables': {}, 'elapsed': 0.0},
         )
+
+    async def migrate_and_load(self):
+        from dasovbot.database import migrate_from_json, load_videos, load_intents, load_users, load_subscriptions
+
+        await migrate_from_json(self.db, self.config, self.migration_progress)
+
+        self.videos = await load_videos(self.db)
+        self.users = await load_users(self.db)
+        self.subscriptions = await load_subscriptions(self.db)
+        self.intents = await load_intents(self.db)
+
+    @classmethod
+    async def from_database(cls, config: Config) -> 'BotState':
+        state = await cls.create(config)
+        await state.migrate_and_load()
+        return state
 
     async def set_video(self, key: str, video: VideoInfo):
         from dasovbot.database import upsert_video

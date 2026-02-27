@@ -131,5 +131,6 @@ async def system(request: web.Request) -> web.Response:
         'intent_count': len(state.intents),
         'tiq_count': len(state.temporary_inline_queries),
         'queue_size': state.download_queue.qsize(),
+        'migration': state.migration_progress,
     }
     return aiohttp_jinja2.render_template('system.html', request, context)

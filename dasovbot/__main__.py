@@ -25,9 +25,18 @@ def main():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        state = loop.run_until_complete(BotState.from_database(config))
+        state = loop.run_until_complete(BotState.create(config))
     except Exception as e:
-        logging.error(f"Failed to initialize state from database: {e}")
+        logging.error(f"Failed to initialize state: {e}")
+        return
+
+    from dasovbot.dashboard.server import start_dashboard
+    loop.run_until_complete(start_dashboard(state))
+
+    try:
+        loop.run_until_complete(state.migrate_and_load())
+    except Exception as e:
+        logging.error(f"Failed to migrate/load database: {e}")
         return
 
     async def post_init(app: Application):

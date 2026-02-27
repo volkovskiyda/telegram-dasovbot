@@ -3,8 +3,45 @@
 
 {% block title %}System - DasovBot{% endblock %}
 
+{% block refresh_interval %}{% if migration.get('status') == 'in_progress' %}2{% else %}30{% endif %}{% endblock %}
+
 {% block content %}
 <h1>System Status</h1>
+
+{% if migration %}
+<h2 style="font-size: 16px; margin-bottom: 12px; color: #94a3b8;">Migration</h2>
+<div class="card" style="margin-bottom: 24px;">
+    <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+        <span>Status:</span>
+        {% if migration.get('status') == 'in_progress' %}
+            <span class="badge" style="background: #1a3a5c; color: #7ec8e3;">In Progress</span>
+        {% elif migration.get('status') == 'completed' %}
+            <span class="badge" style="background: #1b4332; color: #95d5b2;">Completed</span>
+        {% elif migration.get('status') == 'skipped' %}
+            <span class="badge" style="background: #3d3d3d; color: #94a3b8;">Skipped</span>
+        {% else %}
+            <span class="badge" style="background: #4a1942; color: #d4a5d0;">Pending</span>
+        {% endif %}
+        {% if migration.get('elapsed') %}
+            <span class="text-muted" style="margin-left: auto;">{{ "%.1f"|format(migration['elapsed']) }}s</span>
+        {% endif %}
+    </div>
+    {% if migration.get('tables') %}
+    {% for table, info in migration['tables'].items() %}
+    <div style="margin-bottom: 8px;">
+        <div style="display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px;">
+            <span>{{ table }}</span>
+            <span class="text-muted">{{ info['done'] }} / {{ info['total'] }}</span>
+        </div>
+        <div style="background: #0f3460; border-radius: 4px; height: 8px; overflow: hidden;">
+            {% set pct = (info['done'] / info['total'] * 100) if info['total'] > 0 else 0 %}
+            <div style="background: #e94560; height: 100%; width: {{ pct }}%; transition: width 0.3s;"></div>
+        </div>
+    </div>
+    {% endfor %}
+    {% endif %}
+</div>
+{% endif %}
 
 <h2 style="font-size: 16px; margin-bottom: 12px; color: #94a3b8;">Background Tasks</h2>
 <table>
