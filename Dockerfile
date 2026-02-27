@@ -21,6 +21,7 @@ COPY main.py info.py subscriptions.py empty_media_folder.py ./
 
 VOLUME ["/data", "/media", "/export"]
 
-EXPOSE 8080
+ARG DASHBOARD_PORT=8080
+EXPOSE ${DASHBOARD_PORT}
 
 CMD ["python", "main.py"]
