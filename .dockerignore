@@ -7,3 +7,13 @@
 .venv
 venv
 .DS_Store
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+tests/
+conftest.py
+config/
+docker-compose.yml
+requirements-test.txt
+*.md

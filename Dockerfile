@@ -1,11 +1,11 @@
-FROM python
+FROM python:3.12-slim
 
 LABEL maintainer="volkovskiyda@gmail.com"
 LABEL description="Telegram bot for downloading and sharing online videos"
 
 ARG DEBIAN_FRONTEND=noninteractive
 
-RUN apt update && apt upgrade -y && apt install -y ffmpeg jq && rm -rf /var/lib/apt/lists/* && apt clean
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends ffmpeg jq && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /project /data /media /export
 
@@ -16,8 +16,7 @@ RUN python -m pip install --upgrade pip
 COPY requirements.txt ./
 RUN pip install -r requirements.txt
 
-COPY dasovbot/ ./dasovbot/
-COPY main.py info.py subscriptions.py empty_media_folder.py ./
+COPY . .
 
 VOLUME ["/data", "/media", "/export"]
 
