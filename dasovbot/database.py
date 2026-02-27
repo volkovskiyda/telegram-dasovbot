@@ -42,10 +42,12 @@ async def migrate_from_json(db: aiosqlite.Connection, config: Config, progress: 
     cursor = await db.execute("SELECT COUNT(*) FROM videos")
     row = await cursor.fetchone()
     if row[0] > 0:
+        logger.info("Migration: skipped (database already populated)")
         if progress is not None:
             progress['status'] = 'skipped'
         return
 
+    logger.info("Migration: started")
     migrated = False
     migration_start = time.monotonic()
     batch_size = 500
@@ -85,12 +87,12 @@ async def migrate_from_json(db: aiosqlite.Connection, config: Config, progress: 
             logger.info("  %s: done (%d entries)", table, total)
             migrated = True
         except Exception:
-            logger.error("Failed to migrate %s", filepath, exc_info=True)
+            logger.error("Migration: error migrating %s", filepath, exc_info=True)
 
     if migrated:
         await db.commit()
         elapsed = time.monotonic() - migration_start
-        logger.info("Migration completed in %.2fs", elapsed)
+        logger.info("Migration: finished in %.2fs", elapsed)
         if progress is not None:
             progress['elapsed'] = elapsed
         for filepath in [
@@ -109,6 +111,8 @@ async def migrate_from_json(db: aiosqlite.Connection, config: Config, progress: 
                 except Exception:
                     logger.error("Failed to rename %s", filepath, exc_info=True)
 
+    if not migrated:
+        logger.info("Migration: skipped (no JSON files to migrate)")
     if progress is not None and progress['status'] != 'completed':
         progress['status'] = 'completed' if migrated else 'skipped'
 
