@@ -45,6 +45,9 @@
 | `EMPTY_MEDIA_FOLDER` | No | `false` | Clear media folder on process crash recovery |
 | `DASHBOARD_PASSWORD` | No | | Password for web dashboard access (auto-generated if not set) |
 | `DASHBOARD_PORT` | No | `8080` | Port for web dashboard server |
+| `COOKIES_FILE` | No | | Path to cookies file for yt-dlp |
+| `TELEGRAM_API_ID` | Docker | | Telegram API ID (for local Bot API server) |
+| `TELEGRAM_API_HASH` | Docker | | Telegram API hash (for local Bot API server) |
 
 ### **Project structure:**
 ```
@@ -60,10 +63,14 @@ dasovbot/              # Main package
   helpers.py           # Shared utilities
   handlers/            # Telegram handler modules
   services/            # Background tasks and intent processing
+  dashboard/           # Web dashboard (aiohttp, jinja2, session auth)
 main.py                # Thin wrapper entry point
 info.py                # CLI: video info lookup
 subscriptions.py       # CLI: bulk subscription management
 empty_media_folder.py  # CLI: clear media folder
+backup.py              # CLI: SQLite online backup
+entrypoint.sh          # Docker entrypoint (cron + bot)
+backup-cron            # Cron schedule for database backups
 ```
 
 ### **Architecture**
@@ -92,10 +99,10 @@ empty_media_folder.py  # CLI: clear media folder
 
 **Key modules:**
 - `handlers/` — Telegram command and inline query handlers (`download.py`, `inline.py`, `subscription.py`, `common.py`)
-- `services/background.py` — Hourly subscription polling, intent queue processing
+- `services/background.py` — Hourly subscription polling, intent queue processing, inline cache cleanup
 - `services/intent_processor.py` — Download execution and Telegram posting
 - `downloader.py` — yt-dlp wrapper with `asyncio.Lock` for synchronized access
-- `dashboard/` — aiohttp web server with session auth, jinja2 templates, system/video status views
+- `dashboard/` — aiohttp web server with cookie-based session auth, jinja2 templates, overview/videos/system pages
 
 **Subscriptions:** Playlist URLs mapped to subscriber chat IDs. Background task polls hourly, creates intents for new videos.
 
@@ -146,7 +153,7 @@ docker run -dit --rm --name telegram --pull=always -e TELEGRAM_API_ID=<api_id> -
 #### Change `BASE_URL` in `.env`:
 `BASE_URL=http://api:8081/bot`
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 #### **Database backup:**
