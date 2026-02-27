@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import shutil
+from functools import partial
 from typing import TYPE_CHECKING
 
 import yt_dlp
@@ -147,10 +148,13 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
     if not file_id:
         try:
             video_path = info.filepath
-            if video_path:
-                logger.info("process_query send_video strt: %s", query)
-            elif 'youtube' in extract_url(info):
-                await send_message_developer(bot, f'[error_no_video_path]\n{caption}', config.developer_id)
+            if not video_path:
+                logger.error("process_query no video path: %s", query)
+                if 'youtube' in extract_url(info):
+                    await send_message_developer(bot, f'[error_no_video_path]\n{caption}', config.developer_id)
+                await state.pop_intent(query)
+                return info
+            logger.info("process_query send_video strt: %s", query)
             message = await bot.send_video(
                 chat_id=config.developer_chat_id,
                 caption=caption,
@@ -169,13 +173,21 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
                 temp_ydl_opts['format'] = temp_ydl_opts['format'].replace('720', '360')
                 temp_ydl_opts['outtmpl'] = add_scaled_after_title(temp_ydl_opts['outtmpl'])
                 temp_video_path = None
+                temp_info = None
+                loop = asyncio.get_running_loop()
                 with yt_dlp.YoutubeDL(temp_ydl_opts) as temp_ydl:
                     try:
-                        temp_info_raw = temp_ydl.extract_info(query, download=True)
+                        temp_info_raw = await loop.run_in_executor(
+                            None, partial(temp_ydl.extract_info, query, download=True)
+                        )
                         temp_info = process_info(temp_info_raw)
                         temp_video_path = temp_info.filepath
                     except Exception:
-                        pass
+                        logger.error("fallback download error: %s", query, exc_info=True)
+                if not temp_info or not temp_video_path:
+                    remove(info.filepath)
+                    await state.pop_intent(query)
+                    return info
                 try:
                     logger.info("process_query send_video rsrt: %s", query)
                     message = await bot.send_video(
@@ -194,11 +206,12 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
                     await process_intent(bot, query, file_id, caption, state)
                     return info
                 except Exception:
-                    pass
+                    logger.error("fallback send_video error: %s", query, exc_info=True)
                 finally:
                     logger.info("process_query remove: %s", temp_video_path)
                     if temp_video_path:
                         remove(temp_video_path)
+            remove(info.filepath)
             await state.pop_intent(query)
             return info
         file_id = await post_process(query, info, message, state)
@@ -207,8 +220,10 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
     return info
 
 
-async def process_intent(bot: Bot, query: str, video: str, caption: str, state: BotState) -> Intent:
+async def process_intent(bot: Bot, query: str, video: str, caption: str, state: BotState) -> Intent | None:
     intent = await state.pop_intent(query)
+    if not intent:
+        return None
     for item in intent.chat_ids:
         try:
             await bot.send_video(chat_id=item, video=video, caption=caption, disable_notification=True)

@@ -96,13 +96,21 @@ async def clear_temporary_inline_queries(state: BotState):
         await asyncio.sleep(10 * 60)
 
 
+def _log_task_exception(task: asyncio.Task):
+    if not task.cancelled() and task.exception():
+        logger.error("Background task %s failed: %s", task.get_name(), task.exception(), exc_info=task.exception())
+
+
 def start_background_tasks(bot: Bot, state: BotState):
     from dasovbot.dashboard.server import start_dashboard
     from dasovbot.services.intent_processor import monitor_process_intents
-    asyncio.gather(
-        populate_animation(bot, state),
-        populate_subscriptions(state),
-        monitor_process_intents(bot, state),
-        clear_temporary_inline_queries(state),
-        start_dashboard(state),
-    )
+
+    tasks = [
+        asyncio.create_task(populate_animation(bot, state), name="populate_animation"),
+        asyncio.create_task(populate_subscriptions(state), name="populate_subscriptions"),
+        asyncio.create_task(monitor_process_intents(bot, state), name="monitor_process_intents"),
+        asyncio.create_task(clear_temporary_inline_queries(state), name="clear_temporary_inline_queries"),
+        asyncio.create_task(start_dashboard(state), name="start_dashboard"),
+    ]
+    for task in tasks:
+        task.add_done_callback(_log_task_exception)
