@@ -9,7 +9,6 @@ from telegram.warnings import PTBUserWarning
 from dasovbot.config import load_config
 from dasovbot.downloader import init_downloader
 from dasovbot.handlers import register_handlers
-from dasovbot.services.background import start_background_tasks
 from dasovbot.state import BotState
 
 
@@ -31,19 +30,22 @@ def main():
         logging.error(f"Failed to initialize state from database: {e}")
         return
 
+    async def post_init(app: Application):
+        from dasovbot.services.background import start_background_tasks
+        start_background_tasks(app.bot, app.bot_data['state'])
+
     application = (
         Application.builder()
         .token(config.bot_token)
         .base_url(config.base_url)
         .read_timeout(config.read_timeout)
+        .post_init(post_init)
         .build()
     )
 
     application.bot_data['state'] = state
 
     register_handlers(application)
-
-    start_background_tasks(application.bot, state)
 
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
