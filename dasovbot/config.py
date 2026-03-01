@@ -84,6 +84,9 @@ def make_ydl_opts(config: Config) -> dict:
     opts = {
         'format': f"{VIDEO_FORMAT}+ba[ext=m4a] / {VIDEO_FORMAT}+ba[ext=mp4] / b[ext=mp4][height<=?720]",
         'outtmpl': f'{media_folder}/%(timestamp>{DATETIME_FORMAT},upload_date>{DATE_FORMAT}_u,epoch>{DATE_FORMAT}_e)s - %(title).80s [%(id).20s].%(ext)s',
+        'retries': 5,
+        'fragment_retries': 5,
+        'extractor_retries': 5,
         'noplaylist': True,
         'extract_flat': 'in_playlist',
         'playlist_items': '1-20',
