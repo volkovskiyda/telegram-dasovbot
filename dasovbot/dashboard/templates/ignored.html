@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% set active = "ignored" %}
+
+{% block title %}Ignored - DasovBot{% endblock %}
+
+{% block content %}
+<h1>Ignored Videos</h1>
+
+<table>
+    <thead>
+        <tr>
+            <th>Title</th>
+            <th>Source</th>
+            <th>Type</th>
+            <th>Action</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for item in items %}
+        <tr>
+            <td><a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.title[:60] }}{% if item.title|length > 60 %}...{% endif %}</a></td>
+            <td>
+                {% if item.source %}
+                <span class="badge badge-{{ item.source }}">{{ item.source }}</span>
+                {% endif %}
+            </td>
+            <td>{{ item.type }}</td>
+            <td>
+                <form method="post" action="/ignored/remove" style="margin: 0;">
+                    <input type="hidden" name="url" value="{{ item.url }}">
+                    <input type="hidden" name="type" value="{{ item.type }}">
+                    <button type="submit" style="background: #e94560; color: #fff; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 13px;">Remove</button>
+                </form>
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="text-muted" style="text-align: center;">No ignored videos</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

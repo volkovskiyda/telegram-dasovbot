@@ -110,6 +110,51 @@ async def videos(request: web.Request) -> web.Response:
     return aiohttp_jinja2.render_template('videos.html', request, context)
 
 
+async def ignored(request: web.Request) -> web.Response:
+    state = get_state(request)
+
+    items = []
+    for url, intent in state.intents.items():
+        if intent.ignored:
+            video = state.videos.get(url)
+            items.append({
+                'url': url,
+                'title': intent.title or (video.title if video else '') or url,
+                'source': intent.source or '',
+                'type': 'intent',
+            })
+    for url, tiq in state.temporary_inline_queries.items():
+        if tiq.ignored:
+            title = url
+            for result in tiq.results:
+                if hasattr(result, 'title') and result.title:
+                    title = result.title
+                    break
+            items.append({
+                'url': url,
+                'title': title,
+                'source': 'inline',
+                'type': 'inline',
+            })
+
+    return aiohttp_jinja2.render_template('ignored.html', request, {'items': items})
+
+
+async def remove_ignored(request: web.Request) -> web.Response:
+    state = get_state(request)
+    data = await request.post()
+    url = data.get('url', '')
+    item_type = data.get('type', '')
+
+    if url:
+        if item_type == 'intent':
+            await state.pop_intent(url)
+        elif item_type == 'inline':
+            state.temporary_inline_queries.pop(url, None)
+
+    raise web.HTTPFound('/ignored')
+
+
 async def system(request: web.Request) -> web.Response:
     state = get_state(request)
 

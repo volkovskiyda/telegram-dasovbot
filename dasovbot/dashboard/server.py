@@ -10,7 +10,7 @@ import jinja2
 from aiohttp import web
 
 from dasovbot.dashboard.auth import auth_middleware, login_page, login_post, logout, get_password
-from dasovbot.dashboard.views import index, videos, system
+from dasovbot.dashboard.views import index, videos, ignored, remove_ignored, system
 
 if TYPE_CHECKING:
     from dasovbot.state import BotState
@@ -46,6 +46,8 @@ def create_app(state: BotState) -> web.Application:
     app.router.add_get('/logout', logout)
     app.router.add_get('/', index)
     app.router.add_get('/videos', videos)
+    app.router.add_get('/ignored', ignored)
+    app.router.add_post('/ignored/remove', remove_ignored)
     app.router.add_get('/system', system)
 
     return app
