@@ -16,4 +16,9 @@ conftest.py
 config/
 docker-compose.yml
 requirements-test.txt
+.idea/
+.claude/
+.env.test
+.env.*example
+vpn/
 *.md

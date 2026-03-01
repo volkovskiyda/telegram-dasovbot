@@ -7,6 +7,9 @@ vpn/*
 !vpn/.gitkeep
 .env
 .env.test
+__pycache__/
 *.pyc
+.pytest_cache/
+.claude/
 .DS_Store
 CLAUDE.md
