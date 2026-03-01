@@ -14,7 +14,7 @@ from telegram.error import NetworkError
 from dasovbot.config import make_ydl_opts
 from dasovbot.downloader import (
     extract_info, extract_url, process_info,
-    add_scaled_after_title,
+    add_scaled_after_title, convert_to_mp4,
 )
 from dasovbot.helpers import send_message_developer, now
 from dasovbot.models import VideoInfo, VideoOrigin, Intent, IntentMessage
@@ -154,6 +154,10 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
                     await send_message_developer(bot, f'[error_no_video_path]\n{caption}', config.developer_id)
                 await state.pop_intent(query)
                 return info
+            video_path = await convert_to_mp4(video_path)
+            if video_path != info.filepath:
+                info.filepath = video_path
+                info.filename = os.path.splitext(info.filename)[0] + '.mp4' if info.filename else None
             logger.info("process_query send_video strt: %s", query)
             message = await bot.send_video(
                 chat_id=config.developer_chat_id,
@@ -188,6 +192,9 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
                     remove(info.filepath)
                     await state.pop_intent(query)
                     return info
+                temp_video_path = await convert_to_mp4(temp_video_path)
+                if temp_video_path != temp_info.filepath:
+                    temp_info.filepath = temp_video_path
                 try:
                     logger.info("process_query send_video rsrt: %s", query)
                     message = await bot.send_video(

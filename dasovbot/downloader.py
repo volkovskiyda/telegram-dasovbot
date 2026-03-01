@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
+import subprocess
 from datetime import datetime
 from functools import partial
 from typing import TYPE_CHECKING
@@ -167,3 +169,47 @@ async def extract_info(query: str, download: bool, state: BotState) -> VideoInfo
             logger.debug("lock_release")
 
     return info
+
+
+def _run_ffmpeg(input_path: str, output_path: str, codec_args: list[str]) -> bool:
+    try:
+        result = subprocess.run(
+            ['ffmpeg', '-y', '-i', input_path, *codec_args, '-movflags', '+faststart', output_path],
+            capture_output=True, timeout=600,
+        )
+        return result.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0
+    except (subprocess.TimeoutExpired, OSError):
+        if os.path.exists(output_path):
+            os.remove(output_path)
+        return False
+
+
+def _cleanup_original(original: str, new: str):
+    try:
+        os.remove(original)
+    except OSError:
+        logger.warning("cleanup_original failed: %s", original)
+
+
+async def convert_to_mp4(filepath: str | None) -> str | None:
+    if not filepath or filepath.lower().endswith('.mp4'):
+        return filepath
+
+    output_path = os.path.splitext(filepath)[0] + '.mp4'
+    loop = asyncio.get_running_loop()
+
+    if await loop.run_in_executor(None, _run_ffmpeg, filepath, output_path, ['-c', 'copy']):
+        logger.info("convert_to_mp4 remuxed: %s", filepath)
+        _cleanup_original(filepath, output_path)
+        return output_path
+
+    if os.path.exists(output_path):
+        os.remove(output_path)
+
+    if await loop.run_in_executor(None, _run_ffmpeg, filepath, output_path, ['-c:v', 'libx264', '-preset', 'fast', '-c:a', 'aac']):
+        logger.info("convert_to_mp4 transcoded: %s", filepath)
+        _cleanup_original(filepath, output_path)
+        return output_path
+
+    logger.warning("convert_to_mp4 failed, using original: %s", filepath)
+    return filepath

@@ -87,6 +87,7 @@ def make_ydl_opts(config: Config) -> dict:
         'retries': 5,
         'fragment_retries': 5,
         'extractor_retries': 5,
+        'merge_output_format': 'mp4',
         'noplaylist': True,
         'extract_flat': 'in_playlist',
         'playlist_items': '1-20',

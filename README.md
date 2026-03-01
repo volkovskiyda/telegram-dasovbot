@@ -93,7 +93,8 @@ backup-cron            # Cron schedule for database backups
 1. User sends URL → handler creates an `Intent` (download request)
 2. Background task `monitor_process_intents` picks up intents from an `asyncio.Queue`
 3. `intent_processor.py` extracts metadata and downloads via yt-dlp (blocking calls run in executor)
-4. Video posted to Telegram, `file_id` cached for future reuse
+4. Non-MP4 videos (MKV, WebM, etc.) are converted to MP4 via ffmpeg — fast remux first, transcode fallback
+5. Video posted to Telegram, `file_id` cached for future reuse
 
 **Models:** All domain objects (`models.py`) are dataclasses with manual `to_dict()`/`from_dict()` serialization (stored as JSON within SQLite) — no ORM or external serialization library.
 
@@ -101,7 +102,7 @@ backup-cron            # Cron schedule for database backups
 - `handlers/` — Telegram command and inline query handlers (`download.py`, `inline.py`, `subscription.py`, `common.py`)
 - `services/background.py` — Hourly subscription polling, intent queue processing, inline cache cleanup
 - `services/intent_processor.py` — Download execution and Telegram posting
-- `downloader.py` — yt-dlp wrapper with `asyncio.Lock` for synchronized access
+- `downloader.py` — yt-dlp wrapper with `asyncio.Lock` for synchronized access, MP4 conversion via ffmpeg
 - `dashboard/` — aiohttp web server with cookie-based session auth, jinja2 templates, overview/videos/system pages
 
 **Subscriptions:** Playlist URLs mapped to subscriber chat IDs. Background task polls hourly, creates intents for new videos.
@@ -110,8 +111,11 @@ backup-cron            # Cron schedule for database backups
 
 **Error classification:** Video extraction errors are matched against `VIDEO_ERROR_MESSAGES` in `constants.py` to distinguish user-facing errors from internal failures.
 
+### **System dependencies:**
+- Python 3.10+
+- [ffmpeg](https://ffmpeg.org/) — required for video conversion and yt-dlp post-processing
+
 ### **Run:**
-Note: Use Python 3.10 or above to install and run the Bot.
 - Install requirements
 ```bash
 pip install -r requirements.txt
