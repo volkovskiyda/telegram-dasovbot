@@ -135,14 +135,34 @@ python info.py '<url>' --download=True
 ```
 
 ### **Tests:**
+
+#### Unit tests
+No bot token or external services required.
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-### **Integration tests:**
+#### Run a specific test file
+```bash
+python -m unittest tests.test_database -v
+```
+
+#### Run a specific test class or method
+```bash
+python -m unittest tests.test_state.TestSetVideo -v
+python -m unittest tests.test_helpers.TestRemoveCommandPrefix.test_strips_command -v
+```
+
+#### Integration tests
 Requires `.env.test` with test bot credentials. See `tests/integration/README.md` for setup.
 ```bash
+cp .env.test.example .env.test   # fill in test bot token and user ID
 python -m unittest discover -s tests/integration -v
+```
+
+#### Unit tests only (skip integration)
+```bash
+python -m unittest tests.test_common tests.test_convert tests.test_dashboard tests.test_download tests.test_inline tests.test_models tests.test_subscription tests.test_title_scaled tests.test_database tests.test_state tests.test_intent_processor tests.test_helpers tests.test_config tests.test_downloader_utils tests.test_persistence tests.test_dashboard_utils tests.test_dashboard_auth -v
 ```
 
 ### **Docker container**
