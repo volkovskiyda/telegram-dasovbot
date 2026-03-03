@@ -140,6 +140,23 @@ async def ignored(request: web.Request) -> web.Response:
     return aiohttp_jinja2.render_template('ignored.html', request, {'items': items})
 
 
+async def retry_ignored(request: web.Request) -> web.Response:
+    state = get_state(request)
+    data = await request.post()
+    url = data.get('url', '')
+    item_type = data.get('type', '')
+
+    if url:
+        if item_type == 'intent' and url in state.intents:
+            state.intents[url].ignored = False
+            await state.save_intent(url)
+            state.download_queue.put_nowait(url)
+        elif item_type == 'inline' and url in state.temporary_inline_queries:
+            state.temporary_inline_queries[url].ignored = False
+
+    raise web.HTTPFound('/ignored')
+
+
 async def remove_ignored(request: web.Request) -> web.Response:
     state = get_state(request)
     data = await request.post()

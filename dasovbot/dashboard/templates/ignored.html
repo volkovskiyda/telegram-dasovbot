@@ -25,7 +25,12 @@
                 {% endif %}
             </td>
             <td>{{ item.type }}</td>
-            <td>
+            <td style="display: flex; gap: 6px;">
+                <form method="post" action="/ignored/retry" style="margin: 0;">
+                    <input type="hidden" name="url" value="{{ item.url }}">
+                    <input type="hidden" name="type" value="{{ item.type }}">
+                    <button type="submit" style="background: #4CAF50; color: #fff; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 13px;">Retry</button>
+                </form>
                 <form method="post" action="/ignored/remove" style="margin: 0;">
                     <input type="hidden" name="url" value="{{ item.url }}">
                     <input type="hidden" name="type" value="{{ item.type }}">
