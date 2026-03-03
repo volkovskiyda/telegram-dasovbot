@@ -1,5 +1,9 @@
 from unittest.mock import AsyncMock, MagicMock
 
+import aiosqlite
+
+from dasovbot.config import Config
+from dasovbot.database import SCHEMA
 from dasovbot.state import BotState
 
 
@@ -65,3 +69,22 @@ def make_state(**overrides):
     for key, value in overrides.items():
         setattr(state, key, value)
     return state
+
+
+async def make_memory_db():
+    db = await aiosqlite.connect(':memory:')
+    await db.executescript(SCHEMA)
+    await db.commit()
+    return db
+
+
+def make_config(**overrides):
+    defaults = dict(
+        bot_token='test-token',
+        base_url='https://api.telegram.org',
+        developer_chat_id='123',
+        developer_id='123',
+        config_folder='/tmp/test',
+    )
+    defaults.update(overrides)
+    return Config(**defaults)
