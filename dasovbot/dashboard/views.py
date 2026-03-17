@@ -172,6 +172,15 @@ async def remove_ignored(request: web.Request) -> web.Response:
     raise web.HTTPFound('/ignored')
 
 
+async def remove_intent(request: web.Request) -> web.Response:
+    state = get_state(request)
+    data = await request.post()
+    url = data.get('url', '')
+    if url:
+        await state.pop_intent(url)
+    raise web.HTTPFound('/')
+
+
 async def system(request: web.Request) -> web.Response:
     state = get_state(request)
 
