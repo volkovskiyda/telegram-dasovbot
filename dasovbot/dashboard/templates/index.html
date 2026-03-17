@@ -23,7 +23,12 @@
         <div class="label">Users</div>
     </div>
 </div>
-<h2 style="font-size: 18px; margin: 24px 0 12px; color: #94a3b8;">Processing Queue</h2>
+<div style="display: flex; align-items: center; gap: 12px; margin: 24px 0 12px;">
+    <h2 style="font-size: 18px; margin: 0; color: #94a3b8;">Processing Queue</h2>
+    <form method="post" action="/system/populate" style="margin: 0;">
+        <button type="submit" style="background: #4CAF50; color: #fff; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 13px;">Populate Subscriptions</button>
+    </form>
+</div>
 <table>
     <thead>
         <tr>

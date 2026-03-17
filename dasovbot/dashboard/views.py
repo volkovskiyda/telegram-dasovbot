@@ -186,7 +186,9 @@ async def remove_intent(request: web.Request) -> web.Response:
 async def force_populate(request: web.Request) -> web.Response:
     state = get_state(request)
     asyncio.create_task(run_populate_subscriptions(state))
-    raise web.HTTPFound('/system')
+    referer = request.headers.get('Referer', '')
+    redirect = '/' if referer.endswith('/') else '/system'
+    raise web.HTTPFound(redirect)
 
 
 async def system(request: web.Request) -> web.Response:
