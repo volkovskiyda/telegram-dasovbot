@@ -17,6 +17,16 @@ def main():
         format='%(asctime)s %(name)s %(levelname)s %(message)s',
         level=logging.INFO,
     )
+
+    # Suppress noisy logs
+    logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
+
+    class _IgnoreGetUpdates(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            return "getUpdates" not in record.getMessage()
+
+    logging.getLogger("httpx").addFilter(_IgnoreGetUpdates())
+
     filterwarnings(action="ignore", message=r".*CallbackQueryHandler", category=PTBUserWarning)
 
     config = load_config()
