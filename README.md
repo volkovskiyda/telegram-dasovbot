@@ -8,16 +8,32 @@
 `@dasovbot` _video url_ - Download and share video
 
 ### **Available commands:**
-`/download` _video url_ - Download video
+`/start` - Welcome message
+
+`/download` (`/das`, `/dv`) _video url_ - Download video
+
+`/cancel` - Cancel current operation
 
 `/help` - Show available commands
 
 #### **Subscriptions:**
-`/subscriptions` - Show list of subscriptions
+`/subscriptions` (`/subs`) - Show list of subscriptions
 
 `/subscribe` _playlist url_ - Subscribe to playlist
 
 `/unsubscribe` _playlist url_ - Unsubscribe from playlist
+
+`/playlists` - Show playlists for subscribed channels
+
+`/multiple_subscribe` _playlist urls_ - Bulk subscribe to multiple playlist URLs
+
+### **Web Dashboard**
+Password-protected web UI served on `DASHBOARD_PORT` (default 8080).
+
+- **Overview** (`/`) — stats cards, processing queue with remove buttons, populate subscriptions trigger
+- **Videos** (`/videos`) — downloaded videos with sorting and source filtering
+- **Ignored** (`/ignored`) — failed/skipped videos with retry and remove actions
+- **System** (`/system`) — background task status, state sizes, manual subscription polling trigger
 
 ### **Configuration:**
 - Copy `.env.example` file to `.env` and change `READ_TIMEOUT`, `BASE_URL`, `BOT_TOKEN`, `DEVELOPER_CHAT_ID` and `LOADING_VIDEO_ID` environment variables.
@@ -103,7 +119,7 @@ backup-cron            # Cron schedule for database backups
 - `services/background.py` — Hourly subscription polling, intent queue processing, inline cache cleanup
 - `services/intent_processor.py` — Download execution and Telegram posting
 - `downloader.py` — yt-dlp wrapper with `asyncio.Lock` for synchronized access, MP4 conversion via ffmpeg
-- `dashboard/` — aiohttp web server with cookie-based session auth, jinja2 templates, overview/videos/system pages
+- `dashboard/` — aiohttp web server with cookie-based session auth, jinja2 templates, overview, videos, ignored, and system pages
 
 **Subscriptions:** Playlist URLs mapped to subscriber chat IDs. Background task polls hourly, creates intents for new videos.
 
