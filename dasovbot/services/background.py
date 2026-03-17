@@ -18,19 +18,23 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+async def run_populate_subscriptions(state: BotState):
+    for url in list(state.subscriptions.keys()):
+        subscription = state.subscriptions.get(url)
+        if not subscription:
+            continue
+        chat_ids = subscription.chat_ids
+        if chat_ids:
+            await populate_playlist(url, chat_ids, state)
+        else:
+            await state.pop_subscription(url)
+    state.background_task_status['populate_subscriptions'] = now()
+
+
 async def populate_subscriptions(state: BotState):
     from dasovbot.constants import INTERVAL_SEC
     while True:
-        for url in list(state.subscriptions.keys()):
-            subscription = state.subscriptions.get(url)
-            if not subscription:
-                continue
-            chat_ids = subscription.chat_ids
-            if chat_ids:
-                await populate_playlist(url, chat_ids, state)
-            else:
-                await state.pop_subscription(url)
-        state.background_task_status['populate_subscriptions'] = now()
+        await run_populate_subscriptions(state)
         await asyncio.sleep(INTERVAL_SEC)
 
 

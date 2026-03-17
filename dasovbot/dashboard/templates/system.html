@@ -51,6 +51,7 @@
             <th>Description</th>
             <th>Interval</th>
             <th>Last Run</th>
+            <th>Actions</th>
         </tr>
     </thead>
     <tbody>
@@ -60,6 +61,13 @@
             <td>{{ task.description }}</td>
             <td>{{ task.interval }}</td>
             <td>{{ task.last_run or 'never' }} <span class="text-muted">({{ task.last_run_relative }})</span></td>
+            <td>
+                {% if task.name == 'populate_subscriptions' %}
+                <form method="post" action="/system/populate" style="margin: 0;">
+                    <button type="submit" style="background: #4CAF50; color: #fff; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 13px;">Run Now</button>
+                </form>
+                {% endif %}
+            </td>
         </tr>
         {% endfor %}
     </tbody>

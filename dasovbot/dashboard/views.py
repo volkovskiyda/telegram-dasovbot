@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -7,6 +8,7 @@ import aiohttp_jinja2
 from aiohttp import web
 
 from dasovbot.constants import DATETIME_FORMAT
+from dasovbot.services.background import run_populate_subscriptions
 from dasovbot.services.intent_processor import filter_intents
 
 if TYPE_CHECKING:
@@ -179,6 +181,12 @@ async def remove_intent(request: web.Request) -> web.Response:
     if url:
         await state.pop_intent(url)
     raise web.HTTPFound('/')
+
+
+async def force_populate(request: web.Request) -> web.Response:
+    state = get_state(request)
+    asyncio.create_task(run_populate_subscriptions(state))
+    raise web.HTTPFound('/system')
 
 
 async def system(request: web.Request) -> web.Response:
