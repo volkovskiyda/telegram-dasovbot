@@ -75,7 +75,7 @@ def load_config() -> Config:
 
 def match_filter(info, *, incomplete):
     from dasovbot.helpers import now
-    if info.get('is_live') or int(info.get('duration') or 0) > 15_000:
+    if info.get('is_live') or int(info.get('duration') or 0) > 18_000:
         return f"{now()} # ignore_video {info.get('url')}"
 
 
