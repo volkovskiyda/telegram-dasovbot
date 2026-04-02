@@ -18,8 +18,6 @@ RUN pip install -r requirements.txt
 
 COPY . .
 
-COPY backup-cron /etc/cron.d/backup-cron
-
 VOLUME ["/data", "/media", "/export"]
 
 ARG DASHBOARD_PORT=8080
