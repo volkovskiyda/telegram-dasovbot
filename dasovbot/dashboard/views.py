@@ -191,6 +191,47 @@ async def force_populate(request: web.Request) -> web.Response:
     raise web.HTTPFound(redirect)
 
 
+USER_COLORS = [
+    '#e94560', '#53a8e2', '#95d5b2', '#d4a5d0', '#f9c74f',
+    '#f3722c', '#43aa8b', '#577590', '#f8961e', '#90be6d',
+    '#4cc9f0', '#7209b7', '#3a86ff', '#ff006e', '#8338ec',
+]
+
+
+async def subscriptions(request: web.Request) -> web.Response:
+    state = get_state(request)
+
+    all_chat_ids = sorted({cid for sub in state.subscriptions.values() for cid in sub.chat_ids})
+    color_map = {cid: USER_COLORS[i % len(USER_COLORS)] for i, cid in enumerate(all_chat_ids)}
+
+    users = []
+    for cid in all_chat_ids:
+        user_data = state.users.get(cid, {})
+        parts = [p for p in [user_data.get('first_name', ''), user_data.get('last_name', '')] if p]
+        label = ' '.join(parts)
+        if label:
+            label = f'{label} ({cid})'
+        else:
+            label = cid
+        users.append({'id': cid, 'color': color_map[cid], 'label': label})
+
+    items = []
+    for url, sub in sorted(state.subscriptions.items(), key=lambda x: x[1].title.lower()):
+        items.append({
+            'url': url,
+            'title': sub.title or sub.uploader or url,
+            'uploader': sub.uploader,
+            'chat_ids': sub.chat_ids,
+        })
+
+    context = {
+        'users': users,
+        'subscriptions': items,
+        'color_map': color_map,
+    }
+    return aiohttp_jinja2.render_template('subscriptions.html', request, context)
+
+
 async def system(request: web.Request) -> web.Response:
     state = get_state(request)
 
