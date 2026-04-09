@@ -99,10 +99,10 @@ jobs:
             ${{ env.registry }}/${{ env.repository }}:latest
 
       - name: Release
-        uses: softprops/action-gh-release@v2.6.1
-        with:
-          tag_name: ${{ steps.date.outputs.date }}
-          generate_release_notes: true
-          body: |
-            Build date: ${{ steps.date.outputs.date }}
-            yt-dlp version: ${{ needs.check-yt-dlp-release.outputs.yt_dlp_version }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.date.outputs.date }}" \
+            --generate-notes \
+            --notes "Build date: ${{ steps.date.outputs.date }}
+          yt-dlp version: ${{ needs.check-yt-dlp-release.outputs.yt_dlp_version }}"
