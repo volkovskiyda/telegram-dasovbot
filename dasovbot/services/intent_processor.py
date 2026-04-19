@@ -139,12 +139,13 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
     config = state.config
     info = await extract_info(query, download=True, state=state)
     if not info:
-        logger.error("process_query error: %s", query)
+        logger.error("process_query error (no info): %s", query)
         if state.intents.get(query) and not state.intents[query].ignored:
             await state.pop_intent(query)
         return info
     caption = info.caption
     file_id = info.file_id
+    logger.info("process_query info: %s file_id=%s filepath=%s", query, file_id, info.filepath)
     if not file_id:
         try:
             video_path = info.filepath
@@ -169,8 +170,9 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
                 filename=info.filename,
                 disable_notification=True,
             )
-            logger.info("process_query send_video fnsh: %s", query)
+            logger.info("process_query send_video fnsh: %s file_id=%s", query, message.video.file_id if message.video else None)
         except Exception as e:
+            logger.error("process_query send_video error: %s %s: %s", query, type(e).__name__, e)
             if isinstance(e, NetworkError) and video_path and os.path.getsize(video_path) >> 20 > 2000 and 'youtube' in extract_url(info):
                 await send_message_developer(bot, f'[error_large_video]\n{caption}', config.developer_id)
                 temp_ydl_opts = make_ydl_opts(config)
@@ -222,6 +224,7 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
             await state.pop_intent(query)
             return info
         file_id = await post_process(query, info, message, state)
+        logger.info("process_query post_process done: %s file_id=%s", query, file_id)
 
     await process_intent(bot, query, file_id, caption, state)
     return info
@@ -230,7 +233,9 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
 async def process_intent(bot: Bot, query: str, video: str, caption: str, state: BotState) -> Intent | None:
     intent = await state.pop_intent(query)
     if not intent:
+        logger.warning("process_intent no intent found: %s", query)
         return None
+    logger.info("process_intent: %s chat_ids=%s inline=%d messages=%d", query, intent.chat_ids, len(intent.inline_message_ids), len(intent.messages))
     for item in intent.chat_ids:
         try:
             await bot.send_video(chat_id=item, video=video, caption=caption, disable_notification=True)
