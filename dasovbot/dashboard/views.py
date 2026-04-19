@@ -224,10 +224,13 @@ async def subscriptions(request: web.Request) -> web.Response:
             'chat_ids': sub.chat_ids,
         })
 
+    user_labels = {u['id']: u['label'] for u in users}
+
     context = {
         'users': users,
         'subscriptions': items,
         'color_map': color_map,
+        'user_labels': user_labels,
     }
     return aiohttp_jinja2.render_template('subscriptions.html', request, context)
 
