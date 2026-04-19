@@ -6,7 +6,13 @@
 {% block content %}
 <h1>Ignored Videos</h1>
 
-<table>
+<table style="table-layout: fixed;">
+    <colgroup>
+        <col style="width: 50%;">
+        <col style="width: 15%;">
+        <col style="width: 10%;">
+        <col style="width: 25%;">
+    </colgroup>
     <thead>
         <tr>
             <th>Title</th>
@@ -18,7 +24,7 @@
     <tbody>
         {% for item in items %}
         <tr>
-            <td><a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.title[:60] }}{% if item.title|length > 60 %}...{% endif %}</a></td>
+            <td style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.title[:60] }}{% if item.title|length > 60 %}...{% endif %}</a></td>
             <td>
                 {% if item.source %}
                 <span class="badge badge-{{ item.source }}">{{ item.source }}</span>
