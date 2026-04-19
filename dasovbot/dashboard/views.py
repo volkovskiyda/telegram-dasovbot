@@ -79,13 +79,28 @@ async def videos(request: web.Request) -> web.Response:
     sort_by = request.query.get('sort', 'processed_at')
     source_filter = request.query.get('source', 'all')
     limit = int(request.query.get('limit', '50'))
+    search_query = request.query.get('q', '').strip()
 
     items = []
+    q_lower = search_query.lower()
     for url, info in state.videos.items():
         if not info.file_id:
             continue
         if source_filter != 'all' and info.source != source_filter:
             continue
+        if q_lower:
+            searchable = '\n'.join(filter(None, [
+                info.title,
+                info.webpage_url or url,
+                url,
+                info.upload_date,
+                info.processed_at,
+                info.caption,
+                info.description,
+                info.uploader_url,
+            ]))
+            if q_lower not in searchable.lower():
+                continue
         items.append({
             'url': url,
             'title': info.title,
@@ -108,6 +123,7 @@ async def videos(request: web.Request) -> web.Response:
         'sort_by': sort_by,
         'source_filter': source_filter,
         'limit': limit,
+        'search_query': search_query,
     }
     return aiohttp_jinja2.render_template('videos.html', request, context)
 

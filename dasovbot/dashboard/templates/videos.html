@@ -6,18 +6,30 @@
 {% block content %}
 <h1>Videos</h1>
 
+<form method="get" action="/videos" class="filters">
+    <input type="hidden" name="sort" value="{{ sort_by }}">
+    <input type="hidden" name="source" value="{{ source_filter }}">
+    <input type="hidden" name="limit" value="{{ limit }}">
+    <input type="text" name="q" value="{{ search_query }}" placeholder="Search videos..." autocomplete="off"
+           style="flex: 1; min-width: 200px; padding: 6px 14px; border-radius: 6px; font-size: 13px; background: #16213e; color: #e0e0e0; border: 1px solid #0f3460; outline: none;">
+    <button type="submit" style="padding: 6px 14px; border-radius: 6px; font-size: 13px; background: #0f3460; color: #e0e0e0; border: none; cursor: pointer;">Search</button>
+    {% if search_query %}
+    <a href="/videos?sort={{ sort_by }}&source={{ source_filter }}&limit={{ limit }}" style="padding: 6px 14px; border-radius: 6px; font-size: 13px; background: #16213e; color: #94a3b8;">Clear</a>
+    {% endif %}
+</form>
+
 <div class="filters">
     <strong style="padding: 6px 0; font-size: 13px; color: #94a3b8;">Sort:</strong>
-    <a href="/videos?sort=processed_at&source={{ source_filter }}&limit={{ limit }}" class="{% if sort_by == 'processed_at' %}active{% endif %}">Processed At</a>
-    <a href="/videos?sort=upload_date&source={{ source_filter }}&limit={{ limit }}" class="{% if sort_by == 'upload_date' %}active{% endif %}">Upload Date</a>
+    <a href="/videos?sort=processed_at&source={{ source_filter }}&limit={{ limit }}&q={{ search_query }}" class="{% if sort_by == 'processed_at' %}active{% endif %}">Processed At</a>
+    <a href="/videos?sort=upload_date&source={{ source_filter }}&limit={{ limit }}&q={{ search_query }}" class="{% if sort_by == 'upload_date' %}active{% endif %}">Upload Date</a>
 </div>
 
 <div class="filters">
     <strong style="padding: 6px 0; font-size: 13px; color: #94a3b8;">Source:</strong>
-    <a href="/videos?sort={{ sort_by }}&source=all&limit={{ limit }}" class="{% if source_filter == 'all' %}active{% endif %}">All</a>
-    <a href="/videos?sort={{ sort_by }}&source=subscription&limit={{ limit }}" class="{% if source_filter == 'subscription' %}active{% endif %}">Subscription</a>
-    <a href="/videos?sort={{ sort_by }}&source=download&limit={{ limit }}" class="{% if source_filter == 'download' %}active{% endif %}">Download</a>
-    <a href="/videos?sort={{ sort_by }}&source=inline&limit={{ limit }}" class="{% if source_filter == 'inline' %}active{% endif %}">Inline</a>
+    <a href="/videos?sort={{ sort_by }}&source=all&limit={{ limit }}&q={{ search_query }}" class="{% if source_filter == 'all' %}active{% endif %}">All</a>
+    <a href="/videos?sort={{ sort_by }}&source=subscription&limit={{ limit }}&q={{ search_query }}" class="{% if source_filter == 'subscription' %}active{% endif %}">Subscription</a>
+    <a href="/videos?sort={{ sort_by }}&source=download&limit={{ limit }}&q={{ search_query }}" class="{% if source_filter == 'download' %}active{% endif %}">Download</a>
+    <a href="/videos?sort={{ sort_by }}&source=inline&limit={{ limit }}&q={{ search_query }}" class="{% if source_filter == 'inline' %}active{% endif %}">Inline</a>
 </div>
 
 <table>
