@@ -18,6 +18,30 @@ from dasovbot.state import BotState
 
 logger = logging.getLogger(__name__)
 
+PAGE_SIZE = 8
+
+
+def build_paginated_keyboard(items: dict, page: int) -> list[list[InlineKeyboardButton]]:
+    item_list = list(items.items())
+    total_pages = max(1, (len(item_list) + PAGE_SIZE - 1) // PAGE_SIZE)
+    page = max(0, min(page, total_pages - 1))
+    start = page * PAGE_SIZE
+    page_items = item_list[start:start + PAGE_SIZE]
+
+    keyboard = [[InlineKeyboardButton(text=item['title'], callback_data=id)] for id, item in page_items]
+
+    if total_pages > 1:
+        nav_row = []
+        if page > 0:
+            nav_row.append(InlineKeyboardButton(text='< Prev', callback_data=f'page:{page - 1}'))
+        nav_row.append(InlineKeyboardButton(text=f'{page + 1}/{total_pages}', callback_data='noop'))
+        if page < total_pages - 1:
+            nav_row.append(InlineKeyboardButton(text='Next >', callback_data=f'page:{page + 1}'))
+        keyboard.append(nav_row)
+
+    keyboard.append([InlineKeyboardButton(text='Cancel', callback_data='cancel')])
+    return keyboard
+
 
 async def subscription_list(update: Update, context):
     state: BotState = context.bot_data['state']
@@ -101,10 +125,7 @@ async def subscribe_url(update: Update, context) -> int:
     context.user_data['playlists'] = playlists
     await message.reply_markdown(
         f"Select playlist of [{uploader}]({uploader_url})",
-        reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton(text=item['title'], callback_data=id)] for id, item in playlists.items()]
-            + [[InlineKeyboardButton(text='Cancel', callback_data='cancel')]]
-        )
+        reply_markup=InlineKeyboardMarkup(build_paginated_keyboard(playlists, 0))
     )
     return SUBSCRIBE_PLAYLIST
 
@@ -126,6 +147,13 @@ async def subscribe_playlist(update: Update, context) -> int:
             except Exception:
                 pass
             return ConversationHandler.END
+        if callback_data == 'noop':
+            return SUBSCRIBE_PLAYLIST
+        if callback_data.startswith('page:'):
+            context.user_data['playlists'] = playlists
+            page = int(callback_data.split(':')[1])
+            await message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(build_paginated_keyboard(playlists, page)))
+            return SUBSCRIBE_PLAYLIST
         user = callback_query.from_user
         message_text = message.edit_text
 
@@ -235,8 +263,7 @@ async def unsubscribe(update: Update, context) -> int:
         if subs:
             context.user_data['user_subscriptions'] = subs
             await message.reply_text("Select playlist", reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton(text=item['title'], callback_data=id)] for id, item in subs.items()]
-                + [[InlineKeyboardButton(text='Cancel', callback_data='cancel')]]
+                build_paginated_keyboard(subs, 0)
             ))
             return UNSUBSCRIBE_PLAYLIST
         else:
@@ -257,6 +284,13 @@ async def unsubscribe_playlist(update: Update, context) -> int:
             except Exception:
                 pass
             return ConversationHandler.END
+        if callback_data == 'noop':
+            return UNSUBSCRIBE_PLAYLIST
+        if callback_data.startswith('page:'):
+            page = int(callback_data.split(':')[1])
+            user_subs = context.user_data.get('user_subscriptions', {})
+            await message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(build_paginated_keyboard(user_subs, page)))
+            return UNSUBSCRIBE_PLAYLIST
         user = callback_query.from_user
         message_text = message.edit_text
         user_subs = context.user_data.pop('user_subscriptions', None)
