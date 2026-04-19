@@ -18,15 +18,44 @@ from dasovbot.state import BotState
 
 logger = logging.getLogger(__name__)
 
-PAGE_SIZE = 8
+MAX_PAGE_BYTES = 4096
+BUTTON_OVERHEAD = 60
+
+
+def _button_size(text: str, callback_data: str) -> int:
+    return len(text.encode('utf-8')) + len(callback_data.encode('utf-8')) + BUTTON_OVERHEAD
+
+
+def _paginate_items(items: list[tuple[str, dict]]) -> list[list[tuple[str, dict]]]:
+    sorted_items = sorted(items, key=lambda item: len(item[1]['title']))
+
+    pages = []
+    current_page = []
+    current_size = 0
+    nav_reserve = _button_size('< Prev', 'page:99') + _button_size('Next >', 'page:99') + _button_size('99/99', 'noop')
+    cancel_size = _button_size('Cancel', 'cancel')
+    budget = MAX_PAGE_BYTES - cancel_size - nav_reserve
+
+    for item in sorted_items:
+        id, data = item
+        size = _button_size(data['title'], id)
+        if current_page and current_size + size > budget:
+            pages.append(current_page)
+            current_page = []
+            current_size = 0
+        current_page.append(item)
+        current_size += size
+
+    if current_page:
+        pages.append(current_page)
+    return pages or [[]]
 
 
 def build_paginated_keyboard(items: dict, page: int) -> list[list[InlineKeyboardButton]]:
-    item_list = list(items.items())
-    total_pages = max(1, (len(item_list) + PAGE_SIZE - 1) // PAGE_SIZE)
+    pages = _paginate_items(list(items.items()))
+    total_pages = len(pages)
     page = max(0, min(page, total_pages - 1))
-    start = page * PAGE_SIZE
-    page_items = item_list[start:start + PAGE_SIZE]
+    page_items = pages[page]
 
     keyboard = [[InlineKeyboardButton(text=item['title'], callback_data=id)] for id, item in page_items]
 
