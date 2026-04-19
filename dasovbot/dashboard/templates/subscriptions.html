@@ -12,6 +12,15 @@
     .sub-item { background: #16213e; border-radius: 8px; padding: 14px 18px; margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between; }
     .sub-title { font-size: 14px; }
     .sub-dots { display: flex; align-items: center; gap: 4px; margin-left: 16px; flex-shrink: 0; }
+    .sub-wrapper { margin-bottom: 10px; }
+    .remove-panel { display: none; background: #0f3460; border-radius: 6px; padding: 10px 14px; margin-top: 8px; }
+    .remove-panel.open { display: block; }
+    .remove-panel-users { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .remove-panel-users form { margin: 0; }
+    .btn-remove { background: #e94560; color: #fff; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    .btn-remove-user { background: transparent; color: #e0e0e0; border: 1px solid #e9456088; padding: 4px 10px; border-radius: 16px; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 4px; }
+    .btn-remove-user:hover { background: #e9456033; }
+    .btn-remove-user .dot { margin: 0; cursor: pointer; }
 </style>
 
 <h1>Subscriptions</h1>
@@ -29,20 +38,65 @@
 
 <div style="font-size: 13px; color: #94a3b8; margin-bottom: 8px;">Playlists ({{ subscriptions|length }})</div>
 {% for sub in subscriptions %}
-<div class="sub-item">
-    <div class="sub-title">
-        <a href="{{ sub.url }}" target="_blank" rel="noopener">{{ sub.title }}</a>
-        {% if sub.uploader and sub.uploader != sub.title %}
-        <span class="text-muted" style="font-size: 12px; margin-left: 6px;">{{ sub.uploader }}</span>
-        {% endif %}
+<div class="sub-wrapper">
+    <div class="sub-item" style="margin-bottom: 0;">
+        <div class="sub-title">
+            <a href="{{ sub.url }}" target="_blank" rel="noopener">{{ sub.title }}</a>
+            {% if sub.uploader and sub.uploader != sub.title %}
+            <span class="text-muted" style="font-size: 12px; margin-left: 6px;">{{ sub.uploader }}</span>
+            {% endif %}
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; margin-left: 16px; flex-shrink: 0;">
+            <div class="sub-dots" style="margin-left: 0;">
+                {% for cid in sub.chat_ids %}
+                <span class="dot" style="background: {{ color_map[cid] }};" data-tip="{{ user_labels[cid] }}"></span>
+                {% endfor %}
+            </div>
+            {% if sub.chat_ids|length <= 1 %}
+            <form method="post" action="/subscriptions/remove" style="margin: 0;" onsubmit="return confirmRemove(this);" data-title="{{ sub.title }}">
+                <input type="hidden" name="url" value="{{ sub.url }}">
+                <button type="submit" class="btn-remove">Remove</button>
+            </form>
+            {% else %}
+            <button class="btn-remove" onclick="this.closest('.sub-wrapper').querySelector('.remove-panel').classList.toggle('open')">Remove</button>
+            {% endif %}
+        </div>
     </div>
-    <div class="sub-dots">
-        {% for cid in sub.chat_ids %}
-        <span class="dot" style="background: {{ color_map[cid] }};" data-tip="{{ user_labels[cid] }}"></span>
-        {% endfor %}
+    {% if sub.chat_ids|length > 1 %}
+    <div class="remove-panel">
+        <div style="font-size: 12px; color: #94a3b8; margin-bottom: 8px;">Remove for user:</div>
+        <div class="remove-panel-users">
+            {% for cid in sub.chat_ids %}
+            <form method="post" action="/subscriptions/remove" style="margin: 0;" onsubmit="return confirmRemoveUser(this);" data-title="{{ sub.title }}" data-user="{{ user_labels[cid] }}">
+                <input type="hidden" name="url" value="{{ sub.url }}">
+                <input type="hidden" name="chat_id" value="{{ cid }}">
+                <button type="submit" class="btn-remove-user">
+                    <span class="dot" style="background: {{ color_map[cid] }};"></span>
+                    {{ user_labels[cid] }}
+                </button>
+            </form>
+            {% endfor %}
+            <form method="post" action="/subscriptions/remove" style="margin: 0;" onsubmit="return confirmRemoveAll(this);" data-title="{{ sub.title }}">
+                <input type="hidden" name="url" value="{{ sub.url }}">
+                <button type="submit" class="btn-remove" style="font-size: 12px;">Remove all</button>
+            </form>
+        </div>
     </div>
+    {% endif %}
 </div>
 {% else %}
 <div class="card text-muted" style="text-align: center;">No subscriptions</div>
 {% endfor %}
+
+<script>
+function confirmRemove(form) {
+    return confirm('Remove subscription \u00ab' + form.dataset.title + '\u00bb?');
+}
+function confirmRemoveUser(form) {
+    return confirm('Remove \u00ab' + form.dataset.title + '\u00bb for ' + form.dataset.user + '?');
+}
+function confirmRemoveAll(form) {
+    return confirm('Remove \u00ab' + form.dataset.title + '\u00bb for ALL users?');
+}
+</script>
 {% endblock %}

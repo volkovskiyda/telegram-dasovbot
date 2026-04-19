@@ -235,6 +235,19 @@ async def subscriptions(request: web.Request) -> web.Response:
     return aiohttp_jinja2.render_template('subscriptions.html', request, context)
 
 
+async def remove_subscription(request: web.Request) -> web.Response:
+    state = get_state(request)
+    data = await request.post()
+    url = data.get('url', '')
+    chat_id = data.get('chat_id', '')
+    if url:
+        if chat_id:
+            await state.remove_subscriber(url, chat_id)
+        else:
+            await state.pop_subscription(url)
+    raise web.HTTPFound('/subscriptions')
+
+
 async def system(request: web.Request) -> web.Response:
     state = get_state(request)
 
