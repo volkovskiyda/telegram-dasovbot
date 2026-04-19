@@ -25,7 +25,7 @@
                 {% endif %}
             </td>
             <td>{{ item.type }}</td>
-            <td style="display: flex; gap: 6px;">
+            <td style="display: flex; gap: 6px; align-items: start;">
                 <form method="post" action="/ignored/retry" style="margin: 0;">
                     <input type="hidden" name="url" value="{{ item.url }}">
                     <input type="hidden" name="type" value="{{ item.type }}">
