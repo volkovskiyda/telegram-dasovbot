@@ -78,7 +78,8 @@ async def videos(request: web.Request) -> web.Response:
     state = get_state(request)
     sort_by = request.query.get('sort', 'processed_at')
     source_filter = request.query.get('source', 'all')
-    limit = int(request.query.get('limit', '50'))
+    page = max(1, int(request.query.get('page', '1')))
+    per_page = 50
     search_query = request.query.get('q', '').strip()
 
     items = []
@@ -116,13 +117,18 @@ async def videos(request: web.Request) -> web.Response:
     else:
         items.sort(key=lambda x: x['processed_at'], reverse=True)
 
-    items = items[:limit]
+    total_items = len(items)
+    total_pages = max(1, (total_items + per_page - 1) // per_page)
+    page = min(page, total_pages)
+    items = items[(page - 1) * per_page : page * per_page]
 
     context = {
         'videos': items,
         'sort_by': sort_by,
         'source_filter': source_filter,
-        'limit': limit,
+        'page': page,
+        'total_pages': total_pages,
+        'total_items': total_items,
         'search_query': search_query,
     }
     return aiohttp_jinja2.render_template('videos.html', request, context)
