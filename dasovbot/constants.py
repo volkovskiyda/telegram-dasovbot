@@ -10,6 +10,8 @@ VIDEO_ERROR_MESSAGES = [
     'Sign in to confirm your age',
     'Private video',
     'Video unavailable',
+    'members-only content',
+    "members on level",
 ]
 
 # Intervals
