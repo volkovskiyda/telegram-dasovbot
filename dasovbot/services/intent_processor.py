@@ -25,33 +25,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-FAILURE_MESSAGE = "⚠️ This video can't be downloaded (members-only, private, removed, or unavailable)."
-
 
 def filter_intents(intents: dict) -> dict:
     return {query: intent for query, intent in intents.items() if not intent.ignored}
-
-
-async def notify_failure(bot: Bot, intent: Intent, query: str) -> None:
-    for chat_id in intent.chat_ids:
-        try:
-            await bot.send_message(chat_id=chat_id, text=FAILURE_MESSAGE)
-        except Exception:
-            logger.error("notify_failure chat_ids error: %s - %s", query, chat_id, exc_info=True)
-    for item in intent.messages:
-        try:
-            await bot.delete_message(chat_id=item.chat, message_id=item.message)
-        except Exception:
-            pass
-        try:
-            await bot.send_message(chat_id=item.chat, text=FAILURE_MESSAGE)
-        except Exception:
-            logger.error("notify_failure messages error: %s - %s", query, item, exc_info=True)
-    for inline_message_id in intent.inline_message_ids:
-        try:
-            await bot.edit_message_text(inline_message_id=inline_message_id, text=FAILURE_MESSAGE)
-        except Exception:
-            logger.warning("notify_failure inline_message_ids skip: %s - %s", query, inline_message_id)
 
 
 async def append_intent(query: str, state: BotState, chat_ids=None, inline_message_id: str = '', message=None, source: str = None, title: str = None, upload_date: str = None):
@@ -165,10 +141,8 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
     if not info:
         logger.error("process_query error (no info): %s", query)
         intent = state.intents.get(query)
-        if intent:
-            await notify_failure(bot, intent, query)
-            if not intent.ignored:
-                await state.pop_intent(query)
+        if intent and not intent.ignored:
+            await state.pop_intent(query)
         return info
     caption = info.caption
     file_id = info.file_id
