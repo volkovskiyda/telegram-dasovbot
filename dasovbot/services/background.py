@@ -105,6 +105,10 @@ async def clear_temporary_inline_queries(state: BotState):
             tiq = state.temporary_inline_queries.get(url)
             if not tiq:
                 continue
+            # Keep ignored entries: they stop repeated yt-dlp hits for dead
+            # videos and stay visible on the dashboard until handled there
+            if tiq.ignored:
+                continue
             if tiq.marked:
                 del state.temporary_inline_queries[url]
             else:

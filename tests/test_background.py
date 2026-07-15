@@ -169,6 +169,16 @@ class TestClearTemporaryInlineQueries(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state.temporary_inline_queries, {})
         self.assertIn('clear_temporary_inline_queries', state.background_task_status)
 
+    @patch('dasovbot.services.background.asyncio.sleep', new_callable=AsyncMock)
+    async def test_ignored_entries_survive_sweep(self, mock_sleep):
+        mock_sleep.side_effect = [None, asyncio.CancelledError()]
+        ignored = TemporaryInlineQuery(ignored=True, marked=True)
+        state = make_state(temporary_inline_queries={'ignored': ignored})
+        with self.assertRaises(asyncio.CancelledError):
+            await clear_temporary_inline_queries(state)
+        self.assertIn('ignored', state.temporary_inline_queries)
+        self.assertTrue(ignored.ignored)
+
 
 if __name__ == '__main__':
     unittest.main()
