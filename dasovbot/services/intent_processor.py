@@ -98,8 +98,10 @@ async def post_process(query: str, info: VideoInfo, message: Message, state: Bot
             chat_ids = intent.chat_ids or [m.chat for m in intent.messages]
         developer_id = state.config.developer_id
         if developer_id in chat_ids or str(message.chat_id) == developer_id:
+            export_path = '/export/'.join(filepath.rsplit('/media/', 1))
             try:
-                shutil.move(filepath, '/export/'.join(filepath.rsplit('/media/', 1)))
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, shutil.move, filepath, export_path)
             except Exception:
                 logger.error("move_file error: %s", query, exc_info=True)
                 remove(filepath)
