@@ -22,6 +22,9 @@ RESTART_DELAY_SEC = 60  # delay before restarting a crashed worker loop
 # Attempts before a failing intent is dropped
 MAX_INTENT_RETRIES = 3
 
+# Upload size (MB) above which a failed send falls back to 360p
+LARGE_FILE_MB = 2000
+
 # Sources
 SOURCE_SUBSCRIPTION = 'subscription'
 SOURCE_DOWNLOAD = 'download'

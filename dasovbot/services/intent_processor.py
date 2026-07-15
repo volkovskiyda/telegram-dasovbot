@@ -190,7 +190,8 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
             logger.info("process_query send_video fnsh: %s file_id=%s", query, message.video.file_id if message.video else None)
         except Exception as e:
             logger.error("process_query send_video error: %s %s: %s", query, type(e).__name__, e)
-            if isinstance(e, NetworkError) and video_path and os.path.getsize(video_path) >> 20 > 2000 and 'youtube' in extract_url(info):
+            from dasovbot.constants import LARGE_FILE_MB
+            if isinstance(e, NetworkError) and video_path and os.path.getsize(video_path) >> 20 > LARGE_FILE_MB and 'youtube' in extract_url(info):
                 if await retry_lower_quality(bot, query, info, state):
                     return info
             remove(info.filepath)
