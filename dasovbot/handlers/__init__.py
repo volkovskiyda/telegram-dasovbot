@@ -28,14 +28,14 @@ def register_handlers(application: Application):
     application.add_handler(ConversationHandler(
         entry_points=[CommandHandler(['download', 'das', 'dv'], download)],
         states={
-            DAS_URL: [MessageHandler(filters.TEXT, download_url)],
+            DAS_URL: [MessageHandler(filters.TEXT & ~filters.COMMAND, download_url)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     ))
     application.add_handler(ConversationHandler(
         entry_points=[CommandHandler(['subscribe'], subscribe)],
         states={
-            SUBSCRIBE_URL: [MessageHandler(filters.TEXT, subscribe_url)],
+            SUBSCRIBE_URL: [MessageHandler(filters.TEXT & ~filters.COMMAND, subscribe_url)],
             SUBSCRIBE_PLAYLIST: [CallbackQueryHandler(subscribe_playlist)],
             SUBSCRIBE_SHOW: [CallbackQueryHandler(subscribe_show)],
         },
@@ -52,7 +52,7 @@ def register_handlers(application: Application):
     application.add_handler(ConversationHandler(
         entry_points=[CommandHandler(['multiple_subscribe'], multiple_subscribe)],
         states={
-            MULTIPLE_SUBSCRIBE_URLS: [MessageHandler(filters.TEXT, multiple_subscribe_urls)],
+            MULTIPLE_SUBSCRIBE_URLS: [MessageHandler(filters.TEXT & ~filters.COMMAND, multiple_subscribe_urls)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     ))
