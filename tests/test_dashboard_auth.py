@@ -7,14 +7,19 @@ from aiohttp import web
 import dasovbot.dashboard.auth as auth_module
 from dasovbot.dashboard.auth import (
     auth_middleware, login_page, login_post, logout,
-    create_session, check_token, client_ip, COOKIE_NAME, MAX_LOGIN_ATTEMPTS,
+    create_session, check_token, client_ip, secure_cookie,
+    COOKIE_NAME, MAX_LOGIN_ATTEMPTS,
 )
 
 
-def make_request(remote='1.2.3.4', forwarded=None):
+def make_request(remote='1.2.3.4', forwarded=None, proto=None):
     request = MagicMock()
     request.remote = remote
-    request.headers = {'X-Forwarded-For': forwarded} if forwarded else {}
+    request.headers = {}
+    if forwarded:
+        request.headers['X-Forwarded-For'] = forwarded
+    if proto:
+        request.headers['X-Forwarded-Proto'] = proto
     return request
 
 
@@ -57,6 +62,30 @@ class TestClientIp(AuthTestCase):
         with self.assertRaises(web.HTTPFound) as ctx:
             await login_post(victim)
         self.assertEqual(ctx.exception.location, '/')
+
+
+class TestSecureCookie(AuthTestCase):
+    def test_plain_deployment_not_secure(self):
+        self.assertFalse(secure_cookie(make_request(proto='https')))
+
+    @patch.dict('os.environ', {'DASHBOARD_BEHIND_PROXY': 'true'})
+    def test_behind_https_proxy_is_secure(self):
+        self.assertTrue(secure_cookie(make_request(proto='https')))
+
+    @patch.dict('os.environ', {'DASHBOARD_BEHIND_PROXY': 'true'})
+    def test_behind_plain_http_proxy_not_secure(self):
+        # A Secure cookie would be dropped by the browser over plain HTTP
+        self.assertFalse(secure_cookie(make_request(proto='http')))
+        self.assertFalse(secure_cookie(make_request()))
+
+    @patch.dict('os.environ', {'DASHBOARD_BEHIND_PROXY': 'true'})
+    @patch('dasovbot.dashboard.auth.get_password', return_value='secret')
+    async def test_login_sets_secure_cookie_behind_https_proxy(self, mock_pwd):
+        request = make_request(forwarded='203.0.113.7', proto='https')
+        request.post = AsyncMock(return_value={'password': 'secret'})
+        with self.assertRaises(web.HTTPFound) as ctx:
+            await login_post(request)
+        self.assertTrue(ctx.exception.cookies[COOKIE_NAME]['secure'])
 
 
 class TestAuthMiddleware(AuthTestCase):

@@ -26,12 +26,14 @@ def get_password() -> str:
     return _generated_password
 
 
-def secure_cookie() -> bool:
-    return os.getenv('DASHBOARD_SECURE_COOKIE', 'false').lower() == 'true'
-
-
 def behind_proxy() -> bool:
     return os.getenv('DASHBOARD_BEHIND_PROXY', 'false').lower() == 'true'
+
+
+def secure_cookie(request: web.Request) -> bool:
+    # The dashboard itself only speaks plain HTTP, so the session cookie can
+    # only be marked Secure when a trusted proxy terminates TLS in front of it
+    return behind_proxy() and request.headers.get('X-Forwarded-Proto', '').lower() == 'https'
 
 
 def client_ip(request: web.Request) -> str:
@@ -98,7 +100,7 @@ async def login_post(request: web.Request) -> web.Response:
         response = web.HTTPFound('/')
         response.set_cookie(
             COOKIE_NAME, create_session(), max_age=SESSION_TTL_SEC,
-            httponly=True, secure=secure_cookie(), samesite='Lax',
+            httponly=True, secure=secure_cookie(request), samesite='Lax',
         )
         raise response
     _failed_logins.setdefault(remote, []).append(time.time())
