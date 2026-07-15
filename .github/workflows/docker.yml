@@ -6,6 +6,8 @@ on:
     - cron: '0 0 * * *'  # daily at midnight
   push:
     branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
   repository_dispatch:
     types: [yt-dlp-release]
 
@@ -15,6 +17,24 @@ env:
   registry: ghcr.io
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements-test.txt
+
+      - name: Run unit tests
+        run: python -m pytest tests --ignore=tests/integration
+
   check-yt-dlp-release:
     runs-on: ubuntu-latest
     outputs:
@@ -51,7 +71,7 @@ jobs:
           fi
 
   build:
-    needs: check-yt-dlp-release
+    needs: [test, check-yt-dlp-release]
     if: needs.check-yt-dlp-release.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     permissions:
