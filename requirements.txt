@@ -1,4 +1,4 @@
-yt-dlp[default,deno]
+yt-dlp[default,deno,curl-cffi]
 python-telegram-bot==22.6
 python-dotenv==1.2.1
 ffmpeg-python==0.2.0
