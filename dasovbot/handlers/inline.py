@@ -110,7 +110,7 @@ async def chosen_query(update: Update, context):
 
     if not inline_message_id or not inline_queries:
         return
-    query_data = inline_queries[inline_result.result_id]
+    query_data = inline_queries.get(inline_result.result_id)
     if not query_data:
         return
     if isinstance(query_data, str):

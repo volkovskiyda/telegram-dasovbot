@@ -33,6 +33,10 @@ async def unknown(update: Update, _):
     )
 
 
+async def error_handler(update, context):
+    logger.error("Unhandled handler error", exc_info=context.error)
+
+
 async def cancel(update: Update, _) -> int:
     from telegram.ext import ConversationHandler
     message = update.message

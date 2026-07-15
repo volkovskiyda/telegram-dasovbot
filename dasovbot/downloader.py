@@ -35,10 +35,6 @@ def get_ydl() -> yt_dlp.YoutubeDL:
     return yt_dlp.YoutubeDL(_ydl_opts)
 
 
-def get_ydl_opts() -> dict:
-    return dict(_ydl_opts) if _ydl_opts else {}
-
-
 def extract_url(info) -> str:
     if isinstance(info, VideoInfo):
         return info.webpage_url or info.url

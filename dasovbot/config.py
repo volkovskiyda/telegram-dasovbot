@@ -36,10 +36,6 @@ class Config:
         return f'{self.config_folder}/data/intents.json'
 
     @property
-    def timestamp_file(self) -> str:
-        return f'{self.config_folder}/data/timestamp.txt'
-
-    @property
     def db_file(self) -> str:
         return f'{self.config_folder}/data/bot.db'
 

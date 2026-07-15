@@ -8,7 +8,7 @@ from dasovbot.constants import (
     DAS_URL, SUBSCRIBE_URL, SUBSCRIBE_PLAYLIST, SUBSCRIBE_SHOW,
     UNSUBSCRIBE_PLAYLIST, MULTIPLE_SUBSCRIBE_URLS,
 )
-from dasovbot.handlers.common import start, help_command, unknown, cancel
+from dasovbot.handlers.common import start, help_command, unknown, cancel, error_handler
 from dasovbot.handlers.download import download, download_url
 from dasovbot.handlers.inline import inline_query_handler, chosen_query
 from dasovbot.handlers.subscription import (
@@ -56,5 +56,5 @@ def register_handlers(application: Application):
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     ))
-    application.add_handler(CommandHandler(['multiple_subscribe'], multiple_subscribe))
     application.add_handler(MessageHandler(filters.COMMAND, unknown))
+    application.add_error_handler(error_handler)

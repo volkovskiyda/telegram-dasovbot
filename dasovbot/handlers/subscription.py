@@ -133,14 +133,14 @@ async def subscribe_url(update: Update, context) -> int:
 
     except Exception:
         logger.error("%s # subscribe_url failed: %s", extract_user(user), query)
-        await message.reply_text("Error occured", reply_markup=ReplyKeyboardRemove())
+        await message.reply_text("Error occurred", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
     entries = info.get('entries')
     uploader = info.get('uploader') or info.get('uploader_id')
     uploader_videos = f"{uploader_url}/videos"
     if not entries or not uploader or not uploader_videos:
-        await message.reply_text("Error occured", reply_markup=ReplyKeyboardRemove())
+        await message.reply_text("Error occurred", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
     playlists = {}
@@ -195,7 +195,7 @@ async def subscribe_playlist(update: Update, context) -> int:
 
         if not playlists:
             logger.error("%s # subscribe_playlist failed", extract_user(user))
-            await message_text("Error occured", reply_markup=InlineKeyboardMarkup([]))
+            await message_text("Error occurred", reply_markup=InlineKeyboardMarkup([]))
             return ConversationHandler.END
 
         playlist = playlists[callback_data]
@@ -247,7 +247,7 @@ async def subscribe_playlist(update: Update, context) -> int:
             uploader_videos = f"{uploader_url}/videos"
         except Exception:
             logger.error("%s # subscribe_playlist failed: %s", extract_user(user), url, exc_info=True)
-            await message_text("Error occured", reply_markup=InlineKeyboardMarkup([]))
+            await message_text("Error occurred", reply_markup=InlineKeyboardMarkup([]))
             return ConversationHandler.END
 
     await state.set_subscription(url, Subscription(
@@ -333,7 +333,7 @@ async def unsubscribe_playlist(update: Update, context) -> int:
 
         if not user_subs:
             logger.error("%s # unsubscribe_playlist failed", extract_user(user))
-            await message_text("Error occured", reply_markup=InlineKeyboardMarkup([]))
+            await message_text("Error occurred", reply_markup=InlineKeyboardMarkup([]))
             return ConversationHandler.END
 
         query = user_subs[callback_data]['url']
@@ -483,5 +483,5 @@ async def multiple_subscribe_urls(update: Update, context) -> int:
     if failed:
         await message.reply_text('\n'.join(["Failed subscriptions"] + [f"{item}" for item in failed]))
     logger.info("%s # multiple_subscribe len: %s, already_subscribed: %s, failed: %s", extract_user(user), len(urls), len(already_subscribed), len(failed))
-    await message.reply_text(f"Multiple Subscribe" + (f"\n{len(subscribed)} urls successfully" if subscribed else "") + (f"\n{len(failed)} urls failed" if failed else "") + (f"\n{len(already_subscribed)} urls already subscribed" if already_subscribed else ""))
+    await message.reply_text("Multiple Subscribe" + (f"\n{len(subscribed)} urls successfully" if subscribed else "") + (f"\n{len(failed)} urls failed" if failed else "") + (f"\n{len(already_subscribed)} urls already subscribed" if already_subscribed else ""))
     return ConversationHandler.END
