@@ -135,3 +135,10 @@ def start_background_tasks(bot: Bot, state: BotState):
     for task in tasks:
         state.background_tasks.add(task)
         task.add_done_callback(partial(_on_task_done, state))
+
+
+async def stop_background_tasks(state: BotState):
+    tasks = list(state.background_tasks)
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)

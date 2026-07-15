@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from dasovbot.models import Subscription, TemporaryInlineQuery, VideoInfo
 from dasovbot.services.background import (
     populate_animation, populate_video, populate_playlist, run_populate_subscriptions,
-    clear_temporary_inline_queries, start_background_tasks,
+    clear_temporary_inline_queries, start_background_tasks, stop_background_tasks,
 )
 from tests.helpers import make_state, make_config
 
@@ -154,6 +154,24 @@ class TestStartBackgroundTasks(unittest.IsolatedAsyncioTestCase):
         await asyncio.gather(*tasks)
         await asyncio.sleep(0)  # let done callbacks run
         self.assertEqual(len(state.background_tasks), 0)
+
+
+class TestStopBackgroundTasks(unittest.IsolatedAsyncioTestCase):
+    async def test_cancels_running_tasks(self):
+        state = make_state()
+
+        async def forever():
+            await asyncio.Event().wait()
+
+        task = asyncio.create_task(forever())
+        state.background_tasks.add(task)
+        await stop_background_tasks(state)
+        self.assertTrue(task.cancelled())
+
+    async def test_noop_without_tasks(self):
+        state = make_state()
+        await stop_background_tasks(state)
+        self.assertEqual(state.background_tasks, set())
 
 
 class TestClearTemporaryInlineQueries(unittest.IsolatedAsyncioTestCase):

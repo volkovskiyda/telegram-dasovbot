@@ -53,12 +53,19 @@ def main():
         from dasovbot.services.background import start_background_tasks
         start_background_tasks(app.bot, app.bot_data['state'])
 
+    async def post_shutdown(app: Application):
+        from dasovbot.services.background import stop_background_tasks
+        shutdown_state = app.bot_data['state']
+        await stop_background_tasks(shutdown_state)
+        await shutdown_state.close()
+
     application = (
         Application.builder()
         .token(config.bot_token)
         .base_url(config.base_url)
         .read_timeout(config.read_timeout)
         .post_init(post_init)
+        .post_shutdown(post_shutdown)
         .build()
     )
 
