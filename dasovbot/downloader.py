@@ -146,9 +146,14 @@ async def extract_info(query: str, download: bool, state: BotState) -> VideoInfo
             info = process_info(raw_info)
         except Exception as e:
             if isinstance(e, yt_dlp.DownloadError) and contains_text(e.msg, VIDEO_ERROR_MESSAGES):
-                intent = state.intents.get(query) or state.temporary_inline_queries.get(query)
+                intent = state.intents.get(query)
                 if intent:
                     intent.ignored = True
+                    await state.save_intent(query)
+                else:
+                    tiq = state.temporary_inline_queries.get(query)
+                    if tiq:
+                        tiq.ignored = True
                 return None
             logger.error("extract_info error: %s", query)
 
