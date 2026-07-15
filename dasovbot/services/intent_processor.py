@@ -180,52 +180,8 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
         except Exception as e:
             logger.error("process_query send_video error: %s %s: %s", query, type(e).__name__, e)
             if isinstance(e, NetworkError) and video_path and os.path.getsize(video_path) >> 20 > 2000 and 'youtube' in extract_url(info):
-                await send_message_developer(bot, f'[error_large_video]\n{caption}', config.developer_id)
-                temp_ydl_opts = make_ydl_opts(config)
-                temp_ydl_opts['format'] = temp_ydl_opts['format'].replace('720', '360')
-                temp_ydl_opts['outtmpl'] = add_scaled_after_title(temp_ydl_opts['outtmpl'])
-                temp_video_path = None
-                temp_info = None
-                loop = asyncio.get_running_loop()
-                with yt_dlp.YoutubeDL(temp_ydl_opts) as temp_ydl:
-                    try:
-                        temp_info_raw = await loop.run_in_executor(
-                            None, partial(temp_ydl.extract_info, query, download=True)
-                        )
-                        temp_info = process_info(temp_info_raw)
-                        temp_video_path = temp_info.filepath
-                    except Exception:
-                        logger.error("fallback download error: %s", query, exc_info=True)
-                if not temp_info or not temp_video_path:
-                    remove(info.filepath)
-                    await state.pop_intent(query)
+                if await retry_lower_quality(bot, query, info, state):
                     return info
-                temp_video_path = await convert_to_mp4(temp_video_path)
-                if temp_video_path != temp_info.filepath:
-                    temp_info.filepath = temp_video_path
-                try:
-                    logger.info("process_query send_video rsrt: %s", query)
-                    message = await bot.send_video(
-                        chat_id=config.developer_chat_id,
-                        caption=caption,
-                        video=temp_video_path,
-                        duration=info.duration,
-                        width=temp_info.width or info.width,
-                        height=temp_info.height or info.height,
-                        filename=info.filename,
-                        disable_notification=True,
-                    )
-                    logger.info("process_query send_video fnsh: %s", query)
-                    await send_message_developer(bot, f'[error_fixed_large_video]\n{caption}', config.developer_id, notification=False)
-                    file_id = await post_process(query, info, message, state, origin_info=temp_info)
-                    await process_intent(bot, query, file_id, caption, state)
-                    return info
-                except Exception:
-                    logger.error("fallback send_video error: %s", query, exc_info=True)
-                finally:
-                    logger.info("process_query remove: %s", temp_video_path)
-                    if temp_video_path:
-                        remove(temp_video_path)
             remove(info.filepath)
             await state.pop_intent(query)
             return info
@@ -234,6 +190,57 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
 
     await process_intent(bot, query, file_id, caption, state)
     return info
+
+
+async def retry_lower_quality(bot: Bot, query: str, info: VideoInfo, state: BotState) -> bool:
+    """Re-download a too-large video at 360p and post it. Returns True when posted."""
+    config = state.config
+    caption = info.caption
+    await send_message_developer(bot, f'[error_large_video]\n{caption}', config.developer_id)
+    temp_ydl_opts = make_ydl_opts(config)
+    temp_ydl_opts['format'] = temp_ydl_opts['format'].replace('720', '360')
+    temp_ydl_opts['outtmpl'] = add_scaled_after_title(temp_ydl_opts['outtmpl'])
+    temp_video_path = None
+    temp_info = None
+    loop = asyncio.get_running_loop()
+    with yt_dlp.YoutubeDL(temp_ydl_opts) as temp_ydl:
+        try:
+            temp_info_raw = await loop.run_in_executor(
+                None, partial(temp_ydl.extract_info, query, download=True)
+            )
+            temp_info = process_info(temp_info_raw)
+            temp_video_path = temp_info.filepath
+        except Exception:
+            logger.error("fallback download error: %s", query, exc_info=True)
+    if not temp_info or not temp_video_path:
+        return False
+    temp_video_path = await convert_to_mp4(temp_video_path)
+    if temp_video_path != temp_info.filepath:
+        temp_info.filepath = temp_video_path
+    try:
+        logger.info("process_query send_video rsrt: %s", query)
+        message = await bot.send_video(
+            chat_id=config.developer_chat_id,
+            caption=caption,
+            video=temp_video_path,
+            duration=info.duration,
+            width=temp_info.width or info.width,
+            height=temp_info.height or info.height,
+            filename=info.filename,
+            disable_notification=True,
+        )
+        logger.info("process_query send_video fnsh: %s", query)
+        await send_message_developer(bot, f'[error_fixed_large_video]\n{caption}', config.developer_id, notification=False)
+        file_id = await post_process(query, info, message, state, origin_info=temp_info)
+        await process_intent(bot, query, file_id, caption, state)
+        return True
+    except Exception:
+        logger.error("fallback send_video error: %s", query, exc_info=True)
+        return False
+    finally:
+        logger.info("process_query remove: %s", temp_video_path)
+        if temp_video_path:
+            remove(temp_video_path)
 
 
 async def process_intent(bot: Bot, query: str, video: str, caption: str, state: BotState) -> Intent | None:
