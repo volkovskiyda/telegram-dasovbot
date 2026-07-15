@@ -15,8 +15,11 @@ if TYPE_CHECKING:
     from dasovbot.state import BotState
 
 
+STATE_KEY = web.AppKey('state')
+
+
 def get_state(request: web.Request) -> BotState:
-    return request.app['state']
+    return request.app[STATE_KEY]
 
 
 def parse_timestamp(ts: str | None) -> datetime | None:

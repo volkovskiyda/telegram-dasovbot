@@ -7,7 +7,7 @@ from aiohttp import web
 
 from dasovbot.constants import DATETIME_FORMAT
 from dasovbot.dashboard.server import format_duration
-from dasovbot.dashboard.views import parse_timestamp, relative_time, retry_ignored, remove_ignored
+from dasovbot.dashboard.views import parse_timestamp, relative_time, retry_ignored, remove_ignored, STATE_KEY
 from dasovbot.models import Intent, TemporaryInlineQuery
 from tests.helpers import make_state, make_config
 
@@ -82,7 +82,7 @@ class TestRelativeTime(unittest.TestCase):
 class TestRetryIgnored(unittest.IsolatedAsyncioTestCase):
     def _make_request(self, state, post_data):
         request = MagicMock()
-        request.app = {'state': state}
+        request.app = {STATE_KEY: state}
         request.post = AsyncMock(return_value=post_data)
         return request
 
@@ -114,7 +114,7 @@ class TestRetryIgnored(unittest.IsolatedAsyncioTestCase):
 class TestRemoveIgnored(unittest.IsolatedAsyncioTestCase):
     def _make_request(self, state, post_data):
         request = MagicMock()
-        request.app = {'state': state}
+        request.app = {STATE_KEY: state}
         request.post = AsyncMock(return_value=post_data)
         return request
 
