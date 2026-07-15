@@ -20,22 +20,23 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_ydl: yt_dlp.YoutubeDL | None = None
+_ydl_opts: dict | None = None
 _lock = asyncio.Lock()
 
 
 def init_downloader(config: Config):
-    global _ydl
-    ydl_opts = make_ydl_opts(config)
-    _ydl = yt_dlp.YoutubeDL(ydl_opts)
+    global _ydl_opts
+    _ydl_opts = make_ydl_opts(config)
 
 
 def get_ydl() -> yt_dlp.YoutubeDL:
-    return _ydl
+    # YoutubeDL is not thread-safe: each caller gets its own instance so
+    # concurrent executor threads never share extraction state.
+    return yt_dlp.YoutubeDL(_ydl_opts)
 
 
 def get_ydl_opts() -> dict:
-    return make_ydl_opts.__wrapped__() if hasattr(make_ydl_opts, '__wrapped__') else _ydl.params
+    return dict(_ydl_opts) if _ydl_opts else {}
 
 
 def extract_url(info) -> str:
@@ -136,7 +137,7 @@ async def extract_info(query: str, download: bool, state: BotState) -> VideoInfo
     if not info:
         try:
             loop = asyncio.get_running_loop()
-            raw_info = await loop.run_in_executor(None, partial(_ydl.extract_info, query, download=False))
+            raw_info = await loop.run_in_executor(None, partial(get_ydl().extract_info, query, download=False))
             url = extract_url(raw_info)
             info_url = state.videos.get(url)
             if info_url:
@@ -157,7 +158,7 @@ async def extract_info(query: str, download: bool, state: BotState) -> VideoInfo
             async with _lock:
                 logger.debug("lock_acquire")
                 loop = asyncio.get_running_loop()
-                future = loop.run_in_executor(None, partial(_ydl.extract_info, query, download=True))
+                future = loop.run_in_executor(None, partial(get_ydl().extract_info, query, download=True))
                 raw_info = await asyncio.wait_for(future, TIMEOUT_SEC)
                 logger.info("extract_info downloaded: %s", query)
                 info = process_info(raw_info)
