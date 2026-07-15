@@ -122,7 +122,7 @@ async def process_intents(bot: Bot, state: BotState):
 
 
 async def monitor_process_intents(bot: Bot, state: BotState):
-    from dasovbot.constants import INTERVAL_SEC
+    from dasovbot.constants import RESTART_DELAY_SEC
     from dasovbot.persistence import empty_media_folder_files
     while True:
         try:
@@ -131,8 +131,8 @@ async def monitor_process_intents(bot: Bot, state: BotState):
             logger.error("process_intents crashed: %s, %s", type(e).__name__, str(e), exc_info=e)
             if state.config.empty_media_folder:
                 empty_media_folder_files(state.config.media_folder)
-        await asyncio.sleep(INTERVAL_SEC)
         await send_message_developer(bot, '[error_monitor_process_intents]', state.config.developer_id)
+        await asyncio.sleep(RESTART_DELAY_SEC)
 
 
 async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
