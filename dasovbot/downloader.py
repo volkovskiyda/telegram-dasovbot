@@ -164,7 +164,9 @@ async def extract_info(query: str, download: bool, state: BotState) -> VideoInfo
                 logger.info("extract_info downloaded: %s", query)
                 info = process_info(raw_info)
         except asyncio.TimeoutError:
-            logger.warning("extract_info timeout: %s", query)
+            # The executor thread cannot be cancelled: yt-dlp may keep
+            # downloading in the background after the lock is released.
+            logger.warning("extract_info timeout, download may still be running: %s", query)
         except Exception as e:
             logger.error("extract_info download error: %s", query, exc_info=e)
         finally:
