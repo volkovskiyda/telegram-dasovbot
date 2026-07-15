@@ -61,7 +61,14 @@ def create_app(state: BotState) -> web.Application:
 async def start_dashboard(state: BotState):
     if not os.getenv('DASHBOARD_PASSWORD'):
         password = get_password()
-        logger.info('DASHBOARD_PASSWORD not set, generated password: %s', password)
+        password_file = Path(state.config.config_folder) / 'data' / 'dashboard_password.txt'
+        try:
+            password_file.parent.mkdir(parents=True, exist_ok=True)
+            password_file.write_text(password + '\n')
+            password_file.chmod(0o600)
+            logger.info('DASHBOARD_PASSWORD not set, generated password written to %s', password_file)
+        except OSError:
+            logger.warning('DASHBOARD_PASSWORD not set, generated password: %s', password)
 
     port = int(os.getenv('DASHBOARD_PORT', '8080'))
     app = create_app(state)

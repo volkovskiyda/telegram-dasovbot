@@ -19,7 +19,9 @@
 <body>
     <div class="login-box">
         <h1>DasovBot Dashboard</h1>
-        {% if error %}
+        {% if error == '2' %}
+        <div class="error">Too many attempts, try again later</div>
+        {% elif error %}
         <div class="error">Invalid password</div>
         {% endif %}
         <form method="POST" action="/login">

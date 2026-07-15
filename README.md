@@ -59,8 +59,9 @@ Password-protected web UI served on `DASHBOARD_PORT` (default 8080).
 | `ANIMATION_FILE_ID` | No | | Pre-cached animation file ID (skips loading upload) |
 | `CONFIG_FOLDER` | No | `/` | Root folder for data/media/export directories |
 | `EMPTY_MEDIA_FOLDER` | No | `false` | Clear media folder on process crash recovery |
-| `DASHBOARD_PASSWORD` | No | | Password for web dashboard access (auto-generated if not set) |
+| `DASHBOARD_PASSWORD` | No | | Password for web dashboard access (auto-generated if not set; written to `data/dashboard_password.txt`) |
 | `DASHBOARD_PORT` | No | `8080` | Port for web dashboard server |
+| `DASHBOARD_SECURE_COOKIE` | No | `false` | Set `true` when serving the dashboard over HTTPS (marks the session cookie `Secure`) |
 | `COOKIES_FILE` | No | | Path to cookies file for yt-dlp |
 | `TELEGRAM_API_ID` | Docker | | Telegram API ID (for local Bot API server) |
 | `TELEGRAM_API_HASH` | Docker | | Telegram API hash (for local Bot API server) |
