@@ -278,7 +278,7 @@ async def subscribe_show(update: Update, context) -> int:
         try:
             ydl = get_ydl()
             info = await _extract_info(ydl, subscription_url)
-            entries = info.get('entries')
+            entries = info.get('entries') or []
             for entry in entries[:5]:
                 video = state.videos.get(extract_url(entry))
                 file_id = video.file_id if video else None
