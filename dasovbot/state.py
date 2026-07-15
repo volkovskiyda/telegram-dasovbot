@@ -21,6 +21,8 @@ class BotState:
     config: Config = field(default=None)
     animation_file_id: str | None = None
     background_task_status: dict[str, str] = field(default_factory=dict)
+    # Strong references: the event loop only keeps weak refs to tasks
+    background_tasks: set = field(default_factory=set)
     migration_progress: dict = field(default_factory=dict)
     db: aiosqlite.Connection = field(default=None)
 

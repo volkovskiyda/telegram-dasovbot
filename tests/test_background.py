@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from dasovbot.models import Subscription, TemporaryInlineQuery, VideoInfo
 from dasovbot.services.background import (
     populate_animation, populate_video, populate_playlist, run_populate_subscriptions,
-    clear_temporary_inline_queries,
+    clear_temporary_inline_queries, start_background_tasks,
 )
 from tests.helpers import make_state, make_config
 
@@ -139,6 +139,21 @@ class TestRunPopulateSubscriptions(unittest.IsolatedAsyncioTestCase):
         mock_populate.assert_awaited_once_with('url1', ['100'], state)
         state.pop_subscription.assert_awaited_once_with('url2')
         self.assertIn('populate_subscriptions', state.background_task_status)
+
+
+class TestStartBackgroundTasks(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.services.intent_processor.monitor_process_intents', new_callable=AsyncMock)
+    @patch('dasovbot.services.background.clear_temporary_inline_queries', new_callable=AsyncMock)
+    @patch('dasovbot.services.background.populate_subscriptions', new_callable=AsyncMock)
+    @patch('dasovbot.services.background.populate_animation', new_callable=AsyncMock)
+    async def test_keeps_strong_references_until_done(self, *mocks):
+        state = make_state()
+        start_background_tasks(AsyncMock(), state)
+        self.assertEqual(len(state.background_tasks), 4)
+        tasks = list(state.background_tasks)
+        await asyncio.gather(*tasks)
+        await asyncio.sleep(0)  # let done callbacks run
+        self.assertEqual(len(state.background_tasks), 0)
 
 
 class TestClearTemporaryInlineQueries(unittest.IsolatedAsyncioTestCase):

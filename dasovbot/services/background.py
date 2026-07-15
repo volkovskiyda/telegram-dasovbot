@@ -113,7 +113,8 @@ async def clear_temporary_inline_queries(state: BotState):
         await asyncio.sleep(10 * 60)
 
 
-def _log_task_exception(task: asyncio.Task):
+def _on_task_done(state: BotState, task: asyncio.Task):
+    state.background_tasks.discard(task)
     if not task.cancelled() and task.exception():
         logger.error("Background task %s failed: %s", task.get_name(), task.exception(), exc_info=task.exception())
 
@@ -128,4 +129,5 @@ def start_background_tasks(bot: Bot, state: BotState):
         asyncio.create_task(clear_temporary_inline_queries(state), name="clear_temporary_inline_queries"),
     ]
     for task in tasks:
-        task.add_done_callback(_log_task_exception)
+        state.background_tasks.add(task)
+        task.add_done_callback(partial(_on_task_done, state))
