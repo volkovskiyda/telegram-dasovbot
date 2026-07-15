@@ -130,6 +130,7 @@ backup-cron            # Cron schedule for database backups
 ### **System dependencies:**
 - Python 3.10+
 - [ffmpeg](https://ffmpeg.org/) — required for video conversion and yt-dlp post-processing
+- [Deno](https://deno.com/) — JavaScript runtime required by yt-dlp for YouTube extraction (`brew install deno`)
 
 ### **Run:**
 - Install requirements

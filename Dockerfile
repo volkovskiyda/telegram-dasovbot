@@ -5,6 +5,9 @@ LABEL description="Telegram bot for downloading and sharing online videos"
 
 ARG DEBIAN_FRONTEND=noninteractive
 
+# Deno: required by yt-dlp for YouTube JS (EJS) extraction
+COPY --from=denoland/deno:bin /deno /usr/local/bin/deno
+
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends ffmpeg jq cron && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /project /data /media /export
