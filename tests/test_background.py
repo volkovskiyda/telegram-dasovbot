@@ -1,9 +1,11 @@
+import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from dasovbot.models import Subscription, VideoInfo
+from dasovbot.models import Subscription, TemporaryInlineQuery, VideoInfo
 from dasovbot.services.background import (
     populate_animation, populate_video, populate_playlist, run_populate_subscriptions,
+    clear_temporary_inline_queries,
 )
 from tests.helpers import make_state, make_config
 
@@ -137,6 +139,20 @@ class TestRunPopulateSubscriptions(unittest.IsolatedAsyncioTestCase):
         mock_populate.assert_awaited_once_with('url1', ['100'], state)
         state.pop_subscription.assert_awaited_once_with('url2')
         self.assertIn('populate_subscriptions', state.background_task_status)
+
+
+class TestClearTemporaryInlineQueries(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.services.background.asyncio.sleep', new_callable=AsyncMock)
+    async def test_marks_then_deletes_on_second_pass(self, mock_sleep):
+        mock_sleep.side_effect = [None, asyncio.CancelledError()]
+        fresh = TemporaryInlineQuery(marked=False)
+        stale = TemporaryInlineQuery(marked=True)
+        state = make_state(temporary_inline_queries={'fresh': fresh, 'stale': stale})
+        with self.assertRaises(asyncio.CancelledError):
+            await clear_temporary_inline_queries(state)
+        # After two passes: 'stale' deleted in the first, 'fresh' marked then deleted in the second
+        self.assertEqual(state.temporary_inline_queries, {})
+        self.assertIn('clear_temporary_inline_queries', state.background_task_status)
 
 
 if __name__ == '__main__':
