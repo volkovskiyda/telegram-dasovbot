@@ -156,6 +156,8 @@ class TestInlineQueryHandler(unittest.IsolatedAsyncioTestCase):
         await inline_query_handler(update, context)
 
         mock_append.assert_awaited_once()
+        # chat ids are strings everywhere else in the state
+        self.assertEqual(mock_append.await_args.kwargs['chat_ids'], ['42'])
 
 
 class TestChosenQuery(unittest.IsolatedAsyncioTestCase):

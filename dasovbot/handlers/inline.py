@@ -99,7 +99,7 @@ async def inline_query_handler(update: Update, context):
         single_video = len(results) == 1
         logger.error("inline_query answer error: %s, single: %s", query, single_video, exc_info=e)
         if single_video:
-            await _populate_video(query, chat_ids=[user.id], state=state)
+            await _populate_video(query, chat_ids=[str(user.id)], state=state)
 
 
 async def chosen_query(update: Update, context):
