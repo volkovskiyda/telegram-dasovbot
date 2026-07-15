@@ -112,6 +112,9 @@ async def process_intents(bot: Bot, state: BotState):
     while True:
         await asyncio.sleep(10)
         state.background_task_status['monitor_process_intents'] = now()
+        # The queue is only a wake-up signal: drain accumulated puts so it stays bounded
+        while not state.download_queue.empty():
+            state.download_queue.get_nowait()
         filtered_intents = filter_intents(state.intents)
         if not filtered_intents:
             await state.download_queue.get()
