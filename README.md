@@ -86,6 +86,7 @@ info.py                # CLI: video info lookup
 subscriptions.py       # CLI: bulk subscription management
 empty_media_folder.py  # CLI: clear media folder
 backup.py              # CLI: SQLite online backup
+preview_dashboard.py   # CLI: start the dashboard with mock data
 entrypoint.sh          # Docker entrypoint (cron + bot)
 backup-cron            # Cron schedule for database backups
 ```
