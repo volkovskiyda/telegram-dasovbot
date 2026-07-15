@@ -28,8 +28,8 @@ def add_subscription(chat_id, url):
                 'uploader': uploader,
                 'uploader_videos': uploader_videos,
             }
-            print(f"New subscribption to {title} ({uploader})")
-        except Exception as e:
+            print(f"New subscription to {title} ({uploader})")
+        except Exception:
             print(f"# subscribe_playlist failed: {url}")
 
 
