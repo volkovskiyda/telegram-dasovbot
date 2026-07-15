@@ -41,7 +41,7 @@
 <div class="sub-wrapper">
     <div class="sub-item" style="margin-bottom: 0;">
         <div class="sub-title">
-            <a href="{{ sub.url }}" target="_blank" rel="noopener">{{ sub.title }}</a>
+            <a href="{{ sub.url | safe_url }}" target="_blank" rel="noopener">{{ sub.title }}</a>
             {% if sub.uploader and sub.uploader != sub.title %}
             <span class="text-muted" style="font-size: 12px; margin-left: 6px;">{{ sub.uploader }}</span>
             {% endif %}

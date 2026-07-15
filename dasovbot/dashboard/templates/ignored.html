@@ -24,7 +24,7 @@
     <tbody>
         {% for item in items %}
         <tr>
-            <td style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.title[:60] }}{% if item.title|length > 60 %}...{% endif %}</a></td>
+            <td style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><a href="{{ item.url | safe_url }}" target="_blank" rel="noopener">{{ item.title[:60] }}{% if item.title|length > 60 %}...{% endif %}</a></td>
             <td>
                 {% if item.source %}
                 <span class="badge badge-{{ item.source }}">{{ item.source }}</span>

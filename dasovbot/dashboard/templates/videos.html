@@ -56,7 +56,7 @@
     <tbody>
         {% for v in videos %}
         <tr>
-            <td><a href="{{ v.webpage_url }}" target="_blank" rel="noopener">{{ v.title[:60] }}{% if v.title|length > 60 %}...{% endif %}</a></td>
+            <td><a href="{{ v.webpage_url | safe_url }}" target="_blank" rel="noopener">{{ v.title[:60] }}{% if v.title|length > 60 %}...{% endif %}</a></td>
             <td>{{ v.upload_date }}</td>
             <td>{{ v.processed_at }}</td>
             <td>

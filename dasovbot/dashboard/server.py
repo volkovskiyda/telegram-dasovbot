@@ -33,12 +33,19 @@ def format_duration(seconds: int) -> str:
     return f'0:{s:02d}'
 
 
+def safe_url(url: str | None) -> str:
+    if url and url.startswith(('http://', 'https://')):
+        return url
+    return '#'
+
+
 def create_app(state: BotState) -> web.Application:
     app = web.Application(middlewares=[auth_middleware])
     app['state'] = state
 
     env = aiohttp_jinja2.setup(app, loader=jinja2.FileSystemLoader(str(TEMPLATES_DIR)))
     env.filters['duration'] = format_duration
+    env.filters['safe_url'] = safe_url
 
     app.router.add_static('/static', STATIC_DIR, name='static')
     app.router.add_get('/login', login_page)

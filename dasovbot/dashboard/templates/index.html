@@ -46,7 +46,7 @@
     <tbody>
         {% for intent in intents %}
         <tr>
-            <td><a href="{{ intent.url }}" target="_blank" rel="noopener">{{ intent.url[:60] }}{% if intent.url|length > 60 %}...{% endif %}</a></td>
+            <td><a href="{{ intent.url | safe_url }}" target="_blank" rel="noopener">{{ intent.url[:60] }}{% if intent.url|length > 60 %}...{% endif %}</a></td>
             <td>{{ intent.title }}</td>
             <td>{{ intent.upload_date }}</td>
             <td>{{ intent.priority }}</td>
