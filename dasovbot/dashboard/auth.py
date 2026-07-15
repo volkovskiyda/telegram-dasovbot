@@ -30,6 +30,20 @@ def secure_cookie() -> bool:
     return os.getenv('DASHBOARD_SECURE_COOKIE', 'false').lower() == 'true'
 
 
+def behind_proxy() -> bool:
+    return os.getenv('DASHBOARD_BEHIND_PROXY', 'false').lower() == 'true'
+
+
+def client_ip(request: web.Request) -> str:
+    if behind_proxy():
+        forwarded = request.headers.get('X-Forwarded-For', '')
+        if forwarded:
+            # The rightmost entry was appended by our own reverse proxy and
+            # cannot be spoofed by the client; earlier entries can be forged
+            return forwarded.split(',')[-1].strip()
+    return request.remote or ''
+
+
 def create_session() -> str:
     token = secrets.token_urlsafe(32)
     _sessions[token] = time.time() + SESSION_TTL_SEC
@@ -74,7 +88,7 @@ async def login_page(request: web.Request) -> web.Response:
 
 
 async def login_post(request: web.Request) -> web.Response:
-    remote = request.remote or ''
+    remote = client_ip(request)
     if _rate_limited(remote):
         raise web.HTTPFound('/login?error=2')
     data = await request.post()

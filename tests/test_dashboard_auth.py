@@ -7,8 +7,15 @@ from aiohttp import web
 import dasovbot.dashboard.auth as auth_module
 from dasovbot.dashboard.auth import (
     auth_middleware, login_page, login_post, logout,
-    create_session, check_token, COOKIE_NAME, MAX_LOGIN_ATTEMPTS,
+    create_session, check_token, client_ip, COOKIE_NAME, MAX_LOGIN_ATTEMPTS,
 )
+
+
+def make_request(remote='1.2.3.4', forwarded=None):
+    request = MagicMock()
+    request.remote = remote
+    request.headers = {'X-Forwarded-For': forwarded} if forwarded else {}
+    return request
 
 
 class AuthTestCase(unittest.IsolatedAsyncioTestCase):
@@ -16,6 +23,40 @@ class AuthTestCase(unittest.IsolatedAsyncioTestCase):
         auth_module._generated_password = None
         auth_module._sessions.clear()
         auth_module._failed_logins.clear()
+
+
+class TestClientIp(AuthTestCase):
+    def test_ignores_forwarded_header_by_default(self):
+        request = make_request(remote='10.0.0.2', forwarded='6.6.6.6')
+        self.assertEqual(client_ip(request), '10.0.0.2')
+
+    @patch.dict('os.environ', {'DASHBOARD_BEHIND_PROXY': 'true'})
+    def test_uses_rightmost_forwarded_entry_behind_proxy(self):
+        # Leftmost entries are client-supplied; only the last one comes from our proxy
+        request = make_request(remote='10.0.0.2', forwarded='6.6.6.6, 203.0.113.7')
+        self.assertEqual(client_ip(request), '203.0.113.7')
+
+    @patch.dict('os.environ', {'DASHBOARD_BEHIND_PROXY': 'true'})
+    def test_falls_back_to_remote_without_header(self):
+        request = make_request(remote='10.0.0.2')
+        self.assertEqual(client_ip(request), '10.0.0.2')
+
+    @patch.dict('os.environ', {'DASHBOARD_BEHIND_PROXY': 'true'})
+    @patch('dasovbot.dashboard.auth.get_password', return_value='secret')
+    async def test_rate_limit_isolated_per_forwarded_client(self, mock_pwd):
+        # Same proxy remote, different real clients: one client's failures
+        # must not lock out the other
+        attacker = make_request(remote='10.0.0.2', forwarded='203.0.113.7')
+        attacker.post = AsyncMock(return_value={'password': 'wrong'})
+        for _ in range(MAX_LOGIN_ATTEMPTS):
+            with self.assertRaises(web.HTTPFound):
+                await login_post(attacker)
+
+        victim = make_request(remote='10.0.0.2', forwarded='198.51.100.9')
+        victim.post = AsyncMock(return_value={'password': 'secret'})
+        with self.assertRaises(web.HTTPFound) as ctx:
+            await login_post(victim)
+        self.assertEqual(ctx.exception.location, '/')
 
 
 class TestAuthMiddleware(AuthTestCase):

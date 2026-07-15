@@ -62,6 +62,7 @@ Password-protected web UI served on `DASHBOARD_PORT` (default 8080).
 | `DASHBOARD_PASSWORD` | No | | Password for web dashboard access (auto-generated if not set; written to `data/dashboard_password.txt`) |
 | `DASHBOARD_PORT` | No | `8080` | Port for web dashboard server |
 | `DASHBOARD_SECURE_COOKIE` | No | `false` | Set `true` when serving the dashboard over HTTPS (marks the session cookie `Secure`) |
+| `DASHBOARD_BEHIND_PROXY` | No | `false` | Set `true` when the dashboard sits behind a reverse proxy (Traefik, nginx, …) so login rate limiting uses the client IP from `X-Forwarded-For` instead of the proxy's address |
 | `COOKIES_FILE` | No | | Path to cookies file for yt-dlp |
 | `TELEGRAM_API_ID` | Docker | | Telegram API ID (for local Bot API server) |
 | `TELEGRAM_API_HASH` | Docker | | Telegram API hash (for local Bot API server) |
