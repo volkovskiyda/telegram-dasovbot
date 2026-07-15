@@ -80,7 +80,7 @@ def sizeof_fmt(num, suffix="B"):
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('url')
-    parser.add_argument('-d','--download',default=False)
+    parser.add_argument('-d', '--download', action='store_true')
     args = parser.parse_args()
     asyncio.run(info(args.url, download=args.download))
 
