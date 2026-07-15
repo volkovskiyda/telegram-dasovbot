@@ -39,12 +39,16 @@ async def download_url(update: Update, context) -> int:
         return ConversationHandler.END
 
     try:
-        video = await message.reply_video(
-            video=state.animation_file_id,
-            caption=info.caption,
-            reply_to_message_id=message.id,
-        )
-        await append_intent(query, state, message={'chat': chat_id, 'message': str(video.message_id)}, source=SOURCE_DOWNLOAD, title=info.title, upload_date=info.upload_date)
+        if state.animation_file_id:
+            video = await message.reply_video(
+                video=state.animation_file_id,
+                caption=info.caption,
+                reply_to_message_id=message.id,
+            )
+            await append_intent(query, state, message={'chat': chat_id, 'message': str(video.message_id)}, source=SOURCE_DOWNLOAD, title=info.title, upload_date=info.upload_date)
+        else:
+            # No loading animation available: send the video as a new message instead of editing a placeholder.
+            await append_intent(query, state, chat_ids=[chat_id], source=SOURCE_DOWNLOAD, title=info.title, upload_date=info.upload_date)
     except Exception as e:
         logger.error("%s # download_url error: %s", extract_user(user), query, exc_info=e)
 

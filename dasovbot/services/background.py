@@ -63,27 +63,40 @@ async def populate_video(query: str, chat_ids: list, state: BotState, title: str
 
 
 async def populate_animation(bot: Bot, state: BotState):
+    from dasovbot.constants import RESTART_DELAY_SEC
+
     if state.animation_file_id:
         logger.info("saved_animation_file_id = %s", state.animation_file_id)
         return
 
     query = state.config.loading_video_id
+    if not query:
+        logger.warning("populate_animation skipped: LOADING_VIDEO_ID not set")
+        return
 
-    info = await extract_info(query, download=True, state=state)
-
-    message = await bot.send_video(
-        chat_id=state.config.developer_chat_id,
-        video=info.filepath,
-        filename=info.filename,
-        duration=info.duration,
-        width=info.width,
-        height=info.height,
-        caption=info.caption,
-        disable_notification=True,
-    )
-
-    state.animation_file_id = await post_process(query, info, message, state, store_info=False)
-    logger.info("animation_file_id = %s", state.animation_file_id)
+    for attempt in range(1, 6):
+        try:
+            info = await extract_info(query, download=True, state=state)
+            if not info or not info.filepath:
+                logger.warning("populate_animation no info, attempt %s: %s", attempt, query)
+            else:
+                message = await bot.send_video(
+                    chat_id=state.config.developer_chat_id,
+                    video=info.filepath,
+                    filename=info.filename,
+                    duration=info.duration,
+                    width=info.width,
+                    height=info.height,
+                    caption=info.caption,
+                    disable_notification=True,
+                )
+                state.animation_file_id = await post_process(query, info, message, state, store_info=False)
+                logger.info("animation_file_id = %s", state.animation_file_id)
+                return
+        except Exception:
+            logger.error("populate_animation failed, attempt %s: %s", attempt, query, exc_info=True)
+        await asyncio.sleep(RESTART_DELAY_SEC)
+    logger.error("populate_animation gave up: %s", query)
 
 
 async def clear_temporary_inline_queries(state: BotState):
