@@ -30,6 +30,19 @@ def filter_intents(intents: dict) -> dict:
     return {query: intent for query, intent in intents.items() if not intent.ignored}
 
 
+async def drop_or_retry_intent(query: str, state: BotState):
+    from dasovbot.constants import MAX_INTENT_RETRIES
+    intent = state.intents.get(query)
+    if not intent or intent.ignored:
+        return
+    intent.retries += 1
+    if intent.retries >= MAX_INTENT_RETRIES:
+        logger.warning("intent dropped after %d failed attempts: %s", intent.retries, query)
+        await state.pop_intent(query)
+    else:
+        await state.save_intent(query)
+
+
 async def append_intent(query: str, state: BotState, chat_ids=None, inline_message_id: str = '', message=None, source: str = None, title: str = None, upload_date: str = None):
     if chat_ids is None:
         chat_ids = []
@@ -145,9 +158,7 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
     info = await extract_info(query, download=True, state=state)
     if not info:
         logger.error("process_query error (no info): %s", query)
-        intent = state.intents.get(query)
-        if intent and not intent.ignored:
-            await state.pop_intent(query)
+        await drop_or_retry_intent(query, state)
         return info
     caption = info.caption
     file_id = info.file_id
@@ -183,7 +194,7 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
                 if await retry_lower_quality(bot, query, info, state):
                     return info
             remove(info.filepath)
-            await state.pop_intent(query)
+            await drop_or_retry_intent(query, state)
             return info
         file_id = await post_process(query, info, message, state)
         logger.info("process_query post_process done: %s file_id=%s", query, file_id)

@@ -89,6 +89,7 @@ class TestIntent(unittest.TestCase):
             messages=[IntentMessage(chat='123', message='789')],
             priority=5,
             ignored=False,
+            retries=2,
         )
         d = intent.to_dict()
         restored = Intent.from_dict(d)

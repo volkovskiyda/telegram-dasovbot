@@ -123,6 +123,7 @@ class Intent:
     source: str | None = None
     title: str | None = None
     upload_date: str | None = None
+    retries: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -134,6 +135,7 @@ class Intent:
             'source': self.source,
             'title': self.title,
             'upload_date': self.upload_date,
+            'retries': self.retries,
         }
 
     @classmethod
@@ -148,6 +150,7 @@ class Intent:
             source=data.get('source'),
             title=data.get('title'),
             upload_date=data.get('upload_date'),
+            retries=data.get('retries', 0),
         )
 
 

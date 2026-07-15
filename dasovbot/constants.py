@@ -19,6 +19,9 @@ INTERVAL_SEC = 60 * 60  # an hour
 TIMEOUT_SEC = 60 * 10  # 10 minutes
 RESTART_DELAY_SEC = 60  # delay before restarting a crashed worker loop
 
+# Attempts before a failing intent is dropped
+MAX_INTENT_RETRIES = 3
+
 # Sources
 SOURCE_SUBSCRIPTION = 'subscription'
 SOURCE_DOWNLOAD = 'download'

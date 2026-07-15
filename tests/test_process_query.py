@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from telegram.error import NetworkError
 
+from dasovbot.constants import MAX_INTENT_RETRIES
 from dasovbot.models import VideoInfo, Intent
 from dasovbot.services.intent_processor import process_query, retry_lower_quality, process_intents
 from tests.helpers import make_state, make_config
@@ -24,10 +25,18 @@ class TestProcessQuery(unittest.IsolatedAsyncioTestCase):
         return make_state(config=make_config(), **overrides)
 
     @patch('dasovbot.services.intent_processor.extract_info', new_callable=AsyncMock, return_value=None)
-    async def test_no_info_pops_intent(self, mock_extract):
-        state = self._make_state(intents={'q': Intent(chat_ids=['1'])})
+    async def test_no_info_retries_before_dropping(self, mock_extract):
+        intent = Intent(chat_ids=['1'])
+        state = self._make_state(intents={'q': intent})
         result = await process_query(AsyncMock(), 'q', state)
         self.assertIsNone(result)
+        self.assertIn('q', state.intents)
+        self.assertEqual(intent.retries, 1)
+
+    @patch('dasovbot.services.intent_processor.extract_info', new_callable=AsyncMock, return_value=None)
+    async def test_no_info_drops_after_max_retries(self, mock_extract):
+        state = self._make_state(intents={'q': Intent(chat_ids=['1'], retries=MAX_INTENT_RETRIES - 1)})
+        await process_query(AsyncMock(), 'q', state)
         self.assertNotIn('q', state.intents)
 
     @patch('dasovbot.services.intent_processor.extract_info', new_callable=AsyncMock, return_value=None)
@@ -97,14 +106,28 @@ class TestProcessQuery(unittest.IsolatedAsyncioTestCase):
     @patch('dasovbot.services.intent_processor.remove')
     @patch('dasovbot.services.intent_processor.convert_to_mp4', new_callable=AsyncMock, return_value='/media/video.mp4')
     @patch('dasovbot.services.intent_processor.extract_info', new_callable=AsyncMock)
-    async def test_send_error_removes_file_and_pops(self, mock_extract, mock_convert, mock_remove):
+    async def test_send_error_removes_file_and_retries(self, mock_extract, mock_convert, mock_remove):
         info = make_video_info()
         mock_extract.return_value = info
-        state = self._make_state(intents={'q': Intent(chat_ids=['1'])})
+        intent = Intent(chat_ids=['1'])
+        state = self._make_state(intents={'q': intent})
         bot = AsyncMock()
         bot.send_video.side_effect = ValueError('boom')
         await process_query(bot, 'q', state)
         mock_remove.assert_called_once_with(info.filepath)
+        self.assertIn('q', state.intents)
+        self.assertEqual(intent.retries, 1)
+
+    @patch('dasovbot.services.intent_processor.remove')
+    @patch('dasovbot.services.intent_processor.convert_to_mp4', new_callable=AsyncMock, return_value='/media/video.mp4')
+    @patch('dasovbot.services.intent_processor.extract_info', new_callable=AsyncMock)
+    async def test_send_error_drops_after_max_retries(self, mock_extract, mock_convert, mock_remove):
+        info = make_video_info()
+        mock_extract.return_value = info
+        state = self._make_state(intents={'q': Intent(chat_ids=['1'], retries=MAX_INTENT_RETRIES - 1)})
+        bot = AsyncMock()
+        bot.send_video.side_effect = ValueError('boom')
+        await process_query(bot, 'q', state)
         self.assertNotIn('q', state.intents)
 
 
