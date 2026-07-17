@@ -236,6 +236,17 @@ class TestLogout(AuthTestCase):
         self.assertNotIn(token, auth_module._sessions)
 
 
+class TestStaticAssetsPublic(AuthTestCase):
+    async def test_static_path_passes_without_token(self):
+        request = MagicMock()
+        request.path = '/static/favicon.png'
+        request.cookies = {}
+        handler = AsyncMock(return_value='asset')
+        result = await auth_middleware(request, handler)
+        self.assertEqual(result, 'asset')
+        handler.assert_awaited_once_with(request)
+
+
 class TestFailedLoginSweep(AuthTestCase):
     @patch('dasovbot.dashboard.auth.get_password', return_value='secret')
     async def test_stale_entries_from_other_ips_are_pruned(self, mock_pwd):

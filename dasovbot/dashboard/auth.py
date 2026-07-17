@@ -98,7 +98,8 @@ def _rate_limited(remote: str) -> bool:
 
 @web.middleware
 async def auth_middleware(request: web.Request, handler):
-    if request.path == '/login':
+    # Static assets stay public so the login page can load its favicon
+    if request.path == '/login' or request.path.startswith('/static/'):
         return await handler(request)
     if not check_token(request):
         raise web.HTTPFound('/login')
