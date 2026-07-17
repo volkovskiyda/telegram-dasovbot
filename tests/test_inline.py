@@ -272,6 +272,33 @@ class TestChosenQuery(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(call_kwargs['source'], 'inline')
 
     @patch('dasovbot.handlers.inline.append_intent', new_callable=AsyncMock)
+    async def test_recovers_query_data_when_user_data_overwritten(self, mock_append):
+        # A later query overwrote user_data['inline_queries'], so the result the
+        # user actually picked (rid_old) is only in temporary_inline_queries.
+        tiq = TemporaryInlineQuery(
+            timestamp='20240101_120000',
+            results=[],
+            inline_queries={'rid_old': {'url': 'https://example.com/old', 'upload_date': '20240101'}},
+        )
+        state = make_state(
+            videos={},
+            temporary_inline_queries={'https://example.com/old': tiq},
+        )
+
+        result = make_chosen_inline_result(result_id='rid_old', inline_message_id='imid1')
+        update = make_update(chosen_inline_result=result)
+        context = make_context(
+            state=state,
+            user_data={'inline_queries': {'rid_new': {'url': 'https://example.com/new'}}},
+        )
+
+        from dasovbot.handlers.inline import chosen_query
+        await chosen_query(update, context)
+
+        mock_append.assert_awaited_once()
+        self.assertEqual(mock_append.call_args[0][0], 'https://example.com/old')
+
+    @patch('dasovbot.handlers.inline.append_intent', new_callable=AsyncMock)
     async def test_title_lookup_from_temporary_inline_queries(self, mock_append):
         cached_result = MagicMock()
         cached_result.id = 'rid1'
