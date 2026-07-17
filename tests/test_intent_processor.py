@@ -4,8 +4,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from tests.helpers import make_state, make_config
 from dasovbot.models import VideoInfo, Intent, IntentMessage
 from dasovbot.services.intent_processor import (
-    filter_intents, append_intent, post_process, process_intent,
+    filter_intents, append_intent, post_process, process_intent, file_size_mb,
 )
+
+
+class TestFileSizeMb(unittest.TestCase):
+    def test_missing_file_returns_zero(self):
+        self.assertEqual(file_size_mb('/no/such/file'), 0)
+
+    @patch('dasovbot.services.intent_processor.os.path.getsize', return_value=3 << 20)
+    def test_returns_whole_megabytes(self, mock_getsize):
+        self.assertEqual(file_size_mb('/tmp/x'), 3)
 
 
 class TestFilterIntents(unittest.TestCase):

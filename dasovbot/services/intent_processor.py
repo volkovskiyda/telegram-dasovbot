@@ -30,6 +30,18 @@ def filter_intents(intents: dict) -> dict:
     return {query: intent for query, intent in intents.items() if not intent.ignored}
 
 
+def file_size_mb(path: str) -> int:
+    """Size of ``path`` in whole megabytes, or 0 if it can't be read.
+
+    Called from an except handler, so a missing/removed file must not raise a
+    second exception that escapes into the crash-restart path.
+    """
+    try:
+        return os.path.getsize(path) >> 20
+    except OSError:
+        return 0
+
+
 async def drop_or_retry_intent(query: str, state: BotState):
     from dasovbot.constants import MAX_INTENT_RETRIES
     intent = state.intents.get(query)
@@ -201,7 +213,7 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
         except Exception as e:
             logger.error("process_query send_video error: %s %s: %s", query, type(e).__name__, e)
             from dasovbot.constants import LARGE_FILE_MB
-            if isinstance(e, NetworkError) and video_path and os.path.getsize(video_path) >> 20 > LARGE_FILE_MB and 'youtube' in extract_url(info):
+            if isinstance(e, NetworkError) and video_path and file_size_mb(video_path) > LARGE_FILE_MB and 'youtube' in extract_url(info):
                 if await retry_lower_quality(bot, query, info, state):
                     return info
             remove(info.filepath)
