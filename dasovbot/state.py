@@ -48,12 +48,6 @@ class BotState:
         self.subscriptions = await load_subscriptions(self.db)
         self.intents = await load_intents(self.db)
 
-    @classmethod
-    async def from_database(cls, config: Config) -> 'BotState':
-        state = await cls.create(config)
-        await state.migrate_and_load()
-        return state
-
     async def set_video(self, key: str, video: VideoInfo):
         from dasovbot.database import upsert_video
         self.videos[key] = video

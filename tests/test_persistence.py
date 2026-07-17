@@ -1,8 +1,7 @@
-import json
 import unittest
-from unittest.mock import patch, mock_open, MagicMock
+from unittest.mock import patch
 
-from dasovbot.persistence import remove, write_file, read_file, empty_media_folder_files
+from dasovbot.persistence import remove, empty_media_folder_files
 
 
 class TestRemove(unittest.TestCase):
@@ -14,37 +13,6 @@ class TestRemove(unittest.TestCase):
     @patch('dasovbot.persistence.os.remove', side_effect=OSError('fail'))
     def test_swallows_exception(self, mock_os_remove):
         remove('/tmp/file.mp4')
-
-
-class TestWriteFile(unittest.TestCase):
-    @patch('builtins.open', new_callable=mock_open)
-    def test_writes_json(self, mock_file):
-        data = {'key': 'value'}
-        write_file('/tmp/test.json', data)
-        mock_file.assert_called_once_with('/tmp/test.json', 'w', encoding='utf8')
-        handle = mock_file()
-        written = ''.join(call.args[0] for call in handle.write.call_args_list)
-        self.assertIn('key', written)
-
-    @patch('builtins.open', side_effect=IOError('disk full'))
-    def test_error_handling(self, mock_file):
-        write_file('/tmp/test.json', {'k': 'v'})
-
-
-class TestReadFile(unittest.TestCase):
-    def test_reads_json(self):
-        data = {'key': 'value'}
-        m = mock_open(read_data=json.dumps(data))
-        with patch('builtins.open', m):
-            result = read_file('/tmp/test.json', {})
-        self.assertEqual(result, data)
-
-    @patch('dasovbot.persistence.write_file')
-    @patch('builtins.open', side_effect=FileNotFoundError('not found'))
-    def test_error_returns_empty_and_writes_default(self, mock_file, mock_write):
-        result = read_file('/tmp/missing.json', {'default': True})
-        self.assertEqual(result, {})
-        mock_write.assert_called_once_with('/tmp/missing.json', {'default': True})
 
 
 class TestEmptyMediaFolderFiles(unittest.TestCase):

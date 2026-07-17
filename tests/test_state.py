@@ -185,15 +185,20 @@ class TestCreateAndLoad(unittest.IsolatedAsyncioTestCase):
         finally:
             await state.close()
 
-    async def test_from_database_roundtrip(self):
-        state = await BotState.from_database(self.config)
+    async def _load(self):
+        state = await BotState.create(self.config)
+        await state.migrate_and_load()
+        return state
+
+    async def test_database_roundtrip(self):
+        state = await self._load()
         await state.set_video('k', VideoInfo(title='T'))
         await state.set_user('1', {'id': 1})
         await state.set_subscription('u', Subscription(chat_ids=['1'], title='S'))
         await state.set_intent('q', Intent(chat_ids=['1']))
         await state.close()
 
-        reloaded = await BotState.from_database(self.config)
+        reloaded = await self._load()
         try:
             self.assertEqual(reloaded.videos['k'].title, 'T')
             self.assertEqual(reloaded.users['1'], {'id': 1})
