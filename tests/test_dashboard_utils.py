@@ -6,10 +6,30 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from aiohttp import web
 
 from dasovbot.constants import DATETIME_FORMAT
-from dasovbot.dashboard.server import format_duration
+from dasovbot.dashboard.server import format_duration, safe_url
 from dasovbot.dashboard.views import parse_timestamp, relative_time, retry_ignored, remove_ignored, STATE_KEY
 from dasovbot.models import Intent, TemporaryInlineQuery
 from tests.helpers import make_state, make_config
+
+
+class TestSafeUrl(unittest.TestCase):
+    def test_http_passes_through(self):
+        self.assertEqual(safe_url('http://example.com'), 'http://example.com')
+
+    def test_https_passes_through(self):
+        self.assertEqual(safe_url('https://example.com'), 'https://example.com')
+
+    def test_javascript_uri_blocked(self):
+        self.assertEqual(safe_url('javascript:alert(1)'), '#')
+
+    def test_none_blocked(self):
+        self.assertEqual(safe_url(None), '#')
+
+    def test_empty_blocked(self):
+        self.assertEqual(safe_url(''), '#')
+
+    def test_other_scheme_blocked(self):
+        self.assertEqual(safe_url('ftp://example.com'), '#')
 
 
 class TestFormatDuration(unittest.TestCase):

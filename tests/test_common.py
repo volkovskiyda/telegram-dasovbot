@@ -52,6 +52,28 @@ class TestUnknown(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Unknown command', text)
 
 
+class TestErrorHandler(unittest.IsolatedAsyncioTestCase):
+
+    async def test_logs_error_without_raising(self):
+        context = make_context()
+        context.error = ValueError('boom')
+
+        from dasovbot.handlers.common import error_handler
+        with self.assertLogs('dasovbot.handlers.common', level='ERROR') as cm:
+            await error_handler(make_update(), context)
+
+        self.assertIn('Unhandled handler error', '\n'.join(cm.output))
+        self.assertIn('boom', '\n'.join(cm.output))
+
+    async def test_handles_missing_error(self):
+        context = make_context()
+        context.error = None
+
+        from dasovbot.handlers.common import error_handler
+        with self.assertLogs('dasovbot.handlers.common', level='ERROR'):
+            await error_handler(None, context)
+
+
 class TestCancel(unittest.IsolatedAsyncioTestCase):
 
     async def test_returns_end(self):
