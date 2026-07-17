@@ -9,13 +9,14 @@ from telegram.ext import ConversationHandler
 
 from dasovbot.constants import (
     SUBSCRIBE_URL, SUBSCRIBE_PLAYLIST, SUBSCRIBE_SHOW,
-    UNSUBSCRIBE_PLAYLIST, MULTIPLE_SUBSCRIBE_URLS,
+    UNSUBSCRIBE_PLAYLIST, MULTIPLE_SUBSCRIBE_URLS, SOURCE_SUBSCRIPTION,
 )
 from dasovbot.downloader import extract_url, get_ydl
 from dasovbot.helpers import (
     extract_user, remove_command_prefix, user_subscriptions, append_playlist,
 )
 from dasovbot.models import Subscription
+from dasovbot.services.intent_processor import append_intent
 from dasovbot.state import BotState
 
 logger = logging.getLogger(__name__)
@@ -293,12 +294,18 @@ async def subscribe_show(update: Update, context) -> int:
             info = await _extract_info(ydl, subscription_url)
             entries = info.get('entries') or []
             for entry in entries[:5]:
-                video = state.videos.get(extract_url(entry))
+                url = extract_url(entry)
+                video = state.videos.get(url)
                 file_id = video.file_id if video else None
                 if file_id:
                     await context.bot.send_video(chat_id, file_id, caption=video.caption)
+                else:
+                    # Not cached yet: enqueue so the intent worker downloads it
+                    # and posts to this chat, instead of silently skipping it.
+                    await append_intent(url, state, chat_ids=[str(chat_id)], source=SOURCE_SUBSCRIPTION,
+                                        title=entry.get('title'), upload_date=entry.get('upload_date'))
         except Exception:
-            pass
+            logger.error("subscribe_show error: %s", subscription_url, exc_info=True)
     return ConversationHandler.END
 
 

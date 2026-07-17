@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from telegram.ext import ConversationHandler
 
@@ -99,8 +99,9 @@ class TestSubscribeShow(unittest.IsolatedAsyncioTestCase):
         cq = make_callback_query(data=answer, message=message)
         return make_update(callback_query=cq), message, cq
 
+    @patch('dasovbot.handlers.subscription.append_intent', new_callable=AsyncMock)
     @patch('dasovbot.handlers.subscription.get_ydl')
-    async def test_yes_sends_cached_videos(self, mock_get_ydl):
+    async def test_yes_sends_cached_and_enqueues_uncached(self, mock_get_ydl, mock_append):
         ydl = MagicMock()
         ydl.extract_info.return_value = {'entries': [
             {'url': 'https://example.com/v1', 'webpage_url': 'https://example.com/v1'},
@@ -117,8 +118,11 @@ class TestSubscribeShow(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, ConversationHandler.END)
         cq.answer.assert_awaited_once()
-        # Only the cached video is sent; v2 has no file_id yet
+        # The cached video is sent immediately...
         context.bot.send_video.assert_awaited_once_with(123, 'fid1', caption='cap1')
+        # ...and the uncached one is enqueued rather than silently skipped.
+        mock_append.assert_awaited_once()
+        self.assertEqual(mock_append.call_args[0][0], 'https://example.com/v2')
         self.assertNotIn('subscription_url', context.user_data)
 
     @patch('dasovbot.handlers.subscription.get_ydl')
