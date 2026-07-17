@@ -23,6 +23,9 @@ PROCESS_INTERVAL_SEC = 1  # breather between consecutive downloads
 # Attempts before a failing intent is dropped
 MAX_INTENT_RETRIES = 3
 
+# Retries when Telegram rate-limits a delivery (RetryAfter)
+MAX_SEND_RETRIES = 2
+
 # Upload size (MB) above which a failed send falls back to 360p
 LARGE_FILE_MB = 2000
 

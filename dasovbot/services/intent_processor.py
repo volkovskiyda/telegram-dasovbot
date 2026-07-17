@@ -270,6 +270,31 @@ async def retry_lower_quality(bot: Bot, query: str, info: VideoInfo, state: BotS
             remove(temp_video_path)
 
 
+async def _deliver(send, kind: str, query: str, target) -> bool:
+    """Run a single Telegram delivery, retrying when rate-limited (RetryAfter).
+
+    The intent is already popped by the time we deliver, so a throttled send
+    that is merely logged loses that recipient's video permanently. Honour the
+    server's retry_after a bounded number of times before giving up.
+    """
+    from telegram.error import RetryAfter
+    from dasovbot.constants import MAX_SEND_RETRIES
+    for attempt in range(MAX_SEND_RETRIES + 1):
+        try:
+            await send()
+            return True
+        except RetryAfter as e:
+            if attempt >= MAX_SEND_RETRIES:
+                logger.error("process_intent %s rate-limited, gave up: %s - %s", kind, query, target)
+                return False
+            logger.warning("process_intent %s rate-limited, retry in %ss: %s - %s", kind, e.retry_after, query, target)
+            await asyncio.sleep(e.retry_after)
+        except Exception:
+            logger.error("process_intent %s error: %s - %s", kind, query, target, exc_info=True)
+            return False
+    return False
+
+
 async def process_intent(bot: Bot, query: str, video: str, caption: str, state: BotState) -> Intent | None:
     intent = await state.pop_intent(query)
     if not intent:
@@ -277,18 +302,9 @@ async def process_intent(bot: Bot, query: str, video: str, caption: str, state: 
         return None
     logger.info("process_intent: %s chat_ids=%s inline=%d messages=%d", query, intent.chat_ids, len(intent.inline_message_ids), len(intent.messages))
     for item in intent.chat_ids:
-        try:
-            await bot.send_video(chat_id=item, video=video, caption=caption, disable_notification=True)
-        except Exception:
-            logger.error("process_intent chat_ids error: %s - %s", query, item, exc_info=True)
+        await _deliver(lambda item=item: bot.send_video(chat_id=item, video=video, caption=caption, disable_notification=True), 'chat_ids', query, item)
     for item in intent.inline_message_ids:
-        try:
-            await bot.edit_message_media(inline_message_id=item, media=InputMediaVideo(media=video, caption=caption))
-        except Exception:
-            logger.error("process_intent inline_message_ids error: %s - %s", query, item, exc_info=True)
+        await _deliver(lambda item=item: bot.edit_message_media(inline_message_id=item, media=InputMediaVideo(media=video, caption=caption)), 'inline_message_ids', query, item)
     for item in intent.messages:
-        try:
-            await bot.edit_message_media(chat_id=item.chat, message_id=item.message, media=InputMediaVideo(media=video, caption=caption))
-        except Exception:
-            logger.error("process_intent messages error: %s - %s", query, item, exc_info=True)
+        await _deliver(lambda item=item: bot.edit_message_media(chat_id=item.chat, message_id=item.message, media=InputMediaVideo(media=video, caption=caption)), 'messages', query, item)
     return intent

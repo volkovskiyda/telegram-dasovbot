@@ -166,6 +166,31 @@ class TestProcessIntent(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(bot.send_video.await_count, 2)
         self.assertIs(result, intent)
 
+    @patch('dasovbot.services.intent_processor.asyncio.sleep', new_callable=AsyncMock)
+    @patch('dasovbot.database.delete_intent', new_callable=AsyncMock)
+    async def test_retries_on_rate_limit(self, mock_delete, mock_sleep):
+        from telegram.error import RetryAfter
+        bot = AsyncMock()
+        bot.send_video.side_effect = [RetryAfter(3), AsyncMock()]
+        intent = Intent(chat_ids=['10'])
+        state = make_state(intents={'q': intent})
+        await process_intent(bot, 'q', 'file123', 'caption', state)
+        # Throttled once, then delivered on the retry rather than being dropped.
+        self.assertEqual(bot.send_video.await_count, 2)
+        mock_sleep.assert_awaited_once_with(3)
+
+    @patch('dasovbot.services.intent_processor.asyncio.sleep', new_callable=AsyncMock)
+    @patch('dasovbot.database.delete_intent', new_callable=AsyncMock)
+    async def test_gives_up_after_max_send_retries(self, mock_delete, mock_sleep):
+        from telegram.error import RetryAfter
+        from dasovbot.constants import MAX_SEND_RETRIES
+        bot = AsyncMock()
+        bot.send_video.side_effect = RetryAfter(1)
+        intent = Intent(chat_ids=['10'])
+        state = make_state(intents={'q': intent})
+        await process_intent(bot, 'q', 'file123', 'caption', state)
+        self.assertEqual(bot.send_video.await_count, MAX_SEND_RETRIES + 1)
+
 
 class TestPostProcess(unittest.IsolatedAsyncioTestCase):
     def _make_message(self, file_id='fid1'):
