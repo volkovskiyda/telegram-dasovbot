@@ -300,6 +300,17 @@ class TestMigrateFromJsonErrors(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(progress['status'], 'skipped')
         self.assertTrue(os.path.exists(self.config.video_info_file))
 
+    async def test_failed_table_file_preserved_while_good_file_renamed(self):
+        self._write(self.config.video_info_file, json.dumps({'url1': {'title': 'V'}}))
+        self._write(self.config.intent_info_file, 'not valid json')
+        progress = {'status': 'pending', 'tables': {}, 'elapsed': 0.0}
+        with self.assertLogs('dasovbot.database', level='ERROR'):
+            await migrate_from_json(self.db, self.config, progress)
+        # The good file is renamed out of the way...
+        self.assertFalse(os.path.exists(self.config.video_info_file))
+        # ...but the file that failed to migrate stays put so it can be retried.
+        self.assertTrue(os.path.exists(self.config.intent_info_file))
+
     async def test_rename_failure_logged_but_migration_completes(self):
         self._write(self.config.video_info_file, json.dumps({'url1': {'title': 'V'}}))
         progress = {'status': 'pending', 'tables': {}, 'elapsed': 0.0}

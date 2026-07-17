@@ -49,6 +49,7 @@ async def migrate_from_json(db: aiosqlite.Connection, config: Config, progress: 
 
     logger.info("Migration: started")
     migrated = False
+    migrated_files = []
     migration_start = time.monotonic()
     batch_size = 500
     if progress is not None:
@@ -86,6 +87,7 @@ async def migrate_from_json(db: aiosqlite.Connection, config: Config, progress: 
                     logger.info("  %s: %d/%d (%.0f%%)", table, done, total, done / total * 100)
             logger.info("  %s: done (%d entries)", table, total)
             migrated = True
+            migrated_files.append(filepath)
         except Exception:
             logger.error("Migration: error migrating %s", filepath, exc_info=True)
 
@@ -95,12 +97,9 @@ async def migrate_from_json(db: aiosqlite.Connection, config: Config, progress: 
         logger.info("Migration: finished in %.2fs", elapsed)
         if progress is not None:
             progress['elapsed'] = elapsed
-        for filepath in [
-            config.video_info_file,
-            config.intent_info_file,
-            config.user_info_file,
-            config.subscription_info_file,
-        ]:
+        # Rename only files that migrated successfully; a file whose migration
+        # raised must stay in place so a later run can retry it.
+        for filepath in migrated_files:
             if os.path.exists(filepath):
                 from datetime import datetime
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
