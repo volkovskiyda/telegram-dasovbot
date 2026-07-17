@@ -1,7 +1,7 @@
 # Conversation states
 SUBSCRIBE_URL, SUBSCRIBE_PLAYLIST, SUBSCRIBE_SHOW = range(3)
 UNSUBSCRIBE_PLAYLIST, = range(1)
-MULTIPLE_SUBSCRIBE_URLS = range(1)
+MULTIPLE_SUBSCRIBE_URLS, = range(1)
 DAS_URL, = range(1)
 
 # Error messages
