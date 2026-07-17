@@ -9,8 +9,16 @@ logger = logging.getLogger(__name__)
 
 async def start(update: Update, _):
     message = update.message
-    username = message.from_user['username']
-    await message.reply_text(f"Hey, @{username}.\n"
+    user = message.from_user
+    # username is None for users without a public @handle; fall back to their
+    # first name, then to a plain greeting, so we never render "Hey, @None."
+    if user.username:
+        greeting = f"Hey, @{user.username}."
+    elif user.first_name:
+        greeting = f"Hey, {user.first_name}."
+    else:
+        greeting = "Hey."
+    await message.reply_text(f"{greeting}\n"
                              "Welcome to Download and Share Online Video bot\n"
                              "Type /download\n\n"
                              "/help - for more details")

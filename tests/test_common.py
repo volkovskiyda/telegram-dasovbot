@@ -22,6 +22,32 @@ class TestStart(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Welcome', text)
         self.assertIn('@testuser', text)
 
+    async def test_falls_back_to_first_name_without_username(self):
+        user = make_user(id=123, username=None)
+        user.first_name = 'Alice'
+        message = make_message(chat_id=123, from_user=user)
+        update = make_update(message=message)
+
+        from dasovbot.handlers.common import start
+        await start(update, None)
+
+        text = message.reply_text.call_args[0][0]
+        self.assertIn('Hey, Alice.', text)
+        self.assertNotIn('@None', text)
+
+    async def test_plain_greeting_without_username_or_first_name(self):
+        user = make_user(id=123, username=None)
+        user.first_name = None
+        message = make_message(chat_id=123, from_user=user)
+        update = make_update(message=message)
+
+        from dasovbot.handlers.common import start
+        await start(update, None)
+
+        text = message.reply_text.call_args[0][0]
+        self.assertIn('Hey.', text)
+        self.assertNotIn('@None', text)
+
 
 class TestHelpCommand(unittest.IsolatedAsyncioTestCase):
 
