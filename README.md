@@ -87,8 +87,7 @@ subscriptions.py       # CLI: bulk subscription management
 empty_media_folder.py  # CLI: clear media folder
 backup.py              # CLI: SQLite online backup
 preview_dashboard.py   # CLI: start the dashboard with mock data
-entrypoint.sh          # Docker entrypoint (cron + bot)
-backup-cron            # Cron schedule for database backups
+entrypoint.sh          # Docker entrypoint (cron + bot; backup schedule from BACKUP_CRON)
 ```
 
 ### **Architecture**
@@ -101,11 +100,13 @@ backup-cron            # Cron schedule for database backups
 
 **Handler registration:** All handlers registered in `handlers/__init__.py:register_handlers()`. Multi-step flows (download, subscribe, unsubscribe) use `ConversationHandler` with states defined in `constants.py`.
 
-**Background tasks:** Started in `services/background.py:start_background_tasks()` via `asyncio.gather`:
+**Background tasks:** Started in `services/background.py:start_background_tasks()` via `asyncio.create_task`:
+- Loading-animation population
 - Subscription polling (hourly)
 - Intent queue processing
 - Inline query cache cleanup
-- Web dashboard server
+
+The web dashboard is started separately in `__main__.py` (`start_dashboard`) before the Telegram application is built.
 
 **Video processing pipeline:**
 1. User sends URL → handler creates an `Intent` (download request)
@@ -146,11 +147,11 @@ python main.py
 
 - Show info
 ```bash
-python info.py '<url>' -d=False
+python info.py '<url>'
 ```
-You can pass parameter `-d` (`--download`) to dowload video
+Pass the `-d` (`--download`) flag to also download the video
 ```bash
-python info.py '<url>' --download=True
+python info.py '<url>' -d
 ```
 
 ### **Tests:**
