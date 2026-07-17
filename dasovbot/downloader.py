@@ -133,13 +133,17 @@ async def extract_info(query: str, download: bool, state: BotState) -> VideoInfo
     if not info:
         try:
             loop = asyncio.get_running_loop()
-            raw_info = await loop.run_in_executor(None, partial(get_ydl().extract_info, query, download=False))
+            future = loop.run_in_executor(None, partial(get_ydl().extract_info, query, download=False))
+            raw_info = await asyncio.wait_for(future, TIMEOUT_SEC)
             url = extract_url(raw_info)
             info_url = state.videos.get(url)
             if info_url:
                 await state.set_video(query, info_url)
                 return info_url
             info = process_info(raw_info)
+        except asyncio.TimeoutError:
+            logger.warning("extract_info metadata timeout: %s", query)
+            return None
         except Exception as e:
             if isinstance(e, yt_dlp.DownloadError) and contains_text(e.msg, VIDEO_ERROR_MESSAGES):
                 intent = state.intents.get(query)
@@ -152,6 +156,7 @@ async def extract_info(query: str, download: bool, state: BotState) -> VideoInfo
                         tiq.ignored = True
                 return None
             logger.error("extract_info error: %s", query)
+            return None
 
     needs_download = download and (not info or not info.file_id)
     if needs_download:

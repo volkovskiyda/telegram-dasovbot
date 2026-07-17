@@ -128,6 +128,24 @@ class TestExtractInfo(unittest.IsolatedAsyncioTestCase):
         self.assertIs(result, cached)
         self.assertIsNone(result.file_id)
 
+    @patch('dasovbot.downloader.asyncio.wait_for', side_effect=asyncio.TimeoutError)
+    @patch('dasovbot.downloader.get_ydl')
+    async def test_metadata_timeout_returns_none(self, mock_get_ydl, mock_wait):
+        state = self._make_state()
+        result = await extract_info('q', download=True, state=state)
+        self.assertIsNone(result)
+        # The download step must not run after a metadata timeout
+        for call in mock_get_ydl.return_value.extract_info.call_args_list:
+            self.assertFalse(call.kwargs.get('download'))
+
+    @patch('dasovbot.downloader.get_ydl')
+    async def test_metadata_error_skips_download(self, mock_get_ydl):
+        mock_get_ydl.return_value.extract_info.side_effect = ValueError('boom')
+        state = self._make_state()
+        result = await extract_info('q', download=True, state=state)
+        self.assertIsNone(result)
+        mock_get_ydl.return_value.extract_info.assert_called_once_with('q', download=False)
+
     @patch('dasovbot.downloader.get_ydl')
     async def test_download_error_returns_partial_info(self, mock_get_ydl):
         cached = VideoInfo(title='cached')
