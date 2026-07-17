@@ -73,7 +73,8 @@ def process_info(info) -> VideoInfo | None:
     info_title = info.get('title')
     title = info_title or url
     caption_title = info_title[:100] if info_title else ''
-    caption = f"[{upload_date}] {caption_title}\n{url}"
+    date_prefix = f"[{upload_date}] " if upload_date else ''
+    caption = f"{date_prefix}{caption_title}\n{url}"
 
     return VideoInfo(
         file_id=info.get('file_id'),

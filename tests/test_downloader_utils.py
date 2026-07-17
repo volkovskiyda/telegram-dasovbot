@@ -144,6 +144,13 @@ class TestProcessInfo(unittest.TestCase):
         self.assertEqual(result.description, '')
 
 
+class TestCaptionWithoutUploadDate(unittest.TestCase):
+    def test_no_none_prefix(self):
+        info = process_info({'title': 'My Video', 'url': 'https://example.com/v'})
+        self.assertEqual(info.caption, 'My Video\nhttps://example.com/v')
+        self.assertNotIn('None', info.caption)
+
+
 class TestContainsText(unittest.TestCase):
     def test_case_insensitive_match(self):
         self.assertTrue(contains_text('This Video is Unavailable', ['video is unavailable']))
