@@ -36,6 +36,13 @@
         .filters a { padding: 6px 14px; border-radius: 6px; font-size: 13px; background: #16213e; color: #94a3b8; }
         .filters a.active { background: #0f3460; color: #e0e0e0; }
         .text-muted { color: #64748b; }
+        .alerts { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+        .alert { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 8px; border-left: 4px solid; }
+        .alert-error { background: #3a1420; border-color: #e94560; color: #ffb3c1; }
+        .alert-warning { background: #3a3216; border-color: #f9c74f; color: #ffe29a; }
+        .alert-icon { font-size: 16px; line-height: 1.5; }
+        .alert-message { font-size: 14px; line-height: 1.5; word-break: break-word; }
+        .alert-since { font-size: 12px; opacity: 0.7; margin-top: 4px; }
     </style>
 </head>
 <body>
@@ -50,6 +57,19 @@
         <a href="/logout">Logout</a>
     </nav>
     <div class="container">
+        {% if health_alerts %}
+        <div class="alerts">
+            {% for alert in health_alerts %}
+            <div class="alert alert-{{ alert.level }}">
+                <span class="alert-icon">{% if alert.level == 'error' %}⛔{% else %}⚠️{% endif %}</span>
+                <div>
+                    <div class="alert-message">{{ alert.message }}</div>
+                    <div class="alert-since">since {{ alert.since }}</div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
         {% block content %}{% endblock %}
     </div>
 </body>

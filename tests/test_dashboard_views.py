@@ -244,5 +244,28 @@ class TestSubscriptionsUnknownUser(DashboardViewTestCase):
         self.assertNotIn('(42)', text)
 
 
+class TestHealthAlerts(DashboardViewTestCase):
+    async def test_no_banner_when_healthy(self):
+        resp = await self.client.get('/')
+        text = await resp.text()
+        self.assertNotIn('class="alert', text)
+
+    async def test_banner_rendered_on_every_page(self):
+        self.state.set_alert('backup_stale', 'Backups may have stopped.', level='warning')
+        for path in ('/', '/videos', '/system'):
+            resp = await self.client.get(path)
+            self.assertEqual(resp.status, 200)
+            text = await resp.text()
+            self.assertIn('Backups may have stopped.', text)
+            self.assertIn('alert-warning', text)
+
+    async def test_error_level_styling(self):
+        self.state.set_alert('data_missing', 'Live database is empty.', level='error')
+        resp = await self.client.get('/')
+        text = await resp.text()
+        self.assertIn('alert-error', text)
+        self.assertIn('Live database is empty.', text)
+
+
 if __name__ == '__main__':
     unittest.main()

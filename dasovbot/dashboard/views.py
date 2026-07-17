@@ -49,6 +49,24 @@ def relative_time(ts: str | None) -> str:
     return f'{days}d ago'
 
 
+async def health_alerts_processor(request: web.Request) -> dict:
+    """Expose active health alerts to every template so base.html can render a
+    banner on all authenticated pages."""
+    if STATE_KEY not in request.app:
+        return {'health_alerts': []}
+    state = request.app[STATE_KEY]
+    alerts = [
+        {
+            'id': alert_id,
+            'level': info.get('level', 'warning'),
+            'message': info.get('message', ''),
+            'since': relative_time(info.get('since')),
+        }
+        for alert_id, info in state.health_alerts.items()
+    ]
+    return {'health_alerts': alerts}
+
+
 async def index(request: web.Request) -> web.Response:
     state = get_state(request)
 

@@ -10,7 +10,7 @@ import jinja2
 from aiohttp import web
 
 from dasovbot.dashboard.auth import auth_middleware, login_page, login_post, logout, get_password
-from dasovbot.dashboard.views import index, videos, ignored, retry_ignored, remove_ignored, remove_intent, force_populate, subscriptions, remove_subscription, system, STATE_KEY
+from dasovbot.dashboard.views import index, videos, ignored, retry_ignored, remove_ignored, remove_intent, force_populate, subscriptions, remove_subscription, system, health_alerts_processor, STATE_KEY
 
 if TYPE_CHECKING:
     from dasovbot.state import BotState
@@ -43,7 +43,11 @@ def create_app(state: BotState) -> web.Application:
     app = web.Application(middlewares=[auth_middleware])
     app[STATE_KEY] = state
 
-    env = aiohttp_jinja2.setup(app, loader=jinja2.FileSystemLoader(str(TEMPLATES_DIR)))
+    env = aiohttp_jinja2.setup(
+        app,
+        loader=jinja2.FileSystemLoader(str(TEMPLATES_DIR)),
+        context_processors=[health_alerts_processor, aiohttp_jinja2.request_processor],
+    )
     env.filters['duration'] = format_duration
     env.filters['safe_url'] = safe_url
 

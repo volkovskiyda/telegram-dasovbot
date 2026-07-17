@@ -246,6 +246,26 @@ class TestMonitorBackups(unittest.IsolatedAsyncioTestCase):
         bot.send_message.assert_awaited_once()
 
     @patch('dasovbot.services.background.asyncio.sleep', new_callable=AsyncMock)
+    @patch('dasovbot.services.background.newest_backup_age', return_value=None)
+    async def test_sets_health_alert_when_stale(self, mock_age, mock_sleep):
+        mock_sleep.side_effect = asyncio.CancelledError()
+        state = make_state(config=make_config())
+        with self.assertRaises(asyncio.CancelledError):
+            await monitor_backups(AsyncMock(), state)
+        self.assertIn('backup_stale', state.health_alerts)
+        self.assertEqual(state.health_alerts['backup_stale']['level'], 'warning')
+
+    @patch('dasovbot.services.background.asyncio.sleep', new_callable=AsyncMock)
+    @patch('dasovbot.services.background.newest_backup_age', return_value=100)
+    async def test_clears_health_alert_when_fresh(self, mock_age, mock_sleep):
+        mock_sleep.side_effect = asyncio.CancelledError()
+        state = make_state(config=make_config())
+        state.set_alert('backup_stale', 'stale', level='warning')
+        with self.assertRaises(asyncio.CancelledError):
+            await monitor_backups(AsyncMock(), state)
+        self.assertNotIn('backup_stale', state.health_alerts)
+
+    @patch('dasovbot.services.background.asyncio.sleep', new_callable=AsyncMock)
     async def test_send_failure_not_latched(self, mock_sleep):
         from dasovbot.constants import BACKUP_STALE_SEC
         mock_sleep.side_effect = [None, asyncio.CancelledError()]

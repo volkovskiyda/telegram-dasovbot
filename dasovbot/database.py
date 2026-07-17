@@ -119,17 +119,20 @@ async def migrate_from_json(db: aiosqlite.Connection, config: Config, progress: 
         progress['status'] = 'completed' if migrated else 'skipped'
 
 
-async def warn_if_data_missing(db: aiosqlite.Connection, db_path: str):
+async def warn_if_data_missing(db: aiosqlite.Connection, db_path: str) -> str | None:
     """Guard against a misrouted DB path silently starting fresh.
 
     If every table is empty but a populated ``bot.db.backup_*`` sits next to
     the live database, the bot is almost certainly pointed at the wrong path
     (a stray CONFIG_FOLDER, an unmounted volume) and is about to accumulate
     new data over an empty file while the real data waits in the backup.
+
+    Returns a human-readable warning message when this condition is detected
+    (also logged), or None when the data looks healthy.
     """
     cursor = await db.execute("SELECT COUNT(*) FROM videos")
     if (await cursor.fetchone())[0] > 0:
-        return
+        return None
 
     backup_dir = os.path.dirname(db_path) or '.'
     # Newest first: the timestamped names sort lexicographically by time
@@ -138,15 +141,16 @@ async def warn_if_data_missing(db: aiosqlite.Connection, db_path: str):
         try:
             with closing(sqlite3.connect(backup)) as conn:
                 if conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0] > 0:
-                    logger.warning(
-                        "Live database %s is empty but backup %s holds data. The bot may be pointed "
-                        "at the wrong path (check CONFIG_FOLDER and volume mounts) before it overwrites "
-                        "the empty file. To restore: stop the bot and run  cp %s %s",
-                        db_path, backup, backup, db_path,
+                    message = (
+                        f"Live database {db_path} is empty but backup {backup} holds data. The bot may "
+                        f"be pointed at the wrong path (check CONFIG_FOLDER and volume mounts) before it "
+                        f"overwrites the empty file. To restore: stop the bot and run  cp {backup} {db_path}"
                     )
-                    return
+                    logger.warning(message)
+                    return message
         except sqlite3.Error:
             continue
+    return None
 
 
 # --- Videos ---

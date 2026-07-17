@@ -152,19 +152,23 @@ async def monitor_backups(bot: Bot, state: BotState):
         try:
             age = newest_backup_age(backup_dir)
             stale = age is None or age > BACKUP_STALE_SEC
-            if stale and not alerted:
+            if stale:
                 if age is None:
-                    text = f"⚠️ No database backups found in {backup_dir}. The backup job may not be running."
+                    text = f"No database backups found in {backup_dir}. The backup job may not be running."
                 else:
-                    text = (f"⚠️ Latest database backup is {age / 3600:.1f}h old "
+                    text = (f"Latest database backup is {age / 3600:.1f}h old "
                             f"(alert threshold {BACKUP_STALE_SEC // 3600}h). Backups may have stopped.")
-                try:
-                    await bot.send_message(chat_id=state.config.developer_chat_id, text=text, disable_notification=True)
-                    logger.warning(text)
-                    alerted = True  # only latch after a successful send, so a failed alert retries
-                except Exception:
-                    logger.error("monitor_backups: failed to alert developer", exc_info=True)
-            elif not stale:
+                state.set_alert('backup_stale', text, level='warning')
+                if not alerted:
+                    try:
+                        await bot.send_message(
+                            chat_id=state.config.developer_chat_id, text=f"⚠️ {text}", disable_notification=True)
+                        logger.warning(text)
+                        alerted = True  # only latch after a successful send, so a failed alert retries
+                    except Exception:
+                        logger.error("monitor_backups: failed to alert developer", exc_info=True)
+            else:
+                state.clear_alert('backup_stale')
                 alerted = False
             state.background_task_status['monitor_backups'] = now()
         except Exception:

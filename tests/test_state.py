@@ -209,5 +209,36 @@ class TestCreateAndLoad(unittest.IsolatedAsyncioTestCase):
             await reloaded.close()
 
 
+class TestHealthAlerts(unittest.IsolatedAsyncioTestCase):
+    def test_set_alert_stores_message_and_level(self):
+        state = make_state()
+        state.set_alert('backup_stale', 'Backups stopped', level='warning')
+        alert = state.health_alerts['backup_stale']
+        self.assertEqual(alert['message'], 'Backups stopped')
+        self.assertEqual(alert['level'], 'warning')
+        self.assertTrue(alert['since'])
+
+    def test_set_alert_preserves_onset_time_on_update(self):
+        state = make_state()
+        state.set_alert('backup_stale', 'first', level='warning')
+        original_since = state.health_alerts['backup_stale']['since']
+        with patch('dasovbot.helpers.now', return_value='20990101_000000'):
+            state.set_alert('backup_stale', 'second', level='warning')
+        alert = state.health_alerts['backup_stale']
+        self.assertEqual(alert['message'], 'second')
+        self.assertEqual(alert['since'], original_since)
+
+    def test_clear_alert_removes_it(self):
+        state = make_state()
+        state.set_alert('backup_stale', 'msg')
+        state.clear_alert('backup_stale')
+        self.assertNotIn('backup_stale', state.health_alerts)
+
+    def test_clear_alert_missing_is_noop(self):
+        state = make_state()
+        state.clear_alert('never_set')  # must not raise
+        self.assertEqual(state.health_alerts, {})
+
+
 if __name__ == '__main__':
     unittest.main()

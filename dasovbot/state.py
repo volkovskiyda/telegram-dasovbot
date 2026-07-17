@@ -24,6 +24,9 @@ class BotState:
     # Strong references: the event loop only keeps weak refs to tasks
     background_tasks: set = field(default_factory=set)
     migration_progress: dict = field(default_factory=dict)
+    # Health warnings surfaced on the dashboard, keyed by a stable id so an
+    # ongoing condition updates in place instead of piling up duplicates
+    health_alerts: dict[str, dict] = field(default_factory=dict)
     db: aiosqlite.Connection = field(default=None)
 
     @classmethod
@@ -38,6 +41,19 @@ class BotState:
             migration_progress={'status': 'pending', 'tables': {}, 'elapsed': 0.0},
         )
 
+    def set_alert(self, alert_id: str, message: str, level: str = 'warning'):
+        from dasovbot.helpers import now
+        existing = self.health_alerts.get(alert_id)
+        self.health_alerts[alert_id] = {
+            'level': level,
+            'message': message,
+            # Preserve the original onset time while the condition persists
+            'since': existing['since'] if existing else now(),
+        }
+
+    def clear_alert(self, alert_id: str):
+        self.health_alerts.pop(alert_id, None)
+
     async def migrate_and_load(self):
         from dasovbot.database import (
             migrate_from_json, warn_if_data_missing,
@@ -45,7 +61,9 @@ class BotState:
         )
 
         await migrate_from_json(self.db, self.config, self.migration_progress)
-        await warn_if_data_missing(self.db, self.config.db_file)
+        warning = await warn_if_data_missing(self.db, self.config.db_file)
+        if warning:
+            self.set_alert('data_missing', warning, level='error')
 
         self.videos = await load_videos(self.db)
         self.users = await load_users(self.db)
