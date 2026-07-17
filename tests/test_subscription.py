@@ -7,11 +7,221 @@ from dasovbot.constants import (
     SUBSCRIBE_URL, SUBSCRIBE_PLAYLIST, SUBSCRIBE_SHOW,
     UNSUBSCRIBE_PLAYLIST,
 )
-from dasovbot.models import Subscription
+from dasovbot.handlers.subscription import (
+    _button_size, _paginate_items, build_paginated_keyboard, BUTTON_OVERHEAD,
+)
+from dasovbot.models import Subscription, VideoInfo
 from tests.helpers import (
     make_message, make_callback_query,
     make_update, make_context, make_state,
 )
+
+
+class TestButtonSize(unittest.TestCase):
+    def test_counts_utf8_bytes_plus_overhead(self):
+        self.assertEqual(_button_size('ab', 'cd'), 4 + BUTTON_OVERHEAD)
+
+    def test_multibyte_titles_count_encoded_length(self):
+        self.assertEqual(_button_size('é', ''), 2 + BUTTON_OVERHEAD)
+
+
+class TestPaginateItems(unittest.TestCase):
+    def _items(self, titles):
+        return [(f'id{i}', {'title': title, 'url': f'u{i}'}) for i, title in enumerate(titles)]
+
+    def test_empty_returns_single_empty_page(self):
+        self.assertEqual(_paginate_items([]), [[]])
+
+    def test_single_page_when_under_budget(self):
+        items = self._items(['a', 'bb', 'ccc'])
+        pages = _paginate_items(items)
+        self.assertEqual(len(pages), 1)
+        self.assertEqual(len(pages[0]), 3)
+
+    def test_splits_pages_when_over_budget(self):
+        items = self._items(['x' * 1000 for _ in range(4)])
+        pages = _paginate_items(items)
+        self.assertGreater(len(pages), 1)
+        flattened = [item for page in pages for item in page]
+        self.assertEqual(sorted(id for id, _ in flattened), sorted(id for id, _ in items))
+
+    def test_sorts_by_title_length(self):
+        items = self._items(['long title here', 'a', 'medium'])
+        pages = _paginate_items(items)
+        titles = [data['title'] for _, data in pages[0]]
+        self.assertEqual(titles, ['a', 'medium', 'long title here'])
+
+
+class TestBuildPaginatedKeyboard(unittest.TestCase):
+    def test_single_page_has_only_cancel_footer(self):
+        items = {'id1': {'title': 'One', 'url': 'u1'}, 'id2': {'title': 'Two', 'url': 'u2'}}
+        keyboard = build_paginated_keyboard(items, 0)
+        self.assertEqual(keyboard[-1][0].callback_data, 'cancel')
+        callbacks = [button.callback_data for row in keyboard for button in row]
+        self.assertFalse(any(cb.startswith('page:') for cb in callbacks))
+        self.assertNotIn('noop', callbacks)
+
+    def _multi_page_items(self):
+        return {f'id{i}': {'title': 'x' * 1000, 'url': f'u{i}'} for i in range(6)}
+
+    def test_first_page_nav_has_next_and_indicator(self):
+        keyboard = build_paginated_keyboard(self._multi_page_items(), 0)
+        nav_row = keyboard[-2]
+        callbacks = [button.callback_data for button in nav_row]
+        self.assertIn('noop', callbacks)
+        self.assertIn('page:1', callbacks)
+        self.assertFalse(any(button.text == '< Prev' for button in nav_row))
+        indicator = next(button for button in nav_row if button.callback_data == 'noop')
+        self.assertTrue(indicator.text.startswith('1/'))
+
+    def test_last_page_nav_has_prev_only(self):
+        items = self._multi_page_items()
+        total_pages = len(_paginate_items(list(items.items())))
+        keyboard = build_paginated_keyboard(items, total_pages - 1)
+        nav_row = keyboard[-2]
+        self.assertTrue(any(button.text == '< Prev' for button in nav_row))
+        self.assertFalse(any(button.text == 'Next >' for button in nav_row))
+
+    def test_page_clamped_to_valid_range(self):
+        items = self._multi_page_items()
+        total_pages = len(_paginate_items(list(items.items())))
+        clamped = build_paginated_keyboard(items, 99)
+        last = build_paginated_keyboard(items, total_pages - 1)
+        self.assertEqual(
+            [[button.callback_data for button in row] for row in clamped],
+            [[button.callback_data for button in row] for row in last],
+        )
+
+
+class TestSubscribeShow(unittest.IsolatedAsyncioTestCase):
+    def _make_update(self, answer: str, text='Subscribed to [T](url)\nShow latest videos?'):
+        message = make_message(chat_id=123, text=text)
+        cq = make_callback_query(data=answer, message=message)
+        return make_update(callback_query=cq), message, cq
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_yes_sends_cached_videos(self, mock_get_ydl):
+        ydl = MagicMock()
+        ydl.extract_info.return_value = {'entries': [
+            {'url': 'https://example.com/v1', 'webpage_url': 'https://example.com/v1'},
+            {'url': 'https://example.com/v2', 'webpage_url': 'https://example.com/v2'},
+        ]}
+        mock_get_ydl.return_value = ydl
+        cached = VideoInfo(title='V1', file_id='fid1', caption='cap1')
+        state = make_state(videos={'https://example.com/v1': cached})
+        update, message, cq = self._make_update('True')
+        context = make_context(state=state, user_data={'subscription_url': 'https://example.com/c/videos'})
+
+        from dasovbot.handlers.subscription import subscribe_show
+        result = await subscribe_show(update, context)
+
+        self.assertEqual(result, ConversationHandler.END)
+        cq.answer.assert_awaited_once()
+        # Only the cached video is sent; v2 has no file_id yet
+        context.bot.send_video.assert_awaited_once_with(123, 'fid1', caption='cap1')
+        self.assertNotIn('subscription_url', context.user_data)
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_no_answer_skips_lookup(self, mock_get_ydl):
+        update, message, cq = self._make_update('False')
+        context = make_context(user_data={'subscription_url': 'https://example.com/c/videos'})
+
+        from dasovbot.handlers.subscription import subscribe_show
+        result = await subscribe_show(update, context)
+
+        self.assertEqual(result, ConversationHandler.END)
+        mock_get_ydl.assert_not_called()
+        context.bot.send_video.assert_not_awaited()
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_extraction_error_swallowed(self, mock_get_ydl):
+        mock_get_ydl.return_value.extract_info.side_effect = Exception('network error')
+        update, message, cq = self._make_update('True')
+        context = make_context(user_data={'subscription_url': 'https://example.com/c/videos'})
+
+        from dasovbot.handlers.subscription import subscribe_show
+        result = await subscribe_show(update, context)
+
+        self.assertEqual(result, ConversationHandler.END)
+        message.edit_text.assert_awaited_once()
+        context.bot.send_video.assert_not_awaited()
+
+
+class TestPlaylists(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_no_subscriptions_replies(self, mock_get_ydl):
+        message = make_message(chat_id=123)
+        update = make_update(message=message)
+        context = make_context(state=make_state())
+
+        from dasovbot.handlers.subscription import playlists
+        result = await playlists(update, context)
+
+        self.assertEqual(result, ConversationHandler.END)
+        message.reply_text.assert_awaited_once_with('No subscriptions')
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_suggests_streams_for_videos_subscriber(self, mock_get_ydl):
+        sub = Subscription(chat_ids=['123'], title='C1', uploader='u1',
+                           uploader_videos='https://example.com/c1/videos')
+        state = make_state(subscriptions={'https://example.com/c1/videos': sub})
+        ydl = MagicMock()
+        ydl.extract_info.return_value = {'uploader_url': 'https://example.com/c1'}
+        mock_get_ydl.return_value = ydl
+        message = make_message(chat_id=123)
+        update = make_update(message=message)
+        context = make_context(state=state)
+
+        from dasovbot.handlers.subscription import playlists
+        result = await playlists(update, context)
+
+        self.assertEqual(result, ConversationHandler.END)
+        message.reply_text.assert_awaited_once()
+        reply = message.reply_text.await_args.args[0]
+        self.assertIn('Available *Streams*', reply)
+        self.assertIn('https://example.com/c1/streams', reply)
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_both_subscriptions_grouped(self, mock_get_ydl):
+        videos_sub = Subscription(chat_ids=['123'], title='C1 Videos', uploader='u1',
+                                  uploader_videos='https://example.com/c1/videos')
+        streams_sub = Subscription(chat_ids=['123'], title='C1 Streams', uploader='u1',
+                                   uploader_videos='https://example.com/c1/videos')
+        state = make_state(subscriptions={
+            'https://example.com/c1/videos': videos_sub,
+            'https://example.com/c1/streams': streams_sub,
+        })
+        ydl = MagicMock()
+        ydl.extract_info.return_value = {'uploader_url': 'https://example.com/c1'}
+        mock_get_ydl.return_value = ydl
+        message = make_message(chat_id=123)
+        update = make_update(message=message)
+        context = make_context(state=state)
+
+        from dasovbot.handlers.subscription import playlists
+        result = await playlists(update, context)
+
+        self.assertEqual(result, ConversationHandler.END)
+        message.reply_text.assert_awaited_once()
+        reply = message.reply_text.await_args.args[0]
+        self.assertIn('*Videos and Streams*', reply)
+        self.assertEqual(reply.count('https://example.com/c1'), 1)
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_extraction_error_skipped(self, mock_get_ydl):
+        sub = Subscription(chat_ids=['123'], title='C1', uploader='u1',
+                           uploader_videos='https://example.com/c1/videos')
+        state = make_state(subscriptions={'https://example.com/c1/videos': sub})
+        mock_get_ydl.return_value.extract_info.side_effect = Exception('network error')
+        message = make_message(chat_id=123)
+        update = make_update(message=message)
+        context = make_context(state=state)
+
+        from dasovbot.handlers.subscription import playlists
+        result = await playlists(update, context)
+
+        self.assertEqual(result, ConversationHandler.END)
+        message.reply_text.assert_not_awaited()
 
 
 class TestSubscriptionList(unittest.IsolatedAsyncioTestCase):
