@@ -78,13 +78,19 @@ async def append_intent(query: str, state: BotState, chat_ids=None, inline_messa
     state.download_queue.put_nowait(query)
 
 
-async def post_process(query: str, info: VideoInfo, message: Message, state: BotState, store_info=True, origin_info: VideoInfo = None) -> str:
-    file_id = message.video.file_id
+async def post_process(query: str, info: VideoInfo, message: Message, state: BotState, store_info=True, origin_info: VideoInfo = None) -> str | None:
+    # Telegram may return the upload as a document/animation instead of a video
+    attachment = message.video or message.document or message.animation
+    file_id = attachment.file_id if attachment else None
     try:
         await message.delete()
     except Exception:
         pass
     filepath = info.filepath
+    if not file_id:
+        logger.error("post_process missing file_id: %s", query)
+        remove(filepath)
+        return None
     info.file_id = file_id
     if store_info:
         url = extract_url(info)
@@ -199,6 +205,9 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
             return info
         file_id = await post_process(query, info, message, state)
         logger.info("process_query post_process done: %s file_id=%s", query, file_id)
+        if not file_id:
+            await drop_or_retry_intent(query, state)
+            return info
 
     await process_intent(bot, query, file_id, caption, state)
     return info
@@ -244,6 +253,8 @@ async def retry_lower_quality(bot: Bot, query: str, info: VideoInfo, state: BotS
         logger.info("process_query send_video fnsh: %s", query)
         await send_message_developer(bot, f'[error_fixed_large_video]\n{caption}', config.developer_id, notification=False)
         file_id = await post_process(query, info, message, state, origin_info=temp_info)
+        if not file_id:
+            return False
         await process_intent(bot, query, file_id, caption, state)
         return True
     except Exception:

@@ -92,7 +92,8 @@ async def populate_animation(bot: Bot, state: BotState):
                 )
                 state.animation_file_id = await post_process(query, info, message, state, store_info=False)
                 logger.info("animation_file_id = %s", state.animation_file_id)
-                return
+                if state.animation_file_id:
+                    return
         except Exception:
             logger.error("populate_animation failed, attempt %s: %s", attempt, query, exc_info=True)
         await asyncio.sleep(RESTART_DELAY_SEC)

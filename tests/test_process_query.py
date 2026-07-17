@@ -118,6 +118,22 @@ class TestProcessQuery(unittest.IsolatedAsyncioTestCase):
         self.assertIn('q', state.intents)
         self.assertEqual(intent.retries, 1)
 
+    @patch('dasovbot.services.intent_processor.process_intent', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.post_process', new_callable=AsyncMock, return_value=None)
+    @patch('dasovbot.services.intent_processor.convert_to_mp4', new_callable=AsyncMock, return_value='/media/video.mp4')
+    @patch('dasovbot.services.intent_processor.extract_info', new_callable=AsyncMock)
+    async def test_post_process_failure_retries_intent(self, mock_extract, mock_convert, mock_post, mock_process_intent):
+        info = make_video_info()
+        mock_extract.return_value = info
+        intent = Intent(chat_ids=['1'])
+        state = self._make_state(intents={'q': intent})
+        bot = AsyncMock()
+        result = await process_query(bot, 'q', state)
+        self.assertIs(result, info)
+        mock_process_intent.assert_not_awaited()
+        self.assertIn('q', state.intents)
+        self.assertEqual(intent.retries, 1)
+
     @patch('dasovbot.services.intent_processor.remove')
     @patch('dasovbot.services.intent_processor.convert_to_mp4', new_callable=AsyncMock, return_value='/media/video.mp4')
     @patch('dasovbot.services.intent_processor.extract_info', new_callable=AsyncMock)

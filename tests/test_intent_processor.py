@@ -230,6 +230,32 @@ class TestPostProcess(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(info.origin.width, 1920)
         self.assertEqual(info.origin.height, 1080)
 
+    @patch('dasovbot.database.upsert_video', new_callable=AsyncMock)
+    async def test_falls_back_to_document_file_id(self, mock_upsert):
+        state = make_state(config=make_config())
+        info = VideoInfo(title='T', webpage_url='https://example.com', filepath=None)
+        msg = self._make_message()
+        msg.video = None
+        msg.document = MagicMock()
+        msg.document.file_id = 'doc1'
+        result = await post_process('q', info, msg, state)
+        self.assertEqual(result, 'doc1')
+        self.assertIn('q', state.videos)
+
+    @patch('dasovbot.services.intent_processor.remove')
+    @patch('dasovbot.database.upsert_video', new_callable=AsyncMock)
+    async def test_no_attachment_skips_store_and_returns_none(self, mock_upsert, mock_remove):
+        state = make_state(config=make_config())
+        info = VideoInfo(title='T', webpage_url='https://example.com', filepath='/tmp/media/v.mp4')
+        msg = self._make_message()
+        msg.video = None
+        msg.document = None
+        msg.animation = None
+        result = await post_process('q', info, msg, state)
+        self.assertIsNone(result)
+        self.assertNotIn('q', state.videos)
+        mock_remove.assert_called_once_with('/tmp/media/v.mp4')
+
     @patch('dasovbot.database.upsert_intent', new_callable=AsyncMock)
     @patch('dasovbot.database.upsert_video', new_callable=AsyncMock)
     async def test_sets_source_from_intent(self, mock_upsert_video, mock_upsert_intent):
