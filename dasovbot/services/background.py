@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import glob
 import logging
+import os
+import time
 from functools import partial
 from typing import TYPE_CHECKING
 
@@ -126,6 +129,49 @@ async def clear_temporary_inline_queries(state: BotState):
         await asyncio.sleep(10 * 60)
 
 
+def newest_backup_age(backup_dir: str) -> float | None:
+    """Seconds since the most recent bot.db.backup_*, or None if there are none."""
+    backups = glob.glob(os.path.join(backup_dir, 'bot.db.backup_*'))
+    newest = max((os.path.getmtime(path) for path in backups), default=None)
+    return None if newest is None else time.time() - newest
+
+
+async def monitor_backups(bot: Bot, state: BotState):
+    """Alert the developer when the backup job appears to have stopped.
+
+    Covers every failure mode at once — cron not running, the backup script
+    erroring, or a misrouted path producing no fresh files — by watching the
+    age of the newest backup rather than the job itself. Alerts once per stale
+    episode and re-arms when a fresh backup reappears.
+    """
+    from dasovbot.constants import BACKUP_CHECK_INTERVAL_SEC, BACKUP_STALE_SEC
+
+    backup_dir = os.path.dirname(state.config.db_file) or '.'
+    alerted = False
+    while True:
+        try:
+            age = newest_backup_age(backup_dir)
+            stale = age is None or age > BACKUP_STALE_SEC
+            if stale and not alerted:
+                if age is None:
+                    text = f"⚠️ No database backups found in {backup_dir}. The backup job may not be running."
+                else:
+                    text = (f"⚠️ Latest database backup is {age / 3600:.1f}h old "
+                            f"(alert threshold {BACKUP_STALE_SEC // 3600}h). Backups may have stopped.")
+                try:
+                    await bot.send_message(chat_id=state.config.developer_chat_id, text=text, disable_notification=True)
+                    logger.warning(text)
+                    alerted = True  # only latch after a successful send, so a failed alert retries
+                except Exception:
+                    logger.error("monitor_backups: failed to alert developer", exc_info=True)
+            elif not stale:
+                alerted = False
+            state.background_task_status['monitor_backups'] = now()
+        except Exception:
+            logger.error("monitor_backups error", exc_info=True)
+        await asyncio.sleep(BACKUP_CHECK_INTERVAL_SEC)
+
+
 async def run_forever(factory, name: str):
     from dasovbot.constants import RESTART_DELAY_SEC
     while True:
@@ -157,6 +203,9 @@ def start_background_tasks(bot: Bot, state: BotState):
         asyncio.create_task(
             run_forever(partial(clear_temporary_inline_queries, state), 'clear_temporary_inline_queries'),
             name="clear_temporary_inline_queries"),
+        asyncio.create_task(
+            run_forever(partial(monitor_backups, bot, state), 'monitor_backups'),
+            name="monitor_backups"),
     ]
     for task in tasks:
         state.background_tasks.add(task)

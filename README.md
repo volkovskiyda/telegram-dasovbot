@@ -105,6 +105,7 @@ entrypoint.sh          # Docker entrypoint (cron + bot; backup schedule from BAC
 - Subscription polling (hourly)
 - Intent queue processing
 - Inline query cache cleanup
+- Backup freshness monitoring (alerts the developer if backups stop)
 
 The web dashboard is started separately in `__main__.py` (`start_dashboard`) before the Telegram application is built.
 

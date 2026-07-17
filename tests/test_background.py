@@ -1,4 +1,6 @@
 import asyncio
+import os
+import tempfile
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -6,7 +8,7 @@ from dasovbot.models import Subscription, TemporaryInlineQuery, VideoInfo
 from dasovbot.constants import RESTART_DELAY_SEC
 from dasovbot.services.background import (
     populate_animation, populate_video, populate_playlist, run_populate_subscriptions,
-    populate_subscriptions, clear_temporary_inline_queries,
+    populate_subscriptions, clear_temporary_inline_queries, monitor_backups, newest_backup_age,
     start_background_tasks, stop_background_tasks, run_forever, _on_task_done,
 )
 from tests.helpers import make_state, make_config
@@ -180,6 +182,7 @@ class TestRunForever(unittest.IsolatedAsyncioTestCase):
 
 
 class TestStartBackgroundTasks(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.services.background.monitor_backups', new_callable=AsyncMock)
     @patch('dasovbot.services.intent_processor.monitor_process_intents', new_callable=AsyncMock)
     @patch('dasovbot.services.background.clear_temporary_inline_queries', new_callable=AsyncMock)
     @patch('dasovbot.services.background.populate_subscriptions', new_callable=AsyncMock)
@@ -187,11 +190,73 @@ class TestStartBackgroundTasks(unittest.IsolatedAsyncioTestCase):
     async def test_keeps_strong_references_until_done(self, *mocks):
         state = make_state()
         start_background_tasks(AsyncMock(), state)
-        self.assertEqual(len(state.background_tasks), 4)
+        self.assertEqual(len(state.background_tasks), 5)
         tasks = list(state.background_tasks)
         await asyncio.gather(*tasks)
         await asyncio.sleep(0)  # let done callbacks run
         self.assertEqual(len(state.background_tasks), 0)
+
+
+class TestNewestBackupAge(unittest.TestCase):
+    def test_returns_none_without_backups(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(newest_backup_age(tmp))
+
+    def test_returns_nonnegative_age_of_newest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, 'bot.db.backup_20260101_000000'), 'w') as f:
+                f.write('x')
+            age = newest_backup_age(tmp)
+            self.assertIsNotNone(age)
+            self.assertGreaterEqual(age, 0)
+
+
+class TestMonitorBackups(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.services.background.asyncio.sleep', new_callable=AsyncMock)
+    @patch('dasovbot.services.background.newest_backup_age', return_value=None)
+    async def test_alerts_developer_when_no_backups(self, mock_age, mock_sleep):
+        mock_sleep.side_effect = asyncio.CancelledError()
+        state = make_state(config=make_config(developer_chat_id='999'))
+        bot = AsyncMock()
+        with self.assertRaises(asyncio.CancelledError):
+            await monitor_backups(bot, state)
+        bot.send_message.assert_awaited_once()
+        self.assertEqual(bot.send_message.await_args.kwargs['chat_id'], '999')
+        self.assertIn('monitor_backups', state.background_task_status)
+
+    @patch('dasovbot.services.background.asyncio.sleep', new_callable=AsyncMock)
+    @patch('dasovbot.services.background.newest_backup_age', return_value=100)
+    async def test_no_alert_when_backup_fresh(self, mock_age, mock_sleep):
+        mock_sleep.side_effect = asyncio.CancelledError()
+        state = make_state(config=make_config())
+        bot = AsyncMock()
+        with self.assertRaises(asyncio.CancelledError):
+            await monitor_backups(bot, state)
+        bot.send_message.assert_not_awaited()
+
+    @patch('dasovbot.services.background.asyncio.sleep', new_callable=AsyncMock)
+    async def test_alerts_once_while_still_stale(self, mock_sleep):
+        from dasovbot.constants import BACKUP_STALE_SEC
+        mock_sleep.side_effect = [None, asyncio.CancelledError()]
+        state = make_state(config=make_config())
+        bot = AsyncMock()
+        with patch('dasovbot.services.background.newest_backup_age', return_value=BACKUP_STALE_SEC + 1):
+            with self.assertRaises(asyncio.CancelledError):
+                await monitor_backups(bot, state)
+        bot.send_message.assert_awaited_once()
+
+    @patch('dasovbot.services.background.asyncio.sleep', new_callable=AsyncMock)
+    async def test_send_failure_not_latched(self, mock_sleep):
+        from dasovbot.constants import BACKUP_STALE_SEC
+        mock_sleep.side_effect = [None, asyncio.CancelledError()]
+        state = make_state(config=make_config())
+        bot = AsyncMock()
+        bot.send_message.side_effect = Exception('network error')
+        with patch('dasovbot.services.background.newest_backup_age', return_value=BACKUP_STALE_SEC + 1):
+            with self.assertRaises(asyncio.CancelledError):
+                await monitor_backups(bot, state)
+        # A failed alert must retry on the next cycle rather than latch silent
+        self.assertEqual(bot.send_message.await_count, 2)
 
 
 class TestStopBackgroundTasks(unittest.IsolatedAsyncioTestCase):

@@ -20,6 +20,10 @@ TIMEOUT_SEC = 60 * 10  # 10 minutes
 RESTART_DELAY_SEC = 60  # delay before restarting a crashed worker loop
 PROCESS_INTERVAL_SEC = 1  # breather between consecutive downloads
 
+# Backup monitoring
+BACKUP_CHECK_INTERVAL_SEC = 60 * 60  # check backup freshness hourly
+BACKUP_STALE_SEC = 26 * 60 * 60  # alert if newest backup is older than this (2x the 12h default cron)
+
 # Attempts before a failing intent is dropped
 MAX_INTENT_RETRIES = 3
 
