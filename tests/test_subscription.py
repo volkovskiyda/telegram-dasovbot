@@ -981,6 +981,36 @@ class TestSubscribePlaylistBranches(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, SUBSCRIBE_PLAYLIST)
 
     @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_noop_keeps_playlists_for_next_selection(self, mock_get_ydl):
+        playlists = {'id1': {'title': 'P1', 'url': 'https://example.com/p1'}}
+        state = make_state()
+        context = make_context(state=state, user_data={'playlists': playlists})
+        message = make_message(chat_id=123)
+
+        from dasovbot.handlers.subscription import subscribe_playlist
+
+        noop_cq = make_callback_query(data='noop', message=message)
+        result = await subscribe_playlist(make_update(callback_query=noop_cq), context)
+        self.assertEqual(result, SUBSCRIBE_PLAYLIST)
+        self.assertEqual(context.user_data['playlists'], playlists)
+
+        select_cq = make_callback_query(data='id1', message=message)
+        result = await subscribe_playlist(make_update(callback_query=select_cq), context)
+        self.assertEqual(result, SUBSCRIBE_SHOW)
+        self.assertIn('https://example.com/p1', state.subscriptions)
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_cancel_clears_stored_playlists(self, mock_get_ydl):
+        context = make_context(user_data={'playlists': {'id1': {'title': 'P1', 'url': 'u'}}})
+        cq = make_callback_query(data='cancel', message=make_message())
+
+        from dasovbot.handlers.subscription import subscribe_playlist
+        result = await subscribe_playlist(make_update(callback_query=cq), context)
+
+        self.assertEqual(result, ConversationHandler.END)
+        self.assertNotIn('playlists', context.user_data)
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
     async def test_page_navigation_rebuilds_keyboard(self, mock_get_ydl):
         playlists = {'id1': {'title': 'P1', 'url': 'https://example.com/p1'}}
         message = make_message()

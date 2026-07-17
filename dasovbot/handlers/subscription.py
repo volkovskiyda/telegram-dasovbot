@@ -169,8 +169,6 @@ async def subscribe_url(update: Update, context) -> int:
 async def subscribe_playlist(update: Update, context) -> int:
     state: BotState = context.bot_data['state']
     ydl = get_ydl()
-    playlists = context.user_data.pop('playlists', None)
-    uploader_videos = context.user_data.pop('uploader_videos', None)
     callback_query = update.callback_query
 
     if callback_query:
@@ -178,18 +176,24 @@ async def subscribe_playlist(update: Update, context) -> int:
         message = callback_query.message
         callback_data = callback_query.data
         if callback_data == 'cancel':
+            context.user_data.pop('playlists', None)
+            context.user_data.pop('uploader_videos', None)
             try:
                 await message.delete()
             except Exception:
                 pass
             return ConversationHandler.END
+        # Keep 'playlists' in user_data on nav taps: popping it here would
+        # break the selection that follows
         if callback_data == 'noop':
             return SUBSCRIBE_PLAYLIST
-        if callback_data.startswith('page:') and playlists:
-            context.user_data['playlists'] = playlists
+        if callback_data.startswith('page:') and context.user_data.get('playlists'):
+            playlists = context.user_data['playlists']
             page = int(callback_data.split(':')[1])
             await message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(build_paginated_keyboard(playlists, page)))
             return SUBSCRIBE_PLAYLIST
+        playlists = context.user_data.pop('playlists', None)
+        uploader_videos = context.user_data.pop('uploader_videos', None)
         user = callback_query.from_user
         message_text = message.edit_text
 
@@ -207,6 +211,8 @@ async def subscribe_playlist(update: Update, context) -> int:
         title = playlist['title']
         url = playlist['url']
     else:
+        playlists = context.user_data.pop('playlists', None)
+        uploader_videos = context.user_data.pop('uploader_videos', None)
         message = update.message
         user = message.from_user
         message_text = message.reply_text
