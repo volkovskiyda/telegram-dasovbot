@@ -72,7 +72,9 @@ jobs:
 
   build:
     needs: [test, check-yt-dlp-release]
-    if: needs.check-yt-dlp-release.outputs.should_build == 'true'
+    # Never publish from a pull request: a new yt-dlp release would otherwise
+    # make should_build true and push :latest / cut a release from unmerged code.
+    if: github.event_name != 'pull_request' && needs.check-yt-dlp-release.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
