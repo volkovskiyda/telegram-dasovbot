@@ -8,6 +8,24 @@ from dasovbot.downloader import (
 from dasovbot.models import VideoInfo
 
 
+class TestInitDownloader(unittest.TestCase):
+    def test_get_ydl_uses_initialized_opts(self):
+        from tests.helpers import make_config
+        from dasovbot.downloader import init_downloader, get_ydl
+        init_downloader(make_config())
+        ydl = get_ydl()
+        self.assertEqual(ydl.params.get('merge_output_format'), 'mp4')
+        ydl2 = get_ydl()
+        self.assertIsNot(ydl, ydl2)
+
+
+class TestAddScaledPassthrough(unittest.TestCase):
+    def test_non_string_values_unchanged(self):
+        from dasovbot.downloader import add_scaled_after_title
+        self.assertEqual(add_scaled_after_title(42), 42)
+        self.assertEqual(add_scaled_after_title(None), None)
+
+
 class TestExtractUrl(unittest.TestCase):
     def test_from_video_info_webpage_url(self):
         info = VideoInfo(title='T', webpage_url='https://www.youtube.com/watch?v=abc')

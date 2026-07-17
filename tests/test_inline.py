@@ -338,5 +338,76 @@ class TestChosenQuery(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(call_kwargs['upload_date'])
 
 
+class TestInlineAnswerErrors(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.handlers.inline.extract_info', new_callable=AsyncMock)
+    async def test_ignored_query_answer_error_swallowed(self, mock_extract):
+        from dasovbot.handlers.inline import inline_query_handler
+        state = make_state(temporary_inline_queries={'q': TemporaryInlineQuery(ignored=True)})
+        iq = make_inline_query('q')
+        iq.answer.side_effect = Exception('timed out')
+        await inline_query_handler(make_update(inline_query=iq), make_context(state=state))
+        mock_extract.assert_not_awaited()
+
+    @patch('dasovbot.handlers.inline.extract_info', new_callable=AsyncMock)
+    async def test_cached_results_answer_error_swallowed(self, mock_extract):
+        from dasovbot.handlers.inline import inline_query_handler
+        tiq = TemporaryInlineQuery(results=[MagicMock()], inline_queries={'id': 'q'})
+        state = make_state(temporary_inline_queries={'q': tiq})
+        iq = make_inline_query('q')
+        iq.answer.side_effect = Exception('timed out')
+        context = make_context(state=state)
+        await inline_query_handler(make_update(inline_query=iq), context)
+        mock_extract.assert_not_awaited()
+        self.assertEqual(context.user_data['inline_queries'], tiq.inline_queries)
+
+    @patch('dasovbot.handlers.inline.extract_info', new_callable=AsyncMock, return_value=None)
+    async def test_no_info_answer_error_swallowed(self, mock_extract):
+        from dasovbot.handlers.inline import inline_query_handler
+        state = make_state()
+        iq = make_inline_query('q')
+        iq.answer.side_effect = Exception('timed out')
+        await inline_query_handler(make_update(inline_query=iq), make_context(state=state))
+        mock_extract.assert_awaited_once()
+
+    @patch('dasovbot.handlers.inline.process_entries', return_value=[])
+    @patch('dasovbot.handlers.inline.extract_info', new_callable=AsyncMock)
+    async def test_playlist_with_no_usable_entries_answers_empty(self, mock_extract, mock_entries):
+        from dasovbot.handlers.inline import inline_query_handler
+        mock_extract.return_value = VideoInfo(title='playlist', entries=[{'id': '1'}])
+        state = make_state()
+        iq = make_inline_query('q')
+        await inline_query_handler(make_update(inline_query=iq), make_context(state=state))
+        iq.answer.assert_awaited_once_with(results=[], cache_time=1)
+
+
+class TestChosenQueryUnknownResult(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.handlers.inline.append_intent', new_callable=AsyncMock)
+    async def test_unknown_result_id_returns_early(self, mock_append):
+        from dasovbot.handlers.inline import chosen_query
+        state = make_state()
+        result = make_chosen_inline_result(result_id='unknown')
+        context = make_context(state=state, user_data={'inline_queries': {'other': 'url'}})
+        await chosen_query(make_update(chosen_inline_result=result), context)
+        mock_append.assert_not_awaited()
+
+
+class TestPopulateVideoFallback(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.handlers.inline.append_intent', new_callable=AsyncMock)
+    async def test_cached_file_id_skips_intent(self, mock_append):
+        from dasovbot.handlers.inline import _populate_video
+        info = VideoInfo(title='T', file_id='fid')
+        state = make_state(videos={'q': info})
+        result = await _populate_video('q', ['1'], state)
+        self.assertIs(result, info)
+        mock_append.assert_not_awaited()
+
+    @patch('dasovbot.handlers.inline.append_intent', new_callable=AsyncMock)
+    async def test_uncached_appends_intent(self, mock_append):
+        from dasovbot.handlers.inline import _populate_video
+        state = make_state()
+        await _populate_video('q', ['1'], state)
+        mock_append.assert_awaited_once()
+
+
 if __name__ == '__main__':
     unittest.main()

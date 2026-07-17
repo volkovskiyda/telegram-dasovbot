@@ -89,6 +89,34 @@ class TestConvertToMp4(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, '/tmp/video.webm')
         self.assertEqual(mock_ffmpeg.call_count, 2)
 
+    @patch('dasovbot.downloader._cleanup_original')
+    @patch('dasovbot.downloader.os.remove')
+    @patch('dasovbot.downloader.os.path.exists', return_value=True)
+    @patch('dasovbot.downloader._run_ffmpeg', side_effect=[False, True])
+    async def test_partial_remux_output_removed_before_transcode(
+            self, mock_ffmpeg, mock_exists, mock_remove, mock_cleanup):
+        result = await convert_to_mp4('/tmp/video.webm')
+        self.assertEqual(result, '/tmp/video.mp4')
+        mock_remove.assert_called_once_with('/tmp/video.mp4')
+
+
+class TestRunFfmpegErrorCleanup(unittest.TestCase):
+    @patch('dasovbot.downloader.os.remove')
+    @patch('dasovbot.downloader.os.path.exists', return_value=True)
+    @patch('dasovbot.downloader.subprocess.run', side_effect=OSError('no ffmpeg'))
+    def test_oserror_removes_partial_output(self, mock_run, mock_exists, mock_remove):
+        result = _run_ffmpeg('/tmp/in.mkv', '/tmp/out.mp4', ['-c', 'copy'])
+        self.assertFalse(result)
+        mock_remove.assert_called_once_with('/tmp/out.mp4')
+
+
+class TestCleanupOriginal(unittest.TestCase):
+    @patch('dasovbot.downloader.os.remove', side_effect=OSError('gone'))
+    def test_remove_failure_logged_not_raised(self, mock_remove):
+        from dasovbot.downloader import _cleanup_original
+        with self.assertLogs('dasovbot.downloader', level='WARNING'):
+            _cleanup_original('/tmp/original.webm', '/tmp/new.mp4')
+
 
 if __name__ == '__main__':
     unittest.main()

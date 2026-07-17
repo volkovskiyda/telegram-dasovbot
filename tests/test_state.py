@@ -1,8 +1,10 @@
+import tempfile
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from tests.helpers import make_state
+from tests.helpers import make_config, make_state
 from dasovbot.models import VideoInfo, Intent, IntentMessage, Subscription
+from dasovbot.state import BotState
 
 
 class TestSetVideo(unittest.IsolatedAsyncioTestCase):
@@ -158,6 +160,48 @@ class TestClose(unittest.IsolatedAsyncioTestCase):
     async def test_noop_without_db(self):
         state = make_state(db=None)
         await state.close()
+
+
+class TestCreateAndLoad(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.config = make_config(config_folder=self.tmp.name)
+
+    async def test_create_opens_db_with_pending_migration(self):
+        state = await BotState.create(self.config)
+        try:
+            self.assertIsNotNone(state.db)
+            self.assertEqual(state.migration_progress['status'], 'pending')
+            self.assertIsNone(state.animation_file_id)
+        finally:
+            await state.close()
+
+    async def test_create_uses_configured_animation_file_id(self):
+        config = make_config(config_folder=self.tmp.name, animation_file_id='anim')
+        state = await BotState.create(config)
+        try:
+            self.assertEqual(state.animation_file_id, 'anim')
+        finally:
+            await state.close()
+
+    async def test_from_database_roundtrip(self):
+        state = await BotState.from_database(self.config)
+        await state.set_video('k', VideoInfo(title='T'))
+        await state.set_user('1', {'id': 1})
+        await state.set_subscription('u', Subscription(chat_ids=['1'], title='S'))
+        await state.set_intent('q', Intent(chat_ids=['1']))
+        await state.close()
+
+        reloaded = await BotState.from_database(self.config)
+        try:
+            self.assertEqual(reloaded.videos['k'].title, 'T')
+            self.assertEqual(reloaded.users['1'], {'id': 1})
+            self.assertEqual(reloaded.subscriptions['u'].title, 'S')
+            self.assertEqual(reloaded.intents['q'].chat_ids, ['1'])
+            self.assertEqual(reloaded.migration_progress['status'], 'skipped')
+        finally:
+            await reloaded.close()
 
 
 if __name__ == '__main__':

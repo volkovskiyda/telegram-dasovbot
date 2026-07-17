@@ -1,5 +1,6 @@
 import json
 import os
+import tempfile
 import unittest
 from unittest.mock import patch, MagicMock
 
@@ -253,6 +254,61 @@ class TestMigrateFromJson(unittest.IsolatedAsyncioTestCase):
         with patch('dasovbot.database.os.path.exists', return_value=False):
             await migrate_from_json(self.db, self.config, progress)
         self.assertIn(progress['status'], ('skipped', 'completed'))
+
+
+class TestInitDbPath(unittest.IsolatedAsyncioTestCase):
+    async def test_creates_parent_directory_and_schema(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = os.path.join(tmp, 'data', 'bot.db')
+            db = await init_db(db_path)
+            try:
+                cursor = await db.execute("SELECT name FROM sqlite_master WHERE type='table'")
+                tables = {row[0] for row in await cursor.fetchall()}
+            finally:
+                await db.close()
+            self.assertTrue(os.path.exists(db_path))
+            self.assertLessEqual({'videos', 'intents', 'users', 'subscriptions'}, tables)
+
+
+class TestMigrateFromJsonErrors(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.db = await make_memory_db()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.config = make_config(config_folder=self.tmp.name)
+        os.makedirs(os.path.join(self.tmp.name, 'data'))
+
+    async def asyncTearDown(self):
+        await self.db.close()
+
+    def _write(self, path, content):
+        with open(path, 'w', encoding='utf8') as f:
+            f.write(content)
+
+    async def test_corrupt_json_logged_and_skipped(self):
+        self._write(self.config.video_info_file, 'not valid json')
+        progress = {'status': 'pending', 'tables': {}, 'elapsed': 0.0}
+        with self.assertLogs('dasovbot.database', level='ERROR'):
+            await migrate_from_json(self.db, self.config, progress)
+        self.assertEqual(progress['status'], 'skipped')
+        self.assertEqual(await load_videos(self.db), {})
+
+    async def test_empty_json_file_skipped(self):
+        self._write(self.config.video_info_file, '{}')
+        progress = {'status': 'pending', 'tables': {}, 'elapsed': 0.0}
+        await migrate_from_json(self.db, self.config, progress)
+        self.assertEqual(progress['status'], 'skipped')
+        self.assertTrue(os.path.exists(self.config.video_info_file))
+
+    async def test_rename_failure_logged_but_migration_completes(self):
+        self._write(self.config.video_info_file, json.dumps({'url1': {'title': 'V'}}))
+        progress = {'status': 'pending', 'tables': {}, 'elapsed': 0.0}
+        with patch('dasovbot.database.os.rename', side_effect=OSError('denied')):
+            with self.assertLogs('dasovbot.database', level='ERROR'):
+                await migrate_from_json(self.db, self.config, progress)
+        self.assertEqual(progress['status'], 'completed')
+        videos = await load_videos(self.db)
+        self.assertEqual(videos['url1'].title, 'V')
 
 
 if __name__ == '__main__':

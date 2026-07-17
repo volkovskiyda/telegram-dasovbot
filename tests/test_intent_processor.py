@@ -305,5 +305,42 @@ class TestPostProcess(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(info.source, 'subscription')
 
 
+class TestPostProcessDeleteError(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.database.upsert_video', new_callable=AsyncMock)
+    async def test_delete_failure_still_returns_file_id(self, mock_upsert):
+        state = make_state(config=make_config())
+        info = VideoInfo(title='T', webpage_url='https://example.com', filepath=None)
+        message = AsyncMock()
+        message.video = MagicMock()
+        message.video.file_id = 'fid1'
+        message.chat_id = '999'
+        message.delete.side_effect = Exception('already deleted')
+        result = await post_process('q', info, message, state)
+        self.assertEqual(result, 'fid1')
+
+
+class TestProcessIntentEditErrors(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.database.delete_intent', new_callable=AsyncMock)
+    async def test_inline_edit_error_continues(self, mock_delete):
+        intent = Intent(inline_message_ids=['im1', 'im2'])
+        state = make_state(intents={'q': intent})
+        bot = AsyncMock()
+        bot.edit_message_media.side_effect = Exception('gone')
+        result = await process_intent(bot, 'q', 'fid', 'caption', state)
+        self.assertIs(result, intent)
+        self.assertEqual(bot.edit_message_media.await_count, 2)
+
+    @patch('dasovbot.database.delete_intent', new_callable=AsyncMock)
+    async def test_message_edit_error_continues(self, mock_delete):
+        intent = Intent(messages=[IntentMessage(chat='1', message='10'),
+                                  IntentMessage(chat='2', message='20')])
+        state = make_state(intents={'q': intent})
+        bot = AsyncMock()
+        bot.edit_message_media.side_effect = Exception('gone')
+        result = await process_intent(bot, 'q', 'fid', 'caption', state)
+        self.assertIs(result, intent)
+        self.assertEqual(bot.edit_message_media.await_count, 2)
+
+
 if __name__ == '__main__':
     unittest.main()

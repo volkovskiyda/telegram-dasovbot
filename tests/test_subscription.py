@@ -5,7 +5,7 @@ from telegram.ext import ConversationHandler
 
 from dasovbot.constants import (
     SUBSCRIBE_URL, SUBSCRIBE_PLAYLIST, SUBSCRIBE_SHOW,
-    UNSUBSCRIBE_PLAYLIST,
+    UNSUBSCRIBE_PLAYLIST, MULTIPLE_SUBSCRIBE_URLS,
 )
 from dasovbot.handlers.subscription import (
     _button_size, _paginate_items, build_paginated_keyboard, BUTTON_OVERHEAD,
@@ -835,6 +835,318 @@ class TestMultipleSubscribeUrls(unittest.IsolatedAsyncioTestCase):
         self.assertIn('123', existing_sub.chat_ids)
         self.assertIn('999', existing_sub.chat_ids)
         self.assertEqual(result, ConversationHandler.END)
+
+
+class TestUnsubscribePlaylistNavigation(unittest.IsolatedAsyncioTestCase):
+
+    async def test_noop_keeps_state_and_subscriptions(self):
+        user_subs = {'id1': {'title': 'Sub1', 'url': 'https://example.com/c1/videos'}}
+        message = make_message(chat_id=123)
+        cq = make_callback_query(data='noop', message=message)
+        update = make_update(callback_query=cq)
+        context = make_context(user_data={'user_subscriptions': user_subs})
+
+        from dasovbot.handlers.subscription import unsubscribe_playlist
+        result = await unsubscribe_playlist(update, context)
+
+        self.assertEqual(result, UNSUBSCRIBE_PLAYLIST)
+        message.edit_text.assert_not_awaited()
+        self.assertEqual(context.user_data['user_subscriptions'], user_subs)
+
+    async def test_page_navigation_rebuilds_keyboard(self):
+        user_subs = {'id1': {'title': 'Sub1', 'url': 'https://example.com/c1/videos'}}
+        message = make_message(chat_id=123)
+        cq = make_callback_query(data='page:0', message=message)
+        update = make_update(callback_query=cq)
+        context = make_context(user_data={'user_subscriptions': user_subs})
+
+        from dasovbot.handlers.subscription import unsubscribe_playlist
+        result = await unsubscribe_playlist(update, context)
+
+        self.assertEqual(result, UNSUBSCRIBE_PLAYLIST)
+        message.edit_reply_markup.assert_awaited_once()
+        self.assertEqual(context.user_data['user_subscriptions'], user_subs)
+
+    async def test_cancel_delete_failure_still_ends(self):
+        message = make_message()
+        message.delete.side_effect = Exception('already deleted')
+        cq = make_callback_query(data='cancel', message=message)
+        update = make_update(callback_query=cq)
+
+        from dasovbot.handlers.subscription import unsubscribe_playlist
+        result = await unsubscribe_playlist(update, make_context())
+
+        self.assertEqual(result, ConversationHandler.END)
+
+
+class TestSubscribeUrlBranches(unittest.IsolatedAsyncioTestCase):
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_playlists_without_entries_replies_error(self, mock_get_ydl):
+        uploader_url = 'https://example.com/c'
+
+        def extract(url, download=False):
+            if url == uploader_url:
+                return {'uploader_url': uploader_url}
+            if url == f'{uploader_url}/playlists':
+                return {'entries': None, 'uploader': 'Uploader'}
+            raise ValueError(url)
+
+        mock_get_ydl.return_value.extract_info.side_effect = extract
+        message = make_message(chat_id=123, text=f'/subscribe {uploader_url}')
+        update = make_update(message=message)
+
+        from dasovbot.handlers.subscription import subscribe_url
+        result = await subscribe_url(update, make_context())
+
+        self.assertEqual(result, ConversationHandler.END)
+        self.assertIn('Error occurred', message.reply_text.await_args.args[0])
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_streams_playlist_offered_when_available(self, mock_get_ydl):
+        uploader_url = 'https://example.com/c'
+
+        def extract(url, download=False):
+            if url == uploader_url:
+                return {'uploader_url': uploader_url}
+            if url == f'{uploader_url}/playlists':
+                return {'entries': [{'title': 'P1', 'url': f'{uploader_url}/p1'}], 'uploader': 'Uploader'}
+            if url == f'{uploader_url}/streams':
+                return {}
+            raise ValueError(url)
+
+        mock_get_ydl.return_value.extract_info.side_effect = extract
+        message = make_message(chat_id=123, text=f'/subscribe {uploader_url}')
+        update = make_update(message=message)
+        context = make_context()
+
+        from dasovbot.handlers.subscription import subscribe_url
+        result = await subscribe_url(update, context)
+
+        self.assertEqual(result, SUBSCRIBE_PLAYLIST)
+        titles = [item['title'] for item in context.user_data['playlists'].values()]
+        self.assertIn('Uploader Streams', titles)
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_query_matching_playlist_subscribes_directly(self, mock_get_ydl):
+        uploader_url = 'https://example.com/c'
+        query = f'{uploader_url}/p1'
+
+        def extract(url, download=False):
+            if url == query:
+                return {'uploader_url': uploader_url, 'title': 'P1', 'uploader': 'Uploader'}
+            if url == uploader_url:
+                return {}
+            if url == f'{uploader_url}/playlists':
+                return {'entries': [{'title': 'P1', 'url': query}], 'uploader': 'Uploader'}
+            if url == f'{uploader_url}/streams':
+                raise ValueError('no streams')
+            raise ValueError(url)
+
+        mock_get_ydl.return_value.extract_info.side_effect = extract
+        state = make_state()
+        message = make_message(chat_id=123, text=f'/subscribe {query}')
+        update = make_update(message=message)
+        context = make_context(state=state)
+
+        from dasovbot.handlers.subscription import subscribe_url
+        result = await subscribe_url(update, context)
+
+        self.assertEqual(result, SUBSCRIBE_SHOW)
+        self.assertIn(query, state.subscriptions)
+
+
+class TestSubscribePlaylistBranches(unittest.IsolatedAsyncioTestCase):
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_cancel_delete_failure_still_ends(self, mock_get_ydl):
+        message = make_message()
+        message.delete.side_effect = Exception('already deleted')
+        cq = make_callback_query(data='cancel', message=message)
+        update = make_update(callback_query=cq)
+
+        from dasovbot.handlers.subscription import subscribe_playlist
+        result = await subscribe_playlist(update, make_context())
+
+        self.assertEqual(result, ConversationHandler.END)
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_noop_stays_in_state(self, mock_get_ydl):
+        cq = make_callback_query(data='noop', message=make_message())
+        update = make_update(callback_query=cq)
+
+        from dasovbot.handlers.subscription import subscribe_playlist
+        result = await subscribe_playlist(update, make_context())
+
+        self.assertEqual(result, SUBSCRIBE_PLAYLIST)
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_page_navigation_rebuilds_keyboard(self, mock_get_ydl):
+        playlists = {'id1': {'title': 'P1', 'url': 'https://example.com/p1'}}
+        message = make_message()
+        cq = make_callback_query(data='page:0', message=message)
+        update = make_update(callback_query=cq)
+        context = make_context(user_data={'playlists': playlists})
+
+        from dasovbot.handlers.subscription import subscribe_playlist
+        result = await subscribe_playlist(update, context)
+
+        self.assertEqual(result, SUBSCRIBE_PLAYLIST)
+        message.edit_reply_markup.assert_awaited_once()
+        self.assertEqual(context.user_data['playlists'], playlists)
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_message_without_url_replies_invalid(self, mock_get_ydl):
+        message = make_message(chat_id=123, text='/subscribe')
+        update = make_update(message=message)
+
+        from dasovbot.handlers.subscription import subscribe_playlist
+        result = await subscribe_playlist(update, make_context())
+
+        self.assertEqual(result, ConversationHandler.END)
+        self.assertIn('Invalid selection', message.reply_text.await_args.args[0])
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_direct_url_extract_failure_replies_error(self, mock_get_ydl):
+        mock_get_ydl.return_value.extract_info.side_effect = ValueError('boom')
+        state = make_state()
+        message = make_message(chat_id=123, text='/subscribe https://example.com/p1')
+        update = make_update(message=message)
+
+        from dasovbot.handlers.subscription import subscribe_playlist
+        result = await subscribe_playlist(update, make_context(state=state))
+
+        self.assertEqual(result, ConversationHandler.END)
+        self.assertIn('Error occurred', message.reply_text.await_args.args[0])
+        self.assertEqual(state.subscriptions, {})
+
+
+class TestUnsubscribePlaylistNoState(unittest.IsolatedAsyncioTestCase):
+
+    async def test_selection_without_stored_subs_replies_error(self):
+        message = make_message(chat_id=123)
+        cq = make_callback_query(data='some-id', message=message)
+        update = make_update(callback_query=cq)
+
+        from dasovbot.handlers.subscription import unsubscribe_playlist
+        result = await unsubscribe_playlist(update, make_context(user_data={}))
+
+        self.assertEqual(result, ConversationHandler.END)
+        self.assertIn('Error occurred', message.edit_text.await_args.args[0])
+
+
+class TestPlaylistsBranches(unittest.IsolatedAsyncioTestCase):
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_streams_subscriber_offered_videos(self, mock_get_ydl):
+        base = 'https://example.com/c'
+        sub = Subscription(chat_ids=['123'], title='Streams')
+        no_uploader = Subscription(chat_ids=['123'], title='Odd')
+        state = make_state(subscriptions={
+            f'{base}/streams': sub,
+            'https://example.com/no-uploader': no_uploader,
+        })
+
+        def extract(url, download=False):
+            if url == f'{base}/streams':
+                return {'uploader_url': base}
+            if url == f'{base}/videos':
+                return {}
+            if url == 'https://example.com/no-uploader':
+                return {}
+            raise ValueError(url)
+
+        mock_get_ydl.return_value.extract_info.side_effect = extract
+        message = make_message(chat_id=123)
+        update = make_update(message=message)
+
+        from dasovbot.handlers.subscription import playlists
+        result = await playlists(update, make_context(state=state))
+
+        self.assertEqual(result, ConversationHandler.END)
+        replies = [call.args[0] for call in message.reply_text.await_args_list]
+        self.assertTrue(any('Available *Videos*' in reply for reply in replies))
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_probe_failures_suggest_nothing(self, mock_get_ydl):
+        base_a = 'https://example.com/a'
+        base_b = 'https://example.com/b'
+        state = make_state(subscriptions={
+            f'{base_a}/videos': Subscription(chat_ids=['123'], title='Videos'),
+            f'{base_b}/streams': Subscription(chat_ids=['123'], title='Streams'),
+        })
+
+        def extract(url, download=False):
+            if url == f'{base_a}/videos':
+                return {'uploader_url': base_a}
+            if url == f'{base_b}/streams':
+                return {'uploader_url': base_b}
+            raise ValueError(url)  # both probes fail
+
+        mock_get_ydl.return_value.extract_info.side_effect = extract
+        message = make_message(chat_id=123)
+        update = make_update(message=message)
+
+        from dasovbot.handlers.subscription import playlists
+        result = await playlists(update, make_context(state=state))
+
+        self.assertEqual(result, ConversationHandler.END)
+        message.reply_text.assert_not_awaited()
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_no_subscriptions_reply_failure_swallowed(self, mock_get_ydl):
+        message = make_message(chat_id=123)
+        message.reply_text.side_effect = Exception('blocked')
+        update = make_update(message=message)
+
+        from dasovbot.handlers.subscription import playlists
+        result = await playlists(update, make_context(state=make_state()))
+
+        self.assertEqual(result, ConversationHandler.END)
+
+
+class TestSubscriptionListErrors(unittest.IsolatedAsyncioTestCase):
+
+    async def test_reply_failure_swallowed(self):
+        sub = Subscription(chat_ids=['123'], title='Sub1')
+        state = make_state(subscriptions={'https://example.com/c1/videos': sub})
+        message = make_message(chat_id=123)
+        message.reply_markdown.side_effect = Exception('blocked')
+        update = make_update(message=message)
+
+        from dasovbot.handlers.subscription import subscription_list
+        await subscription_list(update, make_context(state=state))  # must not raise
+
+
+class TestMultipleSubscribe(unittest.IsolatedAsyncioTestCase):
+
+    async def test_prompts_for_urls(self):
+        message = make_message(text='/multiple_subscribe')
+        update = make_update(message=message)
+
+        from dasovbot.handlers.subscription import multiple_subscribe
+        result = await multiple_subscribe(update, None)
+
+        self.assertEqual(result, MULTIPLE_SUBSCRIBE_URLS)
+        message.reply_text.assert_awaited_once_with('Enter urls')
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_blank_lines_counted_as_failed(self, mock_get_ydl):
+        mock_get_ydl.return_value.extract_info.return_value = {
+            'title': 'T', 'uploader': 'U',
+        }
+        state = make_state()
+        message = make_message(chat_id=123, text='https://example.com/a\n\nhttps://example.com/b')
+        update = make_update(message=message)
+
+        from dasovbot.handlers.subscription import multiple_subscribe_urls
+        result = await multiple_subscribe_urls(update, make_context(state=state))
+
+        self.assertEqual(result, ConversationHandler.END)
+        self.assertIn('https://example.com/a', state.subscriptions)
+        self.assertIn('https://example.com/b', state.subscriptions)
+        replies = [call.args[0] for call in message.reply_text.await_args_list]
+        self.assertTrue(any('Failed subscriptions' in reply for reply in replies))
 
 
 if __name__ == '__main__':

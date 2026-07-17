@@ -207,6 +207,29 @@ class TestRetryLowerQuality(unittest.IsolatedAsyncioTestCase):
         mock_remove.assert_called_once_with('/media/video.scaled.mp4')
 
 
+class TestRetryLowerQualityPostProcess(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.services.intent_processor.remove')
+    @patch('dasovbot.services.intent_processor.process_intent', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.post_process', new_callable=AsyncMock, return_value=None)
+    @patch('dasovbot.services.intent_processor.convert_to_mp4', new_callable=AsyncMock, return_value='/media/video.scaled.mp4')
+    @patch('dasovbot.services.intent_processor.send_message_developer', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.yt_dlp.YoutubeDL')
+    async def test_post_process_failure_returns_false(
+            self, mock_ydl_cls, mock_send_dev, mock_convert, mock_post, mock_process_intent, mock_remove):
+        mock_ydl_cls.return_value.__enter__.return_value.extract_info.return_value = {
+            'webpage_url': 'https://www.youtube.com/watch?v=1',
+            'title': 'title',
+            'requested_downloads': [
+                {'filepath': '/media/video.scaled.webm', 'filename': 'video.scaled.webm'},
+            ],
+        }
+        state = make_state(config=make_config())
+        result = await retry_lower_quality(AsyncMock(), 'q', make_video_info(), state)
+        self.assertFalse(result)
+        mock_process_intent.assert_not_awaited()
+        mock_remove.assert_called_once_with('/media/video.scaled.mp4')
+
+
 class TestProcessIntents(unittest.IsolatedAsyncioTestCase):
     @patch('dasovbot.services.intent_processor.process_query', new_callable=AsyncMock)
     @patch('dasovbot.services.intent_processor.asyncio.sleep', new_callable=AsyncMock)
@@ -225,6 +248,22 @@ class TestProcessIntents(unittest.IsolatedAsyncioTestCase):
         mock_process_query.assert_awaited_once_with(bot, 'high', state)
         self.assertTrue(state.download_queue.empty())
         self.assertIn('monitor_process_intents', state.background_task_status)
+
+    @patch('dasovbot.services.intent_processor.process_query', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.asyncio.sleep', new_callable=AsyncMock)
+    async def test_waits_on_queue_when_all_intents_ignored(self, mock_sleep, mock_process_query):
+        mock_sleep.side_effect = [None, asyncio.CancelledError()]
+        # Real queue would deadlock: the drain loop empties it before get() is
+        # awaited, so stub the queue to observe the blocking wait directly
+        queue = MagicMock()
+        queue.empty.return_value = True
+        queue.get = AsyncMock(return_value='q')
+        state = make_state(config=make_config(), intents={'q': Intent(ignored=True)},
+                           download_queue=queue)
+        with self.assertRaises(asyncio.CancelledError):
+            await process_intents(AsyncMock(), state)
+        queue.get.assert_awaited_once()
+        mock_process_query.assert_not_awaited()
 
 
 class TestMonitorProcessIntents(unittest.IsolatedAsyncioTestCase):

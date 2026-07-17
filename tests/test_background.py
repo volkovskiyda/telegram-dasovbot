@@ -6,8 +6,8 @@ from dasovbot.models import Subscription, TemporaryInlineQuery, VideoInfo
 from dasovbot.constants import RESTART_DELAY_SEC
 from dasovbot.services.background import (
     populate_animation, populate_video, populate_playlist, run_populate_subscriptions,
-    clear_temporary_inline_queries, start_background_tasks, stop_background_tasks,
-    run_forever,
+    populate_subscriptions, clear_temporary_inline_queries,
+    start_background_tasks, stop_background_tasks, run_forever, _on_task_done,
 )
 from tests.helpers import make_state, make_config
 
@@ -234,6 +234,70 @@ class TestClearTemporaryInlineQueries(unittest.IsolatedAsyncioTestCase):
             await clear_temporary_inline_queries(state)
         self.assertIn('ignored', state.temporary_inline_queries)
         self.assertTrue(ignored.ignored)
+
+
+class TestPopulateSubscriptionsLoop(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.services.background.asyncio.sleep', new_callable=AsyncMock)
+    @patch('dasovbot.services.background.run_populate_subscriptions', new_callable=AsyncMock)
+    async def test_runs_then_sleeps_for_interval(self, mock_run, mock_sleep):
+        from dasovbot.constants import INTERVAL_SEC
+        mock_sleep.side_effect = asyncio.CancelledError()
+        state = make_state()
+        with self.assertRaises(asyncio.CancelledError):
+            await populate_subscriptions(state)
+        mock_run.assert_awaited_once_with(state)
+        mock_sleep.assert_awaited_once_with(INTERVAL_SEC)
+
+
+class TestRunPopulateSubscriptionsVanished(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.services.background.populate_playlist', new_callable=AsyncMock)
+    async def test_skips_subscription_removed_mid_iteration(self, mock_populate):
+        state = make_state(subscriptions={'url': None})
+        await run_populate_subscriptions(state)
+        mock_populate.assert_not_awaited()
+        self.assertIn('populate_subscriptions', state.background_task_status)
+
+
+class TestClearTemporaryInlineQueriesVanished(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.services.background.asyncio.sleep', new_callable=AsyncMock)
+    async def test_skips_entry_removed_mid_iteration(self, mock_sleep):
+        mock_sleep.side_effect = asyncio.CancelledError()
+        state = make_state(temporary_inline_queries={'url': None})
+        with self.assertRaises(asyncio.CancelledError):
+            await clear_temporary_inline_queries(state)
+        self.assertIn('url', state.temporary_inline_queries)
+
+
+class TestOnTaskDone(unittest.IsolatedAsyncioTestCase):
+    async def test_logs_failed_task_and_discards_reference(self):
+        state = make_state()
+
+        async def boom():
+            raise RuntimeError('task failed')
+
+        task = asyncio.create_task(boom())
+        state.background_tasks.add(task)
+        from functools import partial
+        task.add_done_callback(partial(_on_task_done, state))
+        with self.assertLogs('dasovbot.services.background', level='ERROR'):
+            await asyncio.gather(task, return_exceptions=True)
+            await asyncio.sleep(0)
+        self.assertNotIn(task, state.background_tasks)
+
+    async def test_cancelled_task_not_logged_as_error(self):
+        state = make_state()
+
+        async def forever():
+            await asyncio.sleep(3600)
+
+        task = asyncio.create_task(forever())
+        state.background_tasks.add(task)
+        from functools import partial
+        task.add_done_callback(partial(_on_task_done, state))
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        await asyncio.sleep(0)
+        self.assertNotIn(task, state.background_tasks)
 
 
 if __name__ == '__main__':

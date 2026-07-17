@@ -217,5 +217,32 @@ class TestSystem(DashboardViewTestCase):
         self.assertEqual(resp.headers['Location'], '/')
 
 
+class TestIgnoredInlineTitle(DashboardViewTestCase):
+    async def test_uses_title_from_cached_inline_results(self):
+        from unittest.mock import MagicMock
+        result = MagicMock()
+        result.title = 'Cached Inline Title'
+        self.state.temporary_inline_queries = {
+            'https://example.com/tiq': TemporaryInlineQuery(ignored=True, results=[result]),
+        }
+        resp = await self.client.get('/ignored')
+        self.assertEqual(resp.status, 200)
+        text = await resp.text()
+        self.assertIn('Cached Inline Title', text)
+
+
+class TestSubscriptionsUnknownUser(DashboardViewTestCase):
+    async def test_label_falls_back_to_chat_id(self):
+        self.state.subscriptions = {
+            'https://example.com/channel': Subscription(chat_ids=['42'], title='My Channel'),
+        }
+        self.state.users = {}
+        resp = await self.client.get('/subscriptions')
+        self.assertEqual(resp.status, 200)
+        text = await resp.text()
+        self.assertIn('42', text)
+        self.assertNotIn('(42)', text)
+
+
 if __name__ == '__main__':
     unittest.main()

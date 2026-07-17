@@ -112,6 +112,21 @@ class TestDownloadUrl(unittest.IsolatedAsyncioTestCase):
 
     @patch('dasovbot.handlers.download.append_intent', new_callable=AsyncMock)
     @patch('dasovbot.handlers.download.extract_info', new_callable=AsyncMock)
+    async def test_no_animation_appends_chat_id_intent(self, mock_extract, mock_append):
+        mock_extract.return_value = VideoInfo(title='T', caption='c', upload_date='20260101')
+        state = make_state(animation_file_id=None)
+        message = make_message(chat_id=123, text='/download https://example.com/v')
+        update = make_update(message=message)
+
+        from dasovbot.handlers.download import download_url
+        result = await download_url(update, make_context(state=state))
+
+        self.assertEqual(result, ConversationHandler.END)
+        message.reply_video.assert_not_awaited()
+        self.assertEqual(mock_append.await_args.kwargs['chat_ids'], ['123'])
+
+    @patch('dasovbot.handlers.download.append_intent', new_callable=AsyncMock)
+    @patch('dasovbot.handlers.download.extract_info', new_callable=AsyncMock)
     async def test_reply_video_error_still_stores_user(self, mock_extract, mock_append):
         info = VideoInfo(title='Test Video', caption='cap', webpage_url='https://example.com/v1')
         mock_extract.return_value = info
