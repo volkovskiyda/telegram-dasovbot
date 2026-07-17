@@ -116,7 +116,7 @@ async def post_process(query: str, info: VideoInfo, message: Message, state: Bot
         if intent:
             chat_ids = intent.chat_ids or [m.chat for m in intent.messages]
         developer_id = state.config.developer_id
-        if developer_id in chat_ids or str(message.chat_id) == developer_id:
+        if (developer_id in chat_ids or str(message.chat_id) == developer_id) and '/media/' in filepath:
             export_path = '/export/'.join(filepath.rsplit('/media/', 1))
             try:
                 loop = asyncio.get_running_loop()
@@ -125,6 +125,8 @@ async def post_process(query: str, info: VideoInfo, message: Message, state: Bot
                 logger.error("move_file error: %s", query, exc_info=True)
                 remove(filepath)
         else:
+            # A path outside the media folder cannot be mapped to /export/;
+            # moving it onto itself would silently leak the file on disk
             remove(filepath)
     return file_id
 

@@ -230,6 +230,44 @@ class TestPostProcess(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(info.origin.width, 1920)
         self.assertEqual(info.origin.height, 1080)
 
+    @patch('dasovbot.services.intent_processor.remove')
+    @patch('dasovbot.services.intent_processor.shutil.move')
+    @patch('dasovbot.database.upsert_intent', new_callable=AsyncMock)
+    @patch('dasovbot.database.upsert_video', new_callable=AsyncMock)
+    async def test_developer_export_moves_file(self, mock_upsert_video, mock_upsert_intent, mock_move, mock_remove):
+        intent = Intent(chat_ids=['123'])
+        state = make_state(config=make_config(developer_id='123'), intents={'q': intent})
+        info = VideoInfo(title='T', webpage_url='https://example.com', filepath='/tmp/media/v.mp4')
+        msg = self._make_message()
+        await post_process('q', info, msg, state)
+        mock_move.assert_called_once_with('/tmp/media/v.mp4', '/tmp/export/v.mp4')
+        mock_remove.assert_not_called()
+
+    @patch('dasovbot.services.intent_processor.remove')
+    @patch('dasovbot.services.intent_processor.shutil.move', side_effect=OSError('boom'))
+    @patch('dasovbot.database.upsert_intent', new_callable=AsyncMock)
+    @patch('dasovbot.database.upsert_video', new_callable=AsyncMock)
+    async def test_developer_export_move_error_removes_file(self, mock_upsert_video, mock_upsert_intent, mock_move, mock_remove):
+        intent = Intent(chat_ids=['123'])
+        state = make_state(config=make_config(developer_id='123'), intents={'q': intent})
+        info = VideoInfo(title='T', webpage_url='https://example.com', filepath='/tmp/media/v.mp4')
+        msg = self._make_message()
+        await post_process('q', info, msg, state)
+        mock_remove.assert_called_once_with('/tmp/media/v.mp4')
+
+    @patch('dasovbot.services.intent_processor.remove')
+    @patch('dasovbot.services.intent_processor.shutil.move')
+    @patch('dasovbot.database.upsert_intent', new_callable=AsyncMock)
+    @patch('dasovbot.database.upsert_video', new_callable=AsyncMock)
+    async def test_developer_export_skips_path_outside_media(self, mock_upsert_video, mock_upsert_intent, mock_move, mock_remove):
+        intent = Intent(chat_ids=['123'])
+        state = make_state(config=make_config(developer_id='123'), intents={'q': intent})
+        info = VideoInfo(title='T', webpage_url='https://example.com', filepath='/tmp/v.mp4')
+        msg = self._make_message()
+        await post_process('q', info, msg, state)
+        mock_move.assert_not_called()
+        mock_remove.assert_called_once_with('/tmp/v.mp4')
+
     @patch('dasovbot.database.upsert_video', new_callable=AsyncMock)
     async def test_falls_back_to_document_file_id(self, mock_upsert):
         state = make_state(config=make_config())
