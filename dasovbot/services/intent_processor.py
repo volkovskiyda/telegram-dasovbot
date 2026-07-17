@@ -132,19 +132,21 @@ async def post_process(query: str, info: VideoInfo, message: Message, state: Bot
 
 
 async def process_intents(bot: Bot, state: BotState):
+    from dasovbot.constants import PROCESS_INTERVAL_SEC
     while True:
-        await asyncio.sleep(10)
         state.background_task_status['monitor_process_intents'] = now()
         # The queue is only a wake-up signal: drain accumulated puts so it stays bounded
         while not state.download_queue.empty():
             state.download_queue.get_nowait()
         filtered_intents = filter_intents(state.intents)
         if not filtered_intents:
+            # Nothing to do: block until a new request signals the queue, then
+            # loop back and re-scan immediately (no throttle on the idle path).
             await state.download_queue.get()
-        if not filtered_intents:
             continue
         max_priority = max(filtered_intents, key=lambda key: filtered_intents[key].priority)
         await process_query(bot, max_priority, state)
+        await asyncio.sleep(PROCESS_INTERVAL_SEC)
 
 
 async def monitor_process_intents(bot: Bot, state: BotState):

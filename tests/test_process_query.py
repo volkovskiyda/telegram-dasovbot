@@ -234,7 +234,9 @@ class TestProcessIntents(unittest.IsolatedAsyncioTestCase):
     @patch('dasovbot.services.intent_processor.process_query', new_callable=AsyncMock)
     @patch('dasovbot.services.intent_processor.asyncio.sleep', new_callable=AsyncMock)
     async def test_drains_queue_and_processes_highest_priority(self, mock_sleep, mock_process_query):
-        mock_sleep.side_effect = [None, asyncio.CancelledError()]
+        # The throttle sleep runs after a download; raise on it to stop the loop
+        # after exactly one processed intent.
+        mock_sleep.side_effect = asyncio.CancelledError()
         state = make_state(config=make_config(), intents={
             'low': Intent(priority=1),
             'high': Intent(priority=5),
@@ -252,12 +254,12 @@ class TestProcessIntents(unittest.IsolatedAsyncioTestCase):
     @patch('dasovbot.services.intent_processor.process_query', new_callable=AsyncMock)
     @patch('dasovbot.services.intent_processor.asyncio.sleep', new_callable=AsyncMock)
     async def test_waits_on_queue_when_all_intents_ignored(self, mock_sleep, mock_process_query):
-        mock_sleep.side_effect = [None, asyncio.CancelledError()]
         # Real queue would deadlock: the drain loop empties it before get() is
-        # awaited, so stub the queue to observe the blocking wait directly
+        # awaited, so stub the queue to observe the blocking wait directly. The
+        # idle path never reaches the throttle sleep, so break the loop on get().
         queue = MagicMock()
         queue.empty.return_value = True
-        queue.get = AsyncMock(return_value='q')
+        queue.get = AsyncMock(side_effect=asyncio.CancelledError())
         state = make_state(config=make_config(), intents={'q': Intent(ignored=True)},
                            download_queue=queue)
         with self.assertRaises(asyncio.CancelledError):
