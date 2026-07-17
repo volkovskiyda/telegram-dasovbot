@@ -4,9 +4,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from telegram.error import NetworkError
 
-from dasovbot.constants import MAX_INTENT_RETRIES
+from dasovbot.constants import MAX_INTENT_RETRIES, RESTART_DELAY_SEC
 from dasovbot.models import VideoInfo, Intent
-from dasovbot.services.intent_processor import process_query, retry_lower_quality, process_intents
+from dasovbot.services.intent_processor import (
+    process_query, retry_lower_quality, process_intents, monitor_process_intents,
+)
 from tests.helpers import make_state, make_config
 
 
@@ -223,6 +225,44 @@ class TestProcessIntents(unittest.IsolatedAsyncioTestCase):
         mock_process_query.assert_awaited_once_with(bot, 'high', state)
         self.assertTrue(state.download_queue.empty())
         self.assertIn('monitor_process_intents', state.background_task_status)
+
+
+class TestMonitorProcessIntents(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.services.intent_processor.send_message_developer', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.asyncio.sleep', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.process_intents', new_callable=AsyncMock)
+    async def test_restarts_after_crash_and_notifies(self, mock_process, mock_sleep, mock_send_dev):
+        mock_process.side_effect = [ValueError('boom'), asyncio.CancelledError()]
+        state = make_state(config=make_config())
+        bot = AsyncMock()
+        with self.assertRaises(asyncio.CancelledError):
+            await monitor_process_intents(bot, state)
+        self.assertEqual(mock_process.await_count, 2)
+        mock_send_dev.assert_awaited_once()
+        mock_sleep.assert_awaited_once_with(RESTART_DELAY_SEC)
+
+    @patch('dasovbot.persistence.empty_media_folder_files')
+    @patch('dasovbot.services.intent_processor.send_message_developer', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.asyncio.sleep', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.process_intents', new_callable=AsyncMock)
+    async def test_empties_media_folder_when_configured(self, mock_process, mock_sleep, mock_send_dev, mock_empty):
+        mock_process.side_effect = [ValueError('boom'), asyncio.CancelledError()]
+        config = make_config(empty_media_folder=True)
+        state = make_state(config=config)
+        with self.assertRaises(asyncio.CancelledError):
+            await monitor_process_intents(AsyncMock(), state)
+        mock_empty.assert_called_once_with(config.media_folder)
+
+    @patch('dasovbot.persistence.empty_media_folder_files')
+    @patch('dasovbot.services.intent_processor.send_message_developer', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.asyncio.sleep', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.process_intents', new_callable=AsyncMock)
+    async def test_keeps_media_folder_by_default(self, mock_process, mock_sleep, mock_send_dev, mock_empty):
+        mock_process.side_effect = [ValueError('boom'), asyncio.CancelledError()]
+        state = make_state(config=make_config())
+        with self.assertRaises(asyncio.CancelledError):
+            await monitor_process_intents(AsyncMock(), state)
+        mock_empty.assert_not_called()
 
 
 if __name__ == '__main__':
