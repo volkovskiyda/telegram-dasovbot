@@ -185,7 +185,7 @@ async def subscribe_playlist(update: Update, context) -> int:
             return ConversationHandler.END
         if callback_data == 'noop':
             return SUBSCRIBE_PLAYLIST
-        if callback_data.startswith('page:'):
+        if callback_data.startswith('page:') and playlists:
             context.user_data['playlists'] = playlists
             page = int(callback_data.split(':')[1])
             await message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(build_paginated_keyboard(playlists, page)))
@@ -198,7 +198,12 @@ async def subscribe_playlist(update: Update, context) -> int:
             await message_text("Error occurred", reply_markup=InlineKeyboardMarkup([]))
             return ConversationHandler.END
 
-        playlist = playlists[callback_data]
+        playlist = playlists.get(callback_data)
+        if not playlist:
+            # Stale keyboard: the playlist mapping was rebuilt with new keys
+            logger.warning("%s # subscribe_playlist invalid selection: %s", extract_user(user), callback_data)
+            await message_text("Invalid selection", reply_markup=InlineKeyboardMarkup([]))
+            return ConversationHandler.END
         title = playlist['title']
         url = playlist['url']
     else:
@@ -336,7 +341,13 @@ async def unsubscribe_playlist(update: Update, context) -> int:
             await message_text("Error occurred", reply_markup=InlineKeyboardMarkup([]))
             return ConversationHandler.END
 
-        query = user_subs[callback_data]['url']
+        entry = user_subs.get(callback_data)
+        if not entry:
+            # Stale keyboard: the subscription mapping was rebuilt with new keys
+            logger.warning("%s # unsubscribe_playlist invalid selection: %s", extract_user(user), callback_data)
+            await message_text("Invalid selection", reply_markup=InlineKeyboardMarkup([]))
+            return ConversationHandler.END
+        query = entry['url']
     else:
         message = update.message
         user = message.from_user

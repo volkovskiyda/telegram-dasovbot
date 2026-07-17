@@ -332,6 +332,41 @@ class TestSubscribePlaylist(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, SUBSCRIBE_SHOW)
 
 
+class TestSubscribePlaylistStaleCallback(unittest.IsolatedAsyncioTestCase):
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_stale_selection_replies_invalid(self, mock_get_ydl):
+        state = make_state()
+        playlists = {'id1': {'title': 'T', 'url': 'https://example.com/p1'}}
+        message = make_message(chat_id=123)
+        cq = make_callback_query(data='stale-id', message=message)
+        update = make_update(callback_query=cq)
+        context = make_context(state=state, user_data={'playlists': playlists})
+
+        from dasovbot.handlers.subscription import subscribe_playlist
+        result = await subscribe_playlist(update, context)
+
+        self.assertEqual(result, ConversationHandler.END)
+        message.edit_text.assert_awaited_once()
+        self.assertIn('Invalid selection', message.edit_text.await_args.args[0])
+        self.assertEqual(state.subscriptions, {})
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_page_nav_without_playlists_errors(self, mock_get_ydl):
+        state = make_state()
+        message = make_message(chat_id=123)
+        cq = make_callback_query(data='page:1', message=message)
+        update = make_update(callback_query=cq)
+        context = make_context(state=state, user_data={})
+
+        from dasovbot.handlers.subscription import subscribe_playlist
+        result = await subscribe_playlist(update, context)
+
+        self.assertEqual(result, ConversationHandler.END)
+        message.edit_text.assert_awaited_once()
+        self.assertIn('Error occurred', message.edit_text.await_args.args[0])
+
+
 class TestUnsubscribe(unittest.IsolatedAsyncioTestCase):
 
     @patch('dasovbot.handlers.subscription.unsubscribe_playlist')
@@ -378,6 +413,23 @@ class TestUnsubscribe(unittest.IsolatedAsyncioTestCase):
 
 
 class TestUnsubscribePlaylist(unittest.IsolatedAsyncioTestCase):
+
+    async def test_stale_selection_replies_invalid(self):
+        sub = Subscription(chat_ids=['123'], title='Sub1')
+        state = make_state(subscriptions={'https://example.com/c1/videos': sub})
+        user_subs = {'id1': {'title': 'Sub1', 'url': 'https://example.com/c1/videos'}}
+        message = make_message(chat_id=123)
+        cq = make_callback_query(data='stale-id', message=message)
+        update = make_update(callback_query=cq)
+        context = make_context(state=state, user_data={'user_subscriptions': user_subs})
+
+        from dasovbot.handlers.subscription import unsubscribe_playlist
+        result = await unsubscribe_playlist(update, context)
+
+        self.assertEqual(result, ConversationHandler.END)
+        message.edit_text.assert_awaited_once()
+        self.assertIn('Invalid selection', message.edit_text.await_args.args[0])
+        self.assertEqual(sub.chat_ids, ['123'])
 
     async def test_callback_cancel(self):
         message = make_message()
