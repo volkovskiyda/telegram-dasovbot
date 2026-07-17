@@ -17,18 +17,26 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# The dashboard can trigger a run while the hourly loop is mid-iteration;
+# both mutate state.subscriptions and enqueue intents, so runs must not overlap
+_populate_lock = asyncio.Lock()
+
 
 async def run_populate_subscriptions(state: BotState):
-    for url in list(state.subscriptions.keys()):
-        subscription = state.subscriptions.get(url)
-        if not subscription:
-            continue
-        chat_ids = subscription.chat_ids
-        if chat_ids:
-            await populate_playlist(url, chat_ids, state)
-        else:
-            await state.pop_subscription(url)
-    state.background_task_status['populate_subscriptions'] = now()
+    if _populate_lock.locked():
+        logger.info("populate_subscriptions already running, skipped")
+        return
+    async with _populate_lock:
+        for url in list(state.subscriptions.keys()):
+            subscription = state.subscriptions.get(url)
+            if not subscription:
+                continue
+            chat_ids = subscription.chat_ids
+            if chat_ids:
+                await populate_playlist(url, chat_ids, state)
+            else:
+                await state.pop_subscription(url)
+        state.background_task_status['populate_subscriptions'] = now()
 
 
 async def populate_subscriptions(state: BotState):

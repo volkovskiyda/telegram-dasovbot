@@ -129,6 +129,25 @@ class TestPopulatePlaylist(unittest.IsolatedAsyncioTestCase):
 
 
 class TestRunPopulateSubscriptions(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        # The module-level lock binds to the first event loop that acquires it;
+        # each test runs in a fresh loop, so give each test a fresh lock.
+        import dasovbot.services.background as background
+        background._populate_lock = asyncio.Lock()
+
+    @patch('dasovbot.services.background.populate_playlist', new_callable=AsyncMock)
+    async def test_skips_when_already_running(self, mock_populate):
+        import dasovbot.services.background as background
+        sub = Subscription(chat_ids=['100'], title='a', uploader='u', uploader_videos='url1/videos')
+        state = make_state(subscriptions={'url1': sub})
+        await background._populate_lock.acquire()
+        try:
+            await run_populate_subscriptions(state)
+        finally:
+            background._populate_lock.release()
+        mock_populate.assert_not_awaited()
+        self.assertNotIn('populate_subscriptions', state.background_task_status)
+
     @patch('dasovbot.services.background.populate_playlist', new_callable=AsyncMock)
     async def test_populates_subscribed_and_pops_empty(self, mock_populate):
         with_subs = Subscription(chat_ids=['100'], title='a', uploader='u', uploader_videos='url1/videos')
