@@ -74,10 +74,25 @@ def check_token(request: web.Request) -> bool:
     return True
 
 
+def _sweep_failed_logins():
+    # Entries were only pruned when the same IP retried, so a scan across
+    # many IPs would grow the dict forever
+    cutoff = time.time() - LOGIN_ATTEMPT_WINDOW_SEC
+    for remote, attempts in list(_failed_logins.items()):
+        recent = [item for item in attempts if item > cutoff]
+        if recent:
+            _failed_logins[remote] = recent
+        else:
+            del _failed_logins[remote]
+
+
 def _rate_limited(remote: str) -> bool:
     cutoff = time.time() - LOGIN_ATTEMPT_WINDOW_SEC
     attempts = [item for item in _failed_logins.get(remote, []) if item > cutoff]
-    _failed_logins[remote] = attempts
+    if attempts:
+        _failed_logins[remote] = attempts
+    else:
+        _failed_logins.pop(remote, None)
     return len(attempts) >= MAX_LOGIN_ATTEMPTS
 
 
@@ -99,6 +114,7 @@ async def login_page(request: web.Request) -> web.Response:
 
 
 async def login_post(request: web.Request) -> web.Response:
+    _sweep_failed_logins()
     remote = client_ip(request)
     if _rate_limited(remote):
         raise web.HTTPFound('/login?error=2')

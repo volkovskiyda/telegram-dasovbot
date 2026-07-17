@@ -236,5 +236,33 @@ class TestLogout(AuthTestCase):
         self.assertNotIn(token, auth_module._sessions)
 
 
+class TestFailedLoginSweep(AuthTestCase):
+    @patch('dasovbot.dashboard.auth.get_password', return_value='secret')
+    async def test_stale_entries_from_other_ips_are_pruned(self, mock_pwd):
+        stale = time.time() - 3600
+        auth_module._failed_logins['9.9.9.9'] = [stale, stale]
+        auth_module._failed_logins['8.8.8.8'] = [stale]
+        request = MagicMock()
+        request.remote = '1.2.3.4'
+        request.headers = {}
+        request.post = AsyncMock(return_value={'password': 'wrong'})
+        with self.assertRaises(web.HTTPFound):
+            await login_post(request)
+        self.assertNotIn('9.9.9.9', auth_module._failed_logins)
+        self.assertNotIn('8.8.8.8', auth_module._failed_logins)
+        self.assertIn('1.2.3.4', auth_module._failed_logins)
+
+    def test_sweep_keeps_recent_attempts(self):
+        recent = time.time()
+        auth_module._failed_logins['1.2.3.4'] = [time.time() - 3600, recent]
+        auth_module._sweep_failed_logins()
+        self.assertEqual(auth_module._failed_logins['1.2.3.4'], [recent])
+
+    def test_rate_limited_drops_empty_entries(self):
+        auth_module._failed_logins['1.2.3.4'] = [time.time() - 3600]
+        self.assertFalse(auth_module._rate_limited('1.2.3.4'))
+        self.assertNotIn('1.2.3.4', auth_module._failed_logins)
+
+
 if __name__ == '__main__':
     unittest.main()
