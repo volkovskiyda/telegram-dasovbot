@@ -46,7 +46,16 @@ def client_ip(request: web.Request) -> str:
     return request.remote or ''
 
 
+def _sweep_expired_sessions():
+    # Expired tokens from clients that never return would accumulate forever
+    cutoff = time.time()
+    for token, expires in list(_sessions.items()):
+        if expires < cutoff:
+            _sessions.pop(token, None)
+
+
 def create_session() -> str:
+    _sweep_expired_sessions()
     token = secrets.token_urlsafe(32)
     _sessions[token] = time.time() + SESSION_TTL_SEC
     return token

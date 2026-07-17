@@ -30,6 +30,16 @@ class AuthTestCase(unittest.IsolatedAsyncioTestCase):
         auth_module._failed_logins.clear()
 
 
+class TestCreateSession(AuthTestCase):
+    def test_login_sweeps_expired_sessions(self):
+        auth_module._sessions['old'] = time.time() - 1
+        auth_module._sessions['live'] = time.time() + 100
+        token = create_session()
+        self.assertNotIn('old', auth_module._sessions)
+        self.assertIn('live', auth_module._sessions)
+        self.assertGreater(auth_module._sessions[token], time.time())
+
+
 class TestClientIp(AuthTestCase):
     def test_ignores_forwarded_header_by_default(self):
         request = make_request(remote='10.0.0.2', forwarded='6.6.6.6')
