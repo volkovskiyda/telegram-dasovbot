@@ -1,77 +1,93 @@
+#!/usr/bin/env python3
+"""Bulk-add subscriptions for a user directly into bot.db.
+
+Reads urls (one per line) from the new-subscriptions file and inserts or
+updates rows in the subscriptions table. The bot caches subscriptions in
+memory, so restart it (or wait for a redeploy) to pick up the changes.
+"""
+
 import argparse
+import json
+import sqlite3
+
 import yt_dlp
+
 from dasovbot.config import load_config, make_ydl_opts
-from dasovbot.persistence import write_file, read_file
-
-config = load_config()
-ydl_opts = make_ydl_opts(config)
-ydl = yt_dlp.YoutubeDL(ydl_opts)
-
-subscriptions = {}
 
 
-def add_subscription(chat_id, url):
-    videos = check_subscription_local(chat_id, f"{url}/videos")
-    streams = check_subscription_local(chat_id, f"{url}/streams")
+def add_subscription(ydl, db: sqlite3.Connection, chat_id: str, url: str):
+    videos = check_subscription(db, chat_id, f"{url}/videos")
+    streams = check_subscription(db, chat_id, f"{url}/streams")
+    if videos or streams:
+        return
 
-    if not videos and not streams:
-        try:
-            info = ydl.extract_info(url, download=False)
-            uploader_url = info.get('uploader_url')
-            title = info.get('title')
-            uploader = info.get('uploader') or info.get('uploader_id')
-            uploader_videos = f"{uploader_url}/videos"
+    try:
+        info = ydl.extract_info(url, download=False)
+    except Exception:
+        print(f"# subscribe_playlist failed: {url}")
+        return
 
-            subscriptions[uploader_videos] = {
-                'chat_ids': [chat_id],
-                'title': title,
-                'uploader': uploader,
-                'uploader_videos': uploader_videos,
-            }
-            print(f"New subscription to {title} ({uploader})")
-        except Exception:
-            print(f"# subscribe_playlist failed: {url}")
+    uploader_url = info.get('uploader_url')
+    uploader = info.get('uploader') or info.get('uploader_id') or ''
+    title = info.get('title') or uploader or url
+    uploader_videos = f"{uploader_url}/videos"
+
+    data = {
+        'chat_ids': [chat_id],
+        'title': title,
+        'uploader': uploader,
+        'uploader_videos': uploader_videos,
+    }
+    db.execute(
+        "INSERT OR REPLACE INTO subscriptions (key, data) VALUES (?, ?)",
+        (uploader_videos, json.dumps(data)),
+    )
+    print(f"New subscription to {title} ({uploader})")
 
 
-def check_subscription_local(chat_id, url) -> dict:
-    subscription = subscriptions.get(url)
-    if subscription:
-        chat_ids = subscription['chat_ids']
-        subscription_info = f"[{subscription['title']}]({url})"
-        if chat_id in chat_ids:
-            print(f"Already subscribed to {subscription_info}")
-        else:
-            chat_ids.append(chat_id)
-            print(f"Subscribed to {subscription_info}")
-    return subscription
+def check_subscription(db: sqlite3.Connection, chat_id: str, url: str) -> bool:
+    row = db.execute("SELECT data FROM subscriptions WHERE key = ?", (url,)).fetchone()
+    if not row:
+        return False
+    data = json.loads(row[0])
+    chat_ids = data.get('chat_ids') or []
+    subscription_info = f"[{data.get('title')}]({url})"
+    if chat_id in chat_ids:
+        print(f"Already subscribed to {subscription_info}")
+    else:
+        chat_ids.append(chat_id)
+        data['chat_ids'] = chat_ids
+        db.execute("UPDATE subscriptions SET data = ? WHERE key = ?", (json.dumps(data), url))
+        print(f"Subscribed to {subscription_info}")
+    return True
 
 
 def main() -> None:
-    global subscriptions
+    # Built lazily: load_config() requires a populated .env
+    config = load_config()
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('-u', '--user', help='User')
-    parser.add_argument('-s', '--subscriptions', help='File with subscriptions', default=config.subscription_info_file)
-    parser.add_argument('-n', '--new', help='File with new subscriptions', default=f'{config.config_folder}/data/new_subscriptions.txt')
+    parser.add_argument('-u', '--user', help='User chat id')
+    parser.add_argument('-d', '--database', help='SQLite database file', default=config.db_file)
+    parser.add_argument('-n', '--new', help='File with new subscription urls', default=f'{config.config_folder}/data/new_subscriptions.txt')
     args = parser.parse_args()
 
-    user = args.user
-    f_subscriptions = args.subscriptions
-    f_new = args.new
-
-    if not user:
+    if not args.user:
         parser.print_help()
         return
 
-    subscriptions = read_file(f_subscriptions, subscriptions)
-    with open(f_new) as file:
-        lines = [line.rstrip() for line in file]
+    with open(args.new) as file:
+        lines = [line.strip() for line in file]
 
-    for line in lines:
-        if line:
-            add_subscription(user, line)
-
-    write_file(f_subscriptions, subscriptions)
+    ydl = yt_dlp.YoutubeDL(make_ydl_opts(config))
+    db = sqlite3.connect(args.database)
+    try:
+        for line in lines:
+            if line:
+                add_subscription(ydl, db, args.user, line)
+        db.commit()
+    finally:
+        db.close()
 
 
 if __name__ == "__main__":
