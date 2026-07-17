@@ -1,12 +1,13 @@
 import json
 import os
+import sqlite3
 import tempfile
 import unittest
 from unittest.mock import patch, MagicMock
 
 from tests.helpers import make_memory_db, make_config
 from dasovbot.database import (
-    init_db, migrate_from_json,
+    init_db, migrate_from_json, warn_if_data_missing,
     upsert_video, delete_video, load_videos,
     upsert_intent, delete_intent, load_intents,
     upsert_user, load_users,
@@ -320,6 +321,56 @@ class TestMigrateFromJsonErrors(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(progress['status'], 'completed')
         videos = await load_videos(self.db)
         self.assertEqual(videos['url1'].title, 'V')
+
+
+class TestWarnIfDataMissing(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.data_dir = os.path.join(self.tmp.name, 'data')
+        os.makedirs(self.data_dir)
+        self.db_path = os.path.join(self.data_dir, 'bot.db')
+        self.db = await init_db(self.db_path)
+
+    async def asyncTearDown(self):
+        await self.db.close()
+
+    def _make_backup(self, name, populated):
+        path = os.path.join(self.data_dir, name)
+        with sqlite3.connect(path) as conn:
+            conn.executescript(SCHEMA)
+            if populated:
+                conn.execute("INSERT INTO videos (key, data) VALUES ('k', '{}')")
+            conn.commit()
+        return path
+
+    async def test_warns_when_empty_but_backup_populated(self):
+        self._make_backup('bot.db.backup_20260101_000000', populated=True)
+        with self.assertLogs('dasovbot.database', level='WARNING') as cm:
+            await warn_if_data_missing(self.db, self.db_path)
+        self.assertIn('backup', ' '.join(cm.output).lower())
+
+    async def test_silent_when_live_db_populated(self):
+        await upsert_video(self.db, 'k', VideoInfo(title='X'))
+        self._make_backup('bot.db.backup_20260101_000000', populated=True)
+        with self.assertNoLogs('dasovbot.database', level='WARNING'):
+            await warn_if_data_missing(self.db, self.db_path)
+
+    async def test_silent_when_no_backups(self):
+        with self.assertNoLogs('dasovbot.database', level='WARNING'):
+            await warn_if_data_missing(self.db, self.db_path)
+
+    async def test_silent_when_backups_also_empty(self):
+        self._make_backup('bot.db.backup_20260101_000000', populated=False)
+        with self.assertNoLogs('dasovbot.database', level='WARNING'):
+            await warn_if_data_missing(self.db, self.db_path)
+
+    async def test_ignores_unreadable_backup(self):
+        bad = os.path.join(self.data_dir, 'bot.db.backup_20260101_000000')
+        with open(bad, 'w') as f:
+            f.write('not a sqlite file')
+        with self.assertNoLogs('dasovbot.database', level='WARNING'):
+            await warn_if_data_missing(self.db, self.db_path)
 
 
 if __name__ == '__main__':

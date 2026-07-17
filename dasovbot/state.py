@@ -39,9 +39,13 @@ class BotState:
         )
 
     async def migrate_and_load(self):
-        from dasovbot.database import migrate_from_json, load_videos, load_intents, load_users, load_subscriptions
+        from dasovbot.database import (
+            migrate_from_json, warn_if_data_missing,
+            load_videos, load_intents, load_users, load_subscriptions,
+        )
 
         await migrate_from_json(self.db, self.config, self.migration_progress)
+        await warn_if_data_missing(self.db, self.config.db_file)
 
         self.videos = await load_videos(self.db)
         self.users = await load_users(self.db)
