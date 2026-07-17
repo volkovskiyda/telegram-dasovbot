@@ -92,6 +92,29 @@ class TestStartDashboard(unittest.IsolatedAsyncioTestCase):
     @patch('dasovbot.dashboard.server.web.TCPSite')
     @patch('dasovbot.dashboard.server.web.AppRunner')
     @patch('dasovbot.dashboard.server.create_app')
+    @patch.dict('os.environ', {}, clear=True)
+    async def test_password_not_logged_when_file_write_fails(self, mock_create_app, mock_runner_cls, mock_site_cls):
+        runner = AsyncMock()
+        mock_runner_cls.return_value = runner
+        site = AsyncMock()
+        mock_site_cls.return_value = site
+
+        from dasovbot.dashboard.server import start_dashboard
+        state = MagicMock()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state.config.config_folder = tmpdir
+
+            with patch.object(Path, 'write_text', side_effect=OSError('denied')):
+                with self.assertLogs('dasovbot.dashboard.server', level='WARNING') as cm:
+                    await start_dashboard(state)
+
+            log_output = '\n'.join(cm.output)
+            self.assertNotIn(get_password(), log_output)
+        site.start.assert_awaited_once()
+
+    @patch('dasovbot.dashboard.server.web.TCPSite')
+    @patch('dasovbot.dashboard.server.web.AppRunner')
+    @patch('dasovbot.dashboard.server.create_app')
     @patch.dict('os.environ', {'DASHBOARD_PASSWORD': 'explicit'})
     async def test_no_password_file_when_env_set(self, mock_create_app, mock_runner_cls, mock_site_cls):
         runner = AsyncMock()

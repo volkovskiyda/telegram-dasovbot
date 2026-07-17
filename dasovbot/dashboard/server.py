@@ -75,7 +75,11 @@ async def start_dashboard(state: BotState):
             password_file.chmod(0o600)
             logger.info('DASHBOARD_PASSWORD not set, generated password written to %s', password_file)
         except OSError:
-            logger.warning('DASHBOARD_PASSWORD not set, generated password: %s', password)
+            logger.warning(
+                'DASHBOARD_PASSWORD not set and writing %s failed; '
+                'set DASHBOARD_PASSWORD to log in to the dashboard',
+                password_file, exc_info=True,
+            )
 
     port = int(os.getenv('DASHBOARD_PORT', '8080'))
     app = create_app(state)
