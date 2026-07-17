@@ -15,7 +15,7 @@ class Config:
     read_timeout: float = 30.0
     loading_video_id: str = ""
     animation_file_id: str = ""
-    config_folder: str = "/"
+    config_folder: str = "./config"
     empty_media_folder: bool = False
     cookies_file: str = ""
 
@@ -53,7 +53,7 @@ def load_config() -> Config:
         raise ValueError(f"Missing required environment variables: {', '.join(missing)}")
 
     developer_chat_id = os.getenv('DEVELOPER_CHAT_ID')
-    config_folder = os.getenv('CONFIG_FOLDER') or '/'
+    config_folder = os.getenv('CONFIG_FOLDER') or './config'
 
     return Config(
         bot_token=os.getenv('BOT_TOKEN'),

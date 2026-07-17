@@ -56,6 +56,16 @@ class TestLoadConfig(unittest.TestCase):
         'BOT_TOKEN': 'tok',
         'BASE_URL': 'https://api.telegram.org',
         'DEVELOPER_CHAT_ID': '123',
+    }, clear=True)
+    def test_config_folder_defaults_to_relative_folder(self, mock_dotenv):
+        # Must not default to '/', which would write data/media to the fs root.
+        config = load_config()
+        self.assertEqual(config.config_folder, './config')
+
+    @patch.dict('os.environ', {
+        'BOT_TOKEN': 'tok',
+        'BASE_URL': 'https://api.telegram.org',
+        'DEVELOPER_CHAT_ID': '123',
         'DEVELOPER_ID': '456',
     }, clear=True)
     def test_developer_id_override(self, mock_dotenv):
