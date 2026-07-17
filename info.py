@@ -5,10 +5,13 @@ import yt_dlp
 from dasovbot.config import load_config, make_ydl_opts
 from dasovbot.downloader import extract_url
 
-config = load_config()
-ydl_opts = make_ydl_opts(config)
-ydl_opts.pop('quiet', None)
-ydl = yt_dlp.YoutubeDL(ydl_opts)
+
+def make_ydl() -> yt_dlp.YoutubeDL:
+    # Built lazily: load_config() requires a populated .env
+    config = load_config()
+    ydl_opts = make_ydl_opts(config)
+    ydl_opts.pop('quiet', None)
+    return yt_dlp.YoutubeDL(ydl_opts)
 
 
 def json_dumps(info):
@@ -54,7 +57,7 @@ def video(info):
 
 
 async def info(query: str, download: bool) -> None:
-    info = ydl.extract_info(query, download=download)
+    info = make_ydl().extract_info(query, download=download)
     # json_dumps(info)
     entries = info.get('entries')
     if entries:
