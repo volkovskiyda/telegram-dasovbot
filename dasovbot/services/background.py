@@ -126,6 +126,17 @@ async def clear_temporary_inline_queries(state: BotState):
         await asyncio.sleep(10 * 60)
 
 
+async def run_forever(factory, name: str):
+    from dasovbot.constants import RESTART_DELAY_SEC
+    while True:
+        try:
+            await factory()
+            return
+        except Exception:
+            logger.error("background task %s crashed, restarting", name, exc_info=True)
+        await asyncio.sleep(RESTART_DELAY_SEC)
+
+
 def _on_task_done(state: BotState, task: asyncio.Task):
     state.background_tasks.discard(task)
     if not task.cancelled() and task.exception():
@@ -135,11 +146,17 @@ def _on_task_done(state: BotState, task: asyncio.Task):
 def start_background_tasks(bot: Bot, state: BotState):
     from dasovbot.services.intent_processor import monitor_process_intents
 
+    # monitor_process_intents restarts itself; populate_animation is finite;
+    # the two infinite loops get the same crash-restart treatment via run_forever
     tasks = [
         asyncio.create_task(populate_animation(bot, state), name="populate_animation"),
-        asyncio.create_task(populate_subscriptions(state), name="populate_subscriptions"),
+        asyncio.create_task(
+            run_forever(partial(populate_subscriptions, state), 'populate_subscriptions'),
+            name="populate_subscriptions"),
         asyncio.create_task(monitor_process_intents(bot, state), name="monitor_process_intents"),
-        asyncio.create_task(clear_temporary_inline_queries(state), name="clear_temporary_inline_queries"),
+        asyncio.create_task(
+            run_forever(partial(clear_temporary_inline_queries, state), 'clear_temporary_inline_queries'),
+            name="clear_temporary_inline_queries"),
     ]
     for task in tasks:
         state.background_tasks.add(task)

@@ -3,9 +3,11 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from dasovbot.models import Subscription, TemporaryInlineQuery, VideoInfo
+from dasovbot.constants import RESTART_DELAY_SEC
 from dasovbot.services.background import (
     populate_animation, populate_video, populate_playlist, run_populate_subscriptions,
     clear_temporary_inline_queries, start_background_tasks, stop_background_tasks,
+    run_forever,
 )
 from tests.helpers import make_state, make_config
 
@@ -158,6 +160,23 @@ class TestRunPopulateSubscriptions(unittest.IsolatedAsyncioTestCase):
         mock_populate.assert_awaited_once_with('url1', ['100'], state)
         state.pop_subscription.assert_awaited_once_with('url2')
         self.assertIn('populate_subscriptions', state.background_task_status)
+
+
+class TestRunForever(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.services.background.asyncio.sleep', new_callable=AsyncMock)
+    async def test_restarts_after_crash(self, mock_sleep):
+        factory = AsyncMock(side_effect=[ValueError('boom'), asyncio.CancelledError()])
+        with self.assertRaises(asyncio.CancelledError):
+            await run_forever(factory, 'task1')
+        self.assertEqual(factory.await_count, 2)
+        mock_sleep.assert_awaited_once_with(RESTART_DELAY_SEC)
+
+    @patch('dasovbot.services.background.asyncio.sleep', new_callable=AsyncMock)
+    async def test_returns_when_factory_completes(self, mock_sleep):
+        factory = AsyncMock(return_value=None)
+        await run_forever(factory, 'task1')
+        factory.assert_awaited_once()
+        mock_sleep.assert_not_awaited()
 
 
 class TestStartBackgroundTasks(unittest.IsolatedAsyncioTestCase):
