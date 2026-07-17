@@ -79,9 +79,17 @@ async def inline_query_handler(update: Update, context):
     inline_queries = {}
 
     if entries:
-        results = [inline_video(process_info(item), inline_queries, state.animation_file_id) for item in process_entries(entries)]
+        items = [process_info(item) for item in process_entries(entries)]
     else:
-        results = [inline_video(info, inline_queries, state.animation_file_id)]
+        items = [info]
+
+    # Telegram rejects the whole result set when video_file_id is None, so
+    # without a cached file_id or a loading animation the item is unsendable
+    results = [
+        inline_video(item, inline_queries, state.animation_file_id)
+        for item in items
+        if item.file_id or state.animation_file_id
+    ]
 
     temporary_inline_query.results = results
     temporary_inline_query.inline_queries = inline_queries
@@ -90,6 +98,9 @@ async def inline_query_handler(update: Update, context):
 
     if not results:
         logger.info("inline_query no results: %s", query)
+        if len(items) == 1:
+            # Queue the download anyway so a repeat query can serve the video
+            await _populate_video(query, [str(user.id)], state)
 
     try:
         await query_obj.answer(results=results, cache_time=1)

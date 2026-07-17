@@ -380,6 +380,34 @@ class TestInlineAnswerErrors(unittest.IsolatedAsyncioTestCase):
         iq.answer.assert_awaited_once_with(results=[], cache_time=1)
 
 
+class TestInlineNoUsableFileId(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.handlers.inline.append_intent', new_callable=AsyncMock)
+    @patch('dasovbot.handlers.inline.extract_info', new_callable=AsyncMock)
+    async def test_single_video_without_animation_queues_download(self, mock_extract, mock_append):
+        from dasovbot.handlers.inline import inline_query_handler
+        mock_extract.return_value = VideoInfo(title='T', webpage_url='https://example.com/v1')
+        state = make_state(animation_file_id=None)
+        iq = make_inline_query('https://example.com/v1', from_user=make_user(id=42))
+        await inline_query_handler(make_update(inline_query=iq), make_context(state=state))
+        iq.answer.assert_awaited_once_with(results=[], cache_time=1)
+        mock_append.assert_awaited_once()
+        self.assertEqual(mock_append.await_args.kwargs['chat_ids'], ['42'])
+
+    @patch('dasovbot.handlers.inline.append_intent', new_callable=AsyncMock)
+    @patch('dasovbot.handlers.inline.extract_info', new_callable=AsyncMock)
+    async def test_cached_file_id_still_served_without_animation(self, mock_extract, mock_append):
+        from dasovbot.handlers.inline import inline_query_handler
+        mock_extract.return_value = VideoInfo(
+            title='T', webpage_url='https://example.com/v1', file_id='fid')
+        state = make_state(animation_file_id=None)
+        iq = make_inline_query('https://example.com/v1')
+        await inline_query_handler(make_update(inline_query=iq), make_context(state=state))
+        results = iq.answer.await_args.kwargs['results']
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0].video_file_id, 'fid')
+        mock_append.assert_not_awaited()
+
+
 class TestChosenQueryUnknownResult(unittest.IsolatedAsyncioTestCase):
     @patch('dasovbot.handlers.inline.append_intent', new_callable=AsyncMock)
     async def test_unknown_result_id_returns_early(self, mock_append):
