@@ -68,6 +68,27 @@ class TestVideos(DashboardViewTestCase):
         self.assertIn('Dog Video', text)
         self.assertNotIn('Cat Video', text)
 
+    async def test_invalid_page_defaults_to_first(self):
+        self._populate()
+        resp = await self.client.get('/videos?page=abc')
+        self.assertEqual(resp.status, 200)
+        text = await resp.text()
+        self.assertIn('Cat Video', text)
+
+    async def test_sort_by_upload_date(self):
+        self.state.videos = {
+            'a': VideoInfo(title='Cat Video', file_id='f1', processed_at='20260101_000000', upload_date='20260310'),
+            'b': VideoInfo(title='Dog Video', file_id='f2', processed_at='20260102_000000', upload_date='20260201'),
+        }
+        resp = await self.client.get('/videos?sort=upload_date')
+        self.assertEqual(resp.status, 200)
+        text = await resp.text()
+        self.assertLess(text.index('Cat Video'), text.index('Dog Video'))
+        # default sort (processed_at) orders them the other way around
+        resp = await self.client.get('/videos')
+        text = await resp.text()
+        self.assertLess(text.index('Dog Video'), text.index('Cat Video'))
+
 
 class TestIgnored(DashboardViewTestCase):
     async def test_lists_ignored_intents_and_inline_queries(self):

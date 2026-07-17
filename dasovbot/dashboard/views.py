@@ -81,7 +81,10 @@ async def videos(request: web.Request) -> web.Response:
     state = get_state(request)
     sort_by = request.query.get('sort', 'processed_at')
     source_filter = request.query.get('source', 'all')
-    page = max(1, int(request.query.get('page', '1')))
+    try:
+        page = max(1, int(request.query.get('page', '1')))
+    except ValueError:
+        page = 1
     per_page = 50
     search_query = request.query.get('q', '').strip()
 
