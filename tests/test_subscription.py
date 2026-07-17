@@ -1037,6 +1037,21 @@ class TestSubscribePlaylistBranches(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Invalid selection', message.reply_text.await_args.args[0])
 
     @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_direct_url_without_title_falls_back_to_uploader(self, mock_get_ydl):
+        mock_get_ydl.return_value.extract_info.return_value = {
+            'uploader_url': 'https://example.com/c', 'title': None, 'uploader': 'Uploader',
+        }
+        state = make_state()
+        message = make_message(chat_id=123, text='/subscribe https://example.com/p1')
+        update = make_update(message=message)
+
+        from dasovbot.handlers.subscription import subscribe_playlist
+        result = await subscribe_playlist(update, make_context(state=state))
+
+        self.assertEqual(result, SUBSCRIBE_SHOW)
+        self.assertEqual(state.subscriptions['https://example.com/p1'].title, 'Uploader')
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
     async def test_direct_url_extract_failure_replies_error(self, mock_get_ydl):
         mock_get_ydl.return_value.extract_info.side_effect = ValueError('boom')
         state = make_state()
@@ -1159,6 +1174,18 @@ class TestMultipleSubscribe(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, MULTIPLE_SUBSCRIBE_URLS)
         message.reply_text.assert_awaited_once_with('Enter urls')
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_null_title_falls_back_to_url(self, mock_get_ydl):
+        mock_get_ydl.return_value.extract_info.return_value = {'title': None, 'uploader': None}
+        state = make_state()
+        message = make_message(chat_id=123, text='https://example.com/a')
+        update = make_update(message=message)
+
+        from dasovbot.handlers.subscription import multiple_subscribe_urls
+        await multiple_subscribe_urls(update, make_context(state=state))
+
+        self.assertEqual(state.subscriptions['https://example.com/a'].title, 'https://example.com/a')
 
     @patch('dasovbot.handlers.subscription.get_ydl')
     async def test_blank_lines_counted_as_failed(self, mock_get_ydl):

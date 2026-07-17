@@ -77,8 +77,8 @@ class VideoInfo:
         origin_data = data.get('origin')
         origin = VideoOrigin.from_dict(origin_data) if origin_data else None
         return cls(
-            title=data.get('title', ''),
-            description=data.get('description', ''),
+            title=data.get('title') or '',
+            description=data.get('description') or '',
             file_id=data.get('file_id'),
             webpage_url=data.get('webpage_url'),
             upload_date=data.get('upload_date'),
@@ -88,7 +88,7 @@ class VideoInfo:
             uploader_url=data.get('uploader_url'),
             width=data.get('width'),
             height=data.get('height'),
-            caption=data.get('caption', ''),
+            caption=data.get('caption') or '',
             url=data.get('url'),
             filepath=data.get('filepath'),
             filename=data.get('filename'),
@@ -171,11 +171,13 @@ class Subscription:
 
     @classmethod
     def from_dict(cls, data: dict) -> 'Subscription':
+        # `or ''` guards stored nulls: .get('title', '') still returns None
+        # when the key exists with a null value
         return cls(
-            chat_ids=data.get('chat_ids', []),
-            title=data.get('title', ''),
-            uploader=data.get('uploader', ''),
-            uploader_videos=data.get('uploader_videos', ''),
+            chat_ids=data.get('chat_ids') or [],
+            title=data.get('title') or '',
+            uploader=data.get('uploader') or '',
+            uploader_videos=data.get('uploader_videos') or '',
         )
 
 

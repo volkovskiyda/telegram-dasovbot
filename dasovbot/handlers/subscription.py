@@ -253,8 +253,10 @@ async def subscribe_playlist(update: Update, context) -> int:
         try:
             info = await _extract_info(ydl, url)
             uploader_url = info.get('uploader_url')
-            title = info.get('title')
-            uploader = info.get('uploader') or info.get('uploader_id')
+            uploader = info.get('uploader') or info.get('uploader_id') or ''
+            # Some extractors return no title: fall back so Markdown links
+            # and the dashboard never render a None title
+            title = info.get('title') or uploader or url
             uploader_videos = f"{uploader_url}/videos"
         except Exception:
             logger.error("%s # subscribe_playlist failed: %s", extract_user(user), url, exc_info=True)
@@ -483,8 +485,8 @@ async def multiple_subscribe_urls(update: Update, context) -> int:
         else:
             try:
                 info = await _extract_info(ydl, url)
-                title = info.get('title')
-                uploader = info.get('uploader') or info.get('uploader_id')
+                uploader = info.get('uploader') or info.get('uploader_id') or ''
+                title = info.get('title') or uploader or url
             except Exception:
                 failed.append(url)
                 continue

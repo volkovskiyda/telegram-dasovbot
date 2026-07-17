@@ -138,5 +138,24 @@ class TestTemporaryInlineQuery(unittest.TestCase):
         self.assertFalse(tiq.ignored)
 
 
+class TestNullValuesFromDict(unittest.TestCase):
+    def test_subscription_null_fields_become_empty_strings(self):
+        from dasovbot.models import Subscription
+        sub = Subscription.from_dict({
+            'chat_ids': None, 'title': None, 'uploader': None, 'uploader_videos': None,
+        })
+        self.assertEqual(sub.chat_ids, [])
+        self.assertEqual(sub.title, '')
+        self.assertEqual(sub.uploader, '')
+        self.assertEqual(sub.uploader_videos, '')
+
+    def test_video_info_null_text_fields_become_empty_strings(self):
+        from dasovbot.models import VideoInfo
+        info = VideoInfo.from_dict({'title': None, 'description': None, 'caption': None})
+        self.assertEqual(info.title, '')
+        self.assertEqual(info.description, '')
+        self.assertEqual(info.caption, '')
+
+
 if __name__ == '__main__':
     unittest.main()
