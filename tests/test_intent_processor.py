@@ -1,10 +1,12 @@
+import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from tests.helpers import make_state, make_config
 from dasovbot.models import VideoInfo, Intent, IntentMessage
 from dasovbot.services.intent_processor import (
-    filter_intents, append_intent, post_process, process_intent, process_query, file_size_mb,
+    filter_intents, append_intent, post_process, process_intent, process_query,
+    retry_lower_quality, file_size_mb,
 )
 
 
@@ -392,6 +394,92 @@ class TestProcessQuery(unittest.IsolatedAsyncioTestCase):
 
         bot.send_video.assert_not_awaited()
         mock_process_intent.assert_awaited_once_with(bot, 'q', 'cached', 'caption', state)
+
+    @patch('dasovbot.services.intent_processor.process_intent', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.post_process', new_callable=AsyncMock, return_value='fid1')
+    @patch('dasovbot.services.intent_processor.extract_info', new_callable=AsyncMock)
+    async def test_upload_waits_for_semaphore(self, mock_extract, mock_post, mock_process_intent):
+        mock_extract.return_value = self._make_info()
+        state = make_state(config=make_config())
+        bot = AsyncMock()
+
+        await state.upload_semaphore.acquire()
+        task = asyncio.create_task(process_query(bot, 'q', state))
+        try:
+            for _ in range(5):
+                await asyncio.sleep(0)
+            bot.send_video.assert_not_awaited()
+        finally:
+            state.upload_semaphore.release()
+        await task
+        bot.send_video.assert_awaited_once()
+
+    @patch('dasovbot.services.intent_processor.process_intent', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.post_process', new_callable=AsyncMock, return_value='fid1')
+    @patch('dasovbot.services.intent_processor.extract_info', new_callable=AsyncMock)
+    async def test_concurrent_uploads_never_overlap(self, mock_extract, mock_post, mock_process_intent):
+        mock_extract.side_effect = lambda query, **kwargs: self._make_info(
+            webpage_url=f'https://example.com/{query}', filepath=f'/tmp/media/{query}.mp4')
+        state = make_state(config=make_config())
+
+        active = 0
+        seen = []
+
+        async def fake_send(*args, **kwargs):
+            nonlocal active
+            active += 1
+            seen.append(active)
+            await asyncio.sleep(0.01)
+            active -= 1
+            return MagicMock()
+
+        bot = AsyncMock()
+        bot.send_video = AsyncMock(side_effect=fake_send)
+
+        await asyncio.gather(process_query(bot, 'a', state), process_query(bot, 'b', state))
+
+        self.assertEqual(bot.send_video.await_count, 2)
+        self.assertEqual(max(seen), 1)
+
+
+class TestRetryLowerQuality(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.services.intent_processor.remove')
+    @patch('dasovbot.services.intent_processor.process_intent', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.post_process', new_callable=AsyncMock, return_value='fid1')
+    @patch('dasovbot.services.intent_processor.process_info')
+    @patch('dasovbot.services.intent_processor.yt_dlp.YoutubeDL')
+    async def test_fallback_upload_waits_for_semaphore_and_sends_path(
+            self, mock_ydl_cls, mock_process_info, mock_post, mock_process_intent, mock_remove):
+        mock_ydl_cls.return_value.__enter__.return_value = MagicMock()
+        mock_process_info.return_value = VideoInfo(
+            title='T', webpage_url='https://example.com/v', caption='caption',
+            filepath='/tmp/media/video.scaled.mp4', width=320, height=180,
+        )
+        info = VideoInfo(
+            title='T', webpage_url='https://example.com/v', caption='caption',
+            filepath='/tmp/media/video.mp4', filename='video.mp4',
+            duration=10, width=640, height=360,
+        )
+        state = make_state(config=make_config())
+        bot = AsyncMock()
+
+        # The retry re-uploads a fresh file: it must queue behind other
+        # uploads instead of piling a second send on top of a stuck one
+        await state.upload_semaphore.acquire()
+        task = asyncio.create_task(retry_lower_quality(bot, 'q', info, state))
+        try:
+            for _ in range(10):
+                await asyncio.sleep(0)
+            bot.send_video.assert_not_awaited()
+        finally:
+            state.upload_semaphore.release()
+        result = await task
+
+        self.assertTrue(result)
+        video_arg = bot.send_video.await_args.kwargs['video']
+        self.assertIsInstance(video_arg, str)
+        self.assertEqual(video_arg, '/tmp/media/video.scaled.mp4')
+        mock_remove.assert_called_with('/tmp/media/video.scaled.mp4')
 
 
 class TestProcessIntentEditErrors(unittest.IsolatedAsyncioTestCase):

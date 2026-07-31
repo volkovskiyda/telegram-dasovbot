@@ -153,6 +153,36 @@ class TestLoadConfig(unittest.TestCase):
         config = load_config()
         self.assertEqual(config.base_file_url, '')
 
+    @patch.dict('os.environ', {
+        'BOT_TOKEN': 'tok',
+        'BASE_URL': 'https://api.telegram.org',
+        'DEVELOPER_CHAT_ID': '123',
+    }, clear=True)
+    def test_upload_concurrency_defaults_to_one(self, mock_dotenv):
+        config = load_config()
+        self.assertEqual(config.upload_concurrency, 1)
+
+    @patch.dict('os.environ', {
+        'BOT_TOKEN': 'tok',
+        'BASE_URL': 'https://api.telegram.org',
+        'DEVELOPER_CHAT_ID': '123',
+        'UPLOAD_CONCURRENCY': '2',
+    }, clear=True)
+    def test_upload_concurrency_from_env(self, mock_dotenv):
+        config = load_config()
+        self.assertEqual(config.upload_concurrency, 2)
+
+    @patch.dict('os.environ', {
+        'BOT_TOKEN': 'tok',
+        'BASE_URL': 'https://api.telegram.org',
+        'DEVELOPER_CHAT_ID': '123',
+        'UPLOAD_CONCURRENCY': '0',
+    }, clear=True)
+    def test_upload_concurrency_floors_at_one(self, mock_dotenv):
+        # Semaphore(0) would block every upload forever
+        config = load_config()
+        self.assertEqual(config.upload_concurrency, 1)
+
 
 class TestMatchFilter(unittest.TestCase):
     def test_normal_video(self):

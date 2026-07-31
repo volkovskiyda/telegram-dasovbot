@@ -91,16 +91,17 @@ async def populate_animation(bot: Bot, state: BotState):
             if not info or not info.filepath:
                 logger.warning("populate_animation no info, attempt %s: %s", attempt, query)
             else:
-                message = await bot.send_video(
-                    chat_id=state.config.developer_chat_id,
-                    video=info.filepath,
-                    filename=info.filename,
-                    duration=info.duration,
-                    width=info.width,
-                    height=info.height,
-                    caption=info.caption,
-                    disable_notification=True,
-                )
+                async with state.upload_semaphore:
+                    message = await bot.send_video(
+                        chat_id=state.config.developer_chat_id,
+                        video=info.filepath,
+                        filename=info.filename,
+                        duration=info.duration,
+                        width=info.width,
+                        height=info.height,
+                        caption=info.caption,
+                        disable_notification=True,
+                    )
                 state.animation_file_id = await post_process(query, info, message, state, store_info=False)
                 logger.info("animation_file_id = %s", state.animation_file_id)
                 if state.animation_file_id:

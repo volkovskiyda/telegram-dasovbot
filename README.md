@@ -58,6 +58,7 @@ Password-protected web UI served on `DASHBOARD_PORT` (default 8080).
 | `READ_TIMEOUT` | No | `30` | Request timeout in seconds |
 | `LOCAL_MODE` | No | `false` | Pass uploads to the Bot API server as `file://` paths instead of multipart bodies. Requires a server started with `--local` that sees the media folder at the same path |
 | `BASE_FILE_URL` | No | derived from `BASE_URL` | Bot API file-download base URL (`.../file/bot`) |
+| `UPLOAD_CONCURRENCY` | No | `1` | Max simultaneous video-file uploads; keep at `1` to bound memory and IO |
 | `LOADING_VIDEO_ID` | No | | Video URL used for loading animation |
 | `ANIMATION_FILE_ID` | No | | Pre-cached animation file ID (skips loading upload) |
 | `CONFIG_FOLDER` | No | `/` | Root folder for data/media/export directories |
@@ -117,7 +118,7 @@ The web dashboard is started separately in `__main__.py` (`start_dashboard`) bef
 2. Background task `monitor_process_intents` picks up intents from an `asyncio.Queue`
 3. `intent_processor.py` extracts metadata and downloads via yt-dlp (blocking calls run in executor)
 4. Non-MP4 videos (MKV, WebM, etc.) are converted to MP4 via ffmpeg — fast remux first, transcode fallback
-5. Video posted to Telegram, `file_id` cached for future reuse. With `LOCAL_MODE=true` the bot sends only the file path (`file:///media/...`) and the Bot API server reads the bytes from the shared media volume — the video never passes through bot memory
+5. Video posted to Telegram, `file_id` cached for future reuse. With `LOCAL_MODE=true` the bot sends only the file path (`file:///media/...`) and the Bot API server reads the bytes from the shared media volume — the video never passes through bot memory. Sends that upload an actual file hold `state.upload_semaphore` (`UPLOAD_CONCURRENCY`, default 1), so the intent worker, the retry fallback, and background tasks never upload concurrently
 
 **Models:** All domain objects (`models.py`) are dataclasses with manual `to_dict()`/`from_dict()` serialization (stored as JSON within SQLite) — no ORM or external serialization library.
 

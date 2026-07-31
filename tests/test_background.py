@@ -48,6 +48,25 @@ class TestPopulateAnimation(unittest.IsolatedAsyncioTestCase):
 
     @patch('dasovbot.services.background.post_process', new_callable=AsyncMock, return_value='file123')
     @patch('dasovbot.services.background.extract_info', new_callable=AsyncMock)
+    async def test_upload_waits_for_semaphore(self, mock_extract, mock_post):
+        mock_extract.return_value = make_video_info()
+        state = make_state(animation_file_id=None, config=make_config(loading_video_id='https://example.com/v'))
+        bot = AsyncMock()
+
+        await state.upload_semaphore.acquire()
+        task = asyncio.create_task(populate_animation(bot, state))
+        try:
+            for _ in range(5):
+                await asyncio.sleep(0)
+            bot.send_video.assert_not_awaited()
+        finally:
+            state.upload_semaphore.release()
+        await task
+        bot.send_video.assert_awaited_once()
+        self.assertEqual(state.animation_file_id, 'file123')
+
+    @patch('dasovbot.services.background.post_process', new_callable=AsyncMock, return_value='file123')
+    @patch('dasovbot.services.background.extract_info', new_callable=AsyncMock)
     async def test_uploads_by_filesystem_path(self, mock_extract, mock_post):
         # A str path keeps PTB local mode in effect (file:// hand-off);
         # bytes or a file object would load the video into bot memory

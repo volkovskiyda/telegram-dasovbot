@@ -22,6 +22,7 @@ class Config:
     # uploads are then passed as file:// paths the server reads from disk
     local_mode: bool = False
     base_file_url: str = ""
+    upload_concurrency: int = 1
 
     @property
     def video_info_file(self) -> str:
@@ -86,6 +87,8 @@ def load_config() -> Config:
         cookies_file=os.getenv('COOKIES_FILE') or '',
         local_mode=os.getenv('LOCAL_MODE', 'false').lower() == 'true',
         base_file_url=os.getenv('BASE_FILE_URL') or derive_base_file_url(base_url),
+        # Floor of 1: a value of 0 would make the upload semaphore block forever
+        upload_concurrency=max(1, int(os.getenv('UPLOAD_CONCURRENCY') or 1)),
     )
 
 

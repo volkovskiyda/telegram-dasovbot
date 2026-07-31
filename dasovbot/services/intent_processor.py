@@ -198,17 +198,20 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
             if video_path != info.filepath:
                 info.filepath = video_path
                 info.filename = os.path.splitext(info.filename)[0] + '.mp4' if info.filename else None
-            logger.info("process_query send_video strt: %s", query)
-            message = await bot.send_video(
-                chat_id=config.developer_chat_id,
-                caption=caption,
-                video=video_path,
-                duration=info.duration,
-                width=info.width,
-                height=info.height,
-                filename=info.filename,
-                disable_notification=True,
-            )
+            # Released before the except path runs, so the fallback in
+            # retry_lower_quality can re-acquire without deadlocking
+            async with state.upload_semaphore:
+                logger.info("process_query send_video strt: %s", query)
+                message = await bot.send_video(
+                    chat_id=config.developer_chat_id,
+                    caption=caption,
+                    video=video_path,
+                    duration=info.duration,
+                    width=info.width,
+                    height=info.height,
+                    filename=info.filename,
+                    disable_notification=True,
+                )
             logger.info("process_query send_video fnsh: %s file_id=%s", query, message.video.file_id if message.video else None)
         except Exception as e:
             logger.error("process_query send_video error: %s %s: %s", query, type(e).__name__, e)
@@ -255,17 +258,18 @@ async def retry_lower_quality(bot: Bot, query: str, info: VideoInfo, state: BotS
     if temp_video_path != temp_info.filepath:
         temp_info.filepath = temp_video_path
     try:
-        logger.info("process_query send_video rsrt: %s", query)
-        message = await bot.send_video(
-            chat_id=config.developer_chat_id,
-            caption=caption,
-            video=temp_video_path,
-            duration=info.duration,
-            width=temp_info.width or info.width,
-            height=temp_info.height or info.height,
-            filename=info.filename,
-            disable_notification=True,
-        )
+        async with state.upload_semaphore:
+            logger.info("process_query send_video rsrt: %s", query)
+            message = await bot.send_video(
+                chat_id=config.developer_chat_id,
+                caption=caption,
+                video=temp_video_path,
+                duration=info.duration,
+                width=temp_info.width or info.width,
+                height=temp_info.height or info.height,
+                filename=info.filename,
+                disable_notification=True,
+            )
         logger.info("process_query send_video fnsh: %s", query)
         await send_message_developer(bot, f'[error_fixed_large_video]\n{caption}', config.developer_id, notification=False)
         file_id = await post_process(query, info, message, state, origin_info=temp_info)

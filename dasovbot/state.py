@@ -18,6 +18,10 @@ class BotState:
     intents: dict[str, Intent] = field(default_factory=dict)
     temporary_inline_queries: dict[str, TemporaryInlineQuery] = field(default_factory=dict)
     download_queue: asyncio.Queue = field(default_factory=asyncio.Queue)
+    # Caps concurrent file uploads (UPLOAD_CONCURRENCY, default 1): the intent
+    # worker and background tasks each send multi-GB videos, and overlapping
+    # sends multiply peak memory/IO
+    upload_semaphore: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(1))
     config: Config = field(default=None)
     animation_file_id: str | None = None
     background_task_status: dict[str, str] = field(default_factory=dict)
@@ -37,6 +41,7 @@ class BotState:
         return cls(
             config=config,
             animation_file_id=config.animation_file_id or None,
+            upload_semaphore=asyncio.Semaphore(config.upload_concurrency),
             db=db,
             migration_progress={'status': 'pending', 'tables': {}, 'elapsed': 0.0},
         )
