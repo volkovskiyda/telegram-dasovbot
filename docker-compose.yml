@@ -55,7 +55,10 @@ services:
       # freed upload buffers never return to the OS, so RSS only ratchets up
       MALLOC_ARENA_MAX: "2"
     # memswap == mem: no swap, so a leak OOM-kills the container (restart:
-    # always brings it back) instead of thrashing the whole host
+    # always brings it back) instead of thrashing the whole host.
+    # 4g leaves headroom while local_mode file-path uploads prove out in
+    # production; once confirmed, this can drop to ~2g since uploads no
+    # longer pass through Python memory
     mem_limit: 4g
     memswap_limit: 4g
     ports:
