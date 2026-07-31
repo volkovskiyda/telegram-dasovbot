@@ -4,9 +4,16 @@ services:
     image: ghcr.io/volkovskiyda/telegram-bot-api
     restart: always
     pull_policy: always
+    # --local lets sendVideo take the bot's file:///media/... URIs and read
+    # the file from disk instead of receiving a multipart upload
+    command: --local
     environment:
       TELEGRAM_API_ID: $TELEGRAM_API_ID
       TELEGRAM_API_HASH: $TELEGRAM_API_HASH
+    volumes:
+      # Must be mounted at the same container path as in the bot service:
+      # the file:// URIs the bot sends are resolved in this filesystem
+      - ./config/media/:/media
     ports:
       - 8081:8081
 
@@ -26,6 +33,8 @@ services:
       - ./config/export/:/export
     environment:
       BASE_URL: http://api:8081/bot
+      # The api service above runs with --local, so uploads go by file path
+      LOCAL_MODE: "true"
       READ_TIMEOUT: $READ_TIMEOUT
       BOT_TOKEN: $BOT_TOKEN
       LOADING_VIDEO_ID: $LOADING_VIDEO_ID

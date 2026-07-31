@@ -2,13 +2,14 @@ import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from dasovbot.__main__ import main
+from dasovbot.__main__ import main, build_application
 from tests.helpers import make_config
 
 
 def make_builder(app):
     builder = MagicMock()
-    for method in ('token', 'base_url', 'read_timeout', 'post_init', 'post_shutdown'):
+    for method in ('token', 'base_url', 'base_file_url', 'read_timeout', 'local_mode',
+                   'post_init', 'post_shutdown'):
         getattr(builder, method).return_value = builder
     builder.build.return_value = app
     return builder
@@ -104,6 +105,40 @@ class TestMain(unittest.TestCase):
 
         mock_dashboard.assert_awaited_once_with(state)
         mock_app_cls.builder.assert_not_called()
+
+
+class TestBuildApplication(unittest.TestCase):
+    """Builds a real (offline) PTB Application to pin the bot wiring.
+
+    local_mode is what keeps multi-GB uploads out of process memory: without
+    it PTB reads the whole file into an InputFile before POSTing it.
+    """
+
+    def _build(self, **overrides):
+        async def noop(app):
+            pass
+
+        config = make_config(bot_token='123:abc', **overrides)
+        return build_application(config, noop, noop)
+
+    def test_enables_local_mode_when_configured(self):
+        app = self._build(
+            base_url='http://localhost:8081/bot',
+            base_file_url='http://localhost:8081/file/bot',
+            local_mode=True,
+        )
+        self.assertTrue(app.bot.local_mode)
+        self.assertEqual(app.bot.base_url, 'http://localhost:8081/bot123:abc')
+        self.assertEqual(app.bot.base_file_url, 'http://localhost:8081/file/bot123:abc')
+
+    def test_local_mode_off_by_default(self):
+        app = self._build(base_url='http://localhost:8081/bot')
+        self.assertFalse(app.bot.local_mode)
+
+    def test_empty_base_file_url_keeps_library_default(self):
+        app = self._build()
+        self.assertFalse(app.bot.local_mode)
+        self.assertIn('api.telegram.org/file/bot', app.bot.base_file_url)
 
 
 if __name__ == '__main__':

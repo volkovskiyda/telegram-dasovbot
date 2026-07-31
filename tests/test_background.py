@@ -46,6 +46,19 @@ class TestPopulateAnimation(unittest.IsolatedAsyncioTestCase):
         bot.send_video.assert_awaited_once()
         self.assertEqual(state.animation_file_id, 'file123')
 
+    @patch('dasovbot.services.background.post_process', new_callable=AsyncMock, return_value='file123')
+    @patch('dasovbot.services.background.extract_info', new_callable=AsyncMock)
+    async def test_uploads_by_filesystem_path(self, mock_extract, mock_post):
+        # A str path keeps PTB local mode in effect (file:// hand-off);
+        # bytes or a file object would load the video into bot memory
+        mock_extract.return_value = make_video_info()
+        state = make_state(animation_file_id=None, config=make_config(loading_video_id='https://example.com/v'))
+        bot = AsyncMock()
+        await populate_animation(bot, state)
+        video_arg = bot.send_video.await_args.kwargs['video']
+        self.assertIsInstance(video_arg, str)
+        self.assertEqual(video_arg, '/media/video.mp4')
+
     @patch('dasovbot.services.background.asyncio.sleep', new_callable=AsyncMock)
     @patch('dasovbot.services.background.post_process', new_callable=AsyncMock, return_value='file123')
     @patch('dasovbot.services.background.extract_info', new_callable=AsyncMock)

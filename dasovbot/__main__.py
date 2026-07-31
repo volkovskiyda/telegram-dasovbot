@@ -6,10 +6,29 @@ from telegram import Update
 from telegram.ext import Application
 from telegram.warnings import PTBUserWarning
 
-from dasovbot.config import load_config
+from dasovbot.config import Config, load_config
 from dasovbot.downloader import init_downloader
 from dasovbot.handlers import register_handlers
 from dasovbot.state import BotState
+
+
+def build_application(config: Config, post_init, post_shutdown) -> Application:
+    # local_mode hands uploads to the Bot API server as file:// paths it reads
+    # straight from disk — a multi-GB video must never be loaded into this
+    # process. Requires a server started with --local (see docker-compose.yml)
+    # that can reach the media folder under the same absolute path.
+    builder = (
+        Application.builder()
+        .token(config.bot_token)
+        .base_url(config.base_url)
+        .read_timeout(config.read_timeout)
+        .local_mode(config.local_mode)
+        .post_init(post_init)
+        .post_shutdown(post_shutdown)
+    )
+    if config.base_file_url:
+        builder = builder.base_file_url(config.base_file_url)
+    return builder.build()
 
 
 def main():
@@ -59,15 +78,7 @@ def main():
         await stop_background_tasks(shutdown_state)
         await shutdown_state.close()
 
-    application = (
-        Application.builder()
-        .token(config.bot_token)
-        .base_url(config.base_url)
-        .read_timeout(config.read_timeout)
-        .post_init(post_init)
-        .post_shutdown(post_shutdown)
-        .build()
-    )
+    application = build_application(config, post_init, post_shutdown)
 
     application.bot_data['state'] = state
 

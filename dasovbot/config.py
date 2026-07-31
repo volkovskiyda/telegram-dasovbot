@@ -18,6 +18,10 @@ class Config:
     config_folder: str = "./config"
     empty_media_folder: bool = False
     cookies_file: str = ""
+    # Only valid against a telegram-bot-api server started with --local:
+    # uploads are then passed as file:// paths the server reads from disk
+    local_mode: bool = False
+    base_file_url: str = ""
 
     @property
     def video_info_file(self) -> str:
@@ -44,6 +48,19 @@ class Config:
         return f'{self.config_folder}/media'
 
 
+def derive_base_file_url(base_url: str) -> str:
+    """Map a Bot API base URL onto its file-download endpoint.
+
+    api.telegram.org and the local telegram-bot-api server both serve file
+    downloads from '<host>/file/bot<token>', so '<host>/bot' maps to
+    '<host>/file/bot'. Returns '' (keep the library default) when the URL
+    doesn't end in '/bot' and no mapping is known.
+    """
+    if base_url and base_url.endswith('/bot'):
+        return f"{base_url.removesuffix('/bot')}/file/bot"
+    return ''
+
+
 def load_config() -> Config:
     dotenv.load_dotenv()
 
@@ -54,10 +71,11 @@ def load_config() -> Config:
 
     developer_chat_id = os.getenv('DEVELOPER_CHAT_ID')
     config_folder = os.getenv('CONFIG_FOLDER') or './config'
+    base_url = os.getenv('BASE_URL')
 
     return Config(
         bot_token=os.getenv('BOT_TOKEN'),
-        base_url=os.getenv('BASE_URL'),
+        base_url=base_url,
         developer_chat_id=developer_chat_id,
         developer_id=os.getenv('DEVELOPER_ID') or developer_chat_id,
         read_timeout=float(os.getenv('READ_TIMEOUT') or 30),
@@ -66,6 +84,8 @@ def load_config() -> Config:
         config_folder=config_folder,
         empty_media_folder=os.getenv('EMPTY_MEDIA_FOLDER', 'false').lower() == 'true',
         cookies_file=os.getenv('COOKIES_FILE') or '',
+        local_mode=os.getenv('LOCAL_MODE', 'false').lower() == 'true',
+        base_file_url=os.getenv('BASE_FILE_URL') or derive_base_file_url(base_url),
     )
 
 

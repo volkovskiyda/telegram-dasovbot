@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from tests.helpers import make_state, make_config
 from dasovbot.models import VideoInfo, Intent, IntentMessage
 from dasovbot.services.intent_processor import (
-    filter_intents, append_intent, post_process, process_intent, file_size_mb,
+    filter_intents, append_intent, post_process, process_intent, process_query, file_size_mb,
 )
 
 
@@ -351,6 +351,47 @@ class TestPostProcessDeleteError(unittest.IsolatedAsyncioTestCase):
         message.delete.side_effect = Exception('already deleted')
         result = await post_process('q', info, message, state)
         self.assertEqual(result, 'fid1')
+
+
+class TestProcessQuery(unittest.IsolatedAsyncioTestCase):
+    def _make_info(self, **overrides):
+        defaults = dict(
+            title='T', webpage_url='https://example.com/v', caption='caption',
+            filepath='/tmp/media/video.mp4', filename='video.mp4',
+            duration=10, width=640, height=360,
+        )
+        defaults.update(overrides)
+        return VideoInfo(**defaults)
+
+    @patch('dasovbot.services.intent_processor.process_intent', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.post_process', new_callable=AsyncMock, return_value='fid1')
+    @patch('dasovbot.services.intent_processor.extract_info', new_callable=AsyncMock)
+    async def test_uploads_by_filesystem_path(self, mock_extract, mock_post, mock_process_intent):
+        # PTB local mode only applies to str/Path arguments: passing bytes or
+        # an open file object silently falls back to reading the whole video
+        # into memory, which is what OOM'd the host
+        mock_extract.return_value = self._make_info()
+        state = make_state(config=make_config())
+        bot = AsyncMock()
+
+        await process_query(bot, 'q', state)
+
+        bot.send_video.assert_awaited_once()
+        video_arg = bot.send_video.await_args.kwargs['video']
+        self.assertIsInstance(video_arg, str)
+        self.assertEqual(video_arg, '/tmp/media/video.mp4')
+
+    @patch('dasovbot.services.intent_processor.process_intent', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.extract_info', new_callable=AsyncMock)
+    async def test_cached_file_id_skips_upload(self, mock_extract, mock_process_intent):
+        mock_extract.return_value = self._make_info(file_id='cached', filepath=None)
+        state = make_state(config=make_config())
+        bot = AsyncMock()
+
+        await process_query(bot, 'q', state)
+
+        bot.send_video.assert_not_awaited()
+        mock_process_intent.assert_awaited_once_with(bot, 'q', 'cached', 'caption', state)
 
 
 class TestProcessIntentEditErrors(unittest.IsolatedAsyncioTestCase):

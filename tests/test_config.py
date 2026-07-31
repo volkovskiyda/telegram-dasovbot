@@ -102,6 +102,57 @@ class TestLoadConfig(unittest.TestCase):
         config = load_config()
         self.assertEqual(config.cookies_file, '/path/cookies.txt')
 
+    @patch.dict('os.environ', {
+        'BOT_TOKEN': 'tok',
+        'BASE_URL': 'http://localhost:8081/bot',
+        'DEVELOPER_CHAT_ID': '123',
+    }, clear=True)
+    def test_local_mode_defaults_false(self, mock_dotenv):
+        # Off by default: enabling it against a server without --local breaks
+        # every upload ("wrong file identifier" for file:// URIs)
+        config = load_config()
+        self.assertFalse(config.local_mode)
+
+    @patch.dict('os.environ', {
+        'BOT_TOKEN': 'tok',
+        'BASE_URL': 'http://localhost:8081/bot',
+        'DEVELOPER_CHAT_ID': '123',
+        'LOCAL_MODE': 'true',
+    }, clear=True)
+    def test_local_mode_enabled(self, mock_dotenv):
+        config = load_config()
+        self.assertTrue(config.local_mode)
+
+    @patch.dict('os.environ', {
+        'BOT_TOKEN': 'tok',
+        'BASE_URL': 'http://localhost:8081/bot',
+        'DEVELOPER_CHAT_ID': '123',
+    }, clear=True)
+    def test_base_file_url_derived_from_base_url(self, mock_dotenv):
+        config = load_config()
+        self.assertEqual(config.base_file_url, 'http://localhost:8081/file/bot')
+
+    @patch.dict('os.environ', {
+        'BOT_TOKEN': 'tok',
+        'BASE_URL': 'http://localhost:8081/bot',
+        'DEVELOPER_CHAT_ID': '123',
+        'BASE_FILE_URL': 'http://files:9000/file/bot',
+    }, clear=True)
+    def test_base_file_url_env_override(self, mock_dotenv):
+        config = load_config()
+        self.assertEqual(config.base_file_url, 'http://files:9000/file/bot')
+
+    @patch.dict('os.environ', {
+        'BOT_TOKEN': 'tok',
+        'BASE_URL': 'https://api.telegram.org',
+        'DEVELOPER_CHAT_ID': '123',
+    }, clear=True)
+    def test_base_file_url_empty_without_bot_suffix(self, mock_dotenv):
+        # No '/bot' suffix to map: keep '' so the builder falls back to the
+        # library default instead of guessing a wrong endpoint
+        config = load_config()
+        self.assertEqual(config.base_file_url, '')
+
 
 class TestMatchFilter(unittest.TestCase):
     def test_normal_video(self):

@@ -40,6 +40,7 @@ Password-protected web UI served on `DASHBOARD_PORT` (default 8080).
 - `READ_TIMEOUT` variable sets the waiting timeout for bot requests
 - `BASE_URL` and `BOT_TOKEN` environment variables used to initialize bot.
 - For `BASE_URL` you can use standard `https://api.telegram.org/bot` or use a local server ([tutorial](https://github.com/tdlib/telegram-bot-api)).
+- When the local server is started with `--local`, also set `LOCAL_MODE=true`: videos are then handed to the server by file path (`file://` URI) instead of being read into bot memory — required for multi-GB uploads. The server must see the media folder at the same absolute path as the bot (`docker-compose.yml` mounts `./config/media/` at `/media` in both containers).
 - Obtain `BOT_TOKEN` via @BotFather ([tutorial](https://core.telegram.org/bots/tutorial#obtain-your-bot-token))
 - `Tip`: Turn inline mode on, edit inline placeholder and set inline feedback to 100% in bot settings.
 - More info at [official github repository](https://github.com/tdlib/telegram-bot-api)
@@ -55,6 +56,8 @@ Password-protected web UI served on `DASHBOARD_PORT` (default 8080).
 | `DEVELOPER_CHAT_ID` | Yes | | Chat ID for developer notifications |
 | `DEVELOPER_ID` | No | `DEVELOPER_CHAT_ID` | Developer user ID for export permissions |
 | `READ_TIMEOUT` | No | `30` | Request timeout in seconds |
+| `LOCAL_MODE` | No | `false` | Pass uploads to the Bot API server as `file://` paths instead of multipart bodies. Requires a server started with `--local` that sees the media folder at the same path |
+| `BASE_FILE_URL` | No | derived from `BASE_URL` | Bot API file-download base URL (`.../file/bot`) |
 | `LOADING_VIDEO_ID` | No | | Video URL used for loading animation |
 | `ANIMATION_FILE_ID` | No | | Pre-cached animation file ID (skips loading upload) |
 | `CONFIG_FOLDER` | No | `/` | Root folder for data/media/export directories |
@@ -114,7 +117,7 @@ The web dashboard is started separately in `__main__.py` (`start_dashboard`) bef
 2. Background task `monitor_process_intents` picks up intents from an `asyncio.Queue`
 3. `intent_processor.py` extracts metadata and downloads via yt-dlp (blocking calls run in executor)
 4. Non-MP4 videos (MKV, WebM, etc.) are converted to MP4 via ffmpeg — fast remux first, transcode fallback
-5. Video posted to Telegram, `file_id` cached for future reuse
+5. Video posted to Telegram, `file_id` cached for future reuse. With `LOCAL_MODE=true` the bot sends only the file path (`file:///media/...`) and the Bot API server reads the bytes from the shared media volume — the video never passes through bot memory
 
 **Models:** All domain objects (`models.py`) are dataclasses with manual `to_dict()`/`from_dict()` serialization (stored as JSON within SQLite) — no ORM or external serialization library.
 
@@ -189,9 +192,9 @@ python -m unittest discover -s tests -v
 ### **Docker container**
 
 ```bash
-docker run -dit --rm --name telegram --pull=always -e TELEGRAM_API_ID=<api_id> -e TELEGRAM_API_HASH=<api_hash> -p 8081:8081 ghcr.io/volkovskiyda/telegram-bot-api ; docker run -dit --rm --name dasovbot --pull=always -e READ_TIMEOUT=30 -e BASE_URL=http://host.docker.internal:8081/bot -e BOT_TOKEN=<your_bot_token> -e LOADING_VIDEO_ID=<loading_animation_video_url> -e DEVELOPER_CHAT_ID=<developer_chat_id> ghcr.io/volkovskiyda/dasovbot
+docker run -dit --rm --name telegram --pull=always -e TELEGRAM_API_ID=<api_id> -e TELEGRAM_API_HASH=<api_hash> -v $PWD/config/media:/media -p 8081:8081 ghcr.io/volkovskiyda/telegram-bot-api --local ; docker run -dit --rm --name dasovbot --pull=always -e READ_TIMEOUT=30 -e BASE_URL=http://host.docker.internal:8081/bot -e LOCAL_MODE=true -e CONFIG_FOLDER=/ -e BOT_TOKEN=<your_bot_token> -e LOADING_VIDEO_ID=<loading_animation_video_url> -e DEVELOPER_CHAT_ID=<developer_chat_id> -v $PWD/config/media:/media ghcr.io/volkovskiyda/dasovbot
 ```
-##### **Note**: change `<api_id>`, `<api_hash>`, `<your_bot_token>`, `<loading_animation_video_url>` and `<developer_chat_id>`
+##### **Note**: change `<api_id>`, `<api_hash>`, `<your_bot_token>`, `<loading_animation_video_url>` and `<developer_chat_id>`. Both containers mount the same media folder at `/media` so the api server (running with `--local`) can read the files the bot passes by path.
 
 ### **Docker compose**
 ##### **Note**: Populate `.env` based on `.env.example`. See [Configuration](#configuration) for details
