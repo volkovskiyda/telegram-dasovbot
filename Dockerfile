@@ -12,6 +12,10 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
 
 RUN mkdir -p /project /data /media /export
 
+# Cap glibc malloc arenas: with the default (8 x cores) every executor thread
+# can pin its own heap arena and freed buffers never return to the OS
+ENV MALLOC_ARENA_MAX=2
+
 WORKDIR /project
 
 RUN python -m pip install --upgrade pip
