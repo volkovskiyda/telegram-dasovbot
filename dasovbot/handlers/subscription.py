@@ -25,9 +25,19 @@ MAX_PAGE_BYTES = 4096
 BUTTON_OVERHEAD = 60
 
 
-async def _extract_info(ydl, query: str) -> dict:
+def _extract_info_sync(query: str) -> dict:
+    # Create, use and close the YoutubeDL inside the executor thread:
+    # un-closed instances permanently retain HTTP sessions and SSL contexts.
+    ydl = get_ydl()
+    try:
+        return ydl.extract_info(query, download=False)
+    finally:
+        ydl.close()
+
+
+async def _extract_info(query: str) -> dict:
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, partial(ydl.extract_info, query, download=False))
+    return await loop.run_in_executor(None, partial(_extract_info_sync, query))
 
 
 def _button_size(text: str, callback_data: str) -> int:
@@ -106,7 +116,6 @@ async def subscribe(update: Update, context) -> int:
 
 async def subscribe_url(update: Update, context) -> int:
     state: BotState = context.bot_data['state']
-    ydl = get_ydl()
     message = update.message
     user = message.from_user
     query = remove_command_prefix(message.text)
@@ -117,17 +126,17 @@ async def subscribe_url(update: Update, context) -> int:
         return ConversationHandler.END
 
     try:
-        info = await _extract_info(ydl, query)
+        info = await _extract_info(query)
         uploader_url = info.get('uploader_url')
         if not uploader_url:
             await message.reply_text("Unsupported url", reply_markup=ReplyKeyboardRemove())
             return ConversationHandler.END
         if not uploader_url.startswith(query):
-            await _extract_info(ydl, uploader_url)
+            await _extract_info(uploader_url)
 
         try:
             playlists_url = f"{uploader_url}/playlists"
-            info = await _extract_info(ydl, playlists_url)
+            info = await _extract_info(playlists_url)
         except Exception:
             context.user_data['uploader_videos'] = f"{uploader_url}/videos"
             return await subscribe_playlist(update, context)
@@ -148,7 +157,7 @@ async def subscribe_url(update: Update, context) -> int:
     append_playlist(playlists, f"{uploader} Videos", uploader_videos)
     try:
         uploader_streams = f"{uploader_url}/streams"
-        await _extract_info(ydl, uploader_streams)
+        await _extract_info(uploader_streams)
         append_playlist(playlists, f"{uploader} Streams", uploader_streams)
     except Exception:
         pass
@@ -169,7 +178,6 @@ async def subscribe_url(update: Update, context) -> int:
 
 async def subscribe_playlist(update: Update, context) -> int:
     state: BotState = context.bot_data['state']
-    ydl = get_ydl()
     callback_query = update.callback_query
 
     if callback_query:
@@ -252,7 +260,7 @@ async def subscribe_playlist(update: Update, context) -> int:
         uploader_videos = uploader_info['url']
     else:
         try:
-            info = await _extract_info(ydl, url)
+            info = await _extract_info(url)
             uploader_url = info.get('uploader_url')
             uploader = info.get('uploader') or info.get('uploader_id') or ''
             # Some extractors return no title: fall back so Markdown links
@@ -290,8 +298,7 @@ async def subscribe_show(update: Update, context) -> int:
 
     if result:
         try:
-            ydl = get_ydl()
-            info = await _extract_info(ydl, subscription_url)
+            info = await _extract_info(subscription_url)
             entries = info.get('entries') or []
             for entry in entries[:5]:
                 url = extract_url(entry)
@@ -392,7 +399,6 @@ async def unsubscribe_playlist(update: Update, context) -> int:
 
 async def playlists(update: Update, context) -> int:
     state: BotState = context.bot_data['state']
-    ydl = get_ydl()
     message = update.message
     sub_list = [item['url'] for item in user_subscriptions(message.chat_id, state.subscriptions).values()]
 
@@ -411,7 +417,7 @@ async def playlists(update: Update, context) -> int:
         if subscription in already_processed:
             continue
         try:
-            info = await _extract_info(ydl, subscription)
+            info = await _extract_info(subscription)
             uploader_url = info.get('uploader_url')
             if not uploader_url:
                 continue
@@ -426,13 +432,13 @@ async def playlists(update: Update, context) -> int:
                 already_processed.append(uploader_streams)
             elif subscription_videos:
                 try:
-                    await _extract_info(ydl, uploader_streams)
+                    await _extract_info(uploader_streams)
                     streams.append(uploader_streams)
                 except Exception:
                     pass
             elif subscription_streams:
                 try:
-                    await _extract_info(ydl, uploader_videos)
+                    await _extract_info(uploader_videos)
                     videos.append(uploader_videos)
                 except Exception:
                     pass
@@ -460,7 +466,6 @@ async def multiple_subscribe(update: Update, _) -> int:
 
 async def multiple_subscribe_urls(update: Update, context) -> int:
     state: BotState = context.bot_data['state']
-    ydl = get_ydl()
     message = update.message
     user = message.from_user
     query = message.text
@@ -491,7 +496,7 @@ async def multiple_subscribe_urls(update: Update, context) -> int:
                 subscribed.append(url)
         else:
             try:
-                info = await _extract_info(ydl, url)
+                info = await _extract_info(url)
                 uploader = info.get('uploader') or info.get('uploader_id') or ''
                 title = info.get('title') or uploader or url
             except Exception:

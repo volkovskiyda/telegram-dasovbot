@@ -31,8 +31,26 @@ def init_downloader(config: Config):
 
 def get_ydl() -> yt_dlp.YoutubeDL:
     # YoutubeDL is not thread-safe: each caller gets its own instance so
-    # concurrent executor threads never share extraction state.
-    return yt_dlp.YoutubeDL(_ydl_opts)
+    # concurrent executor threads never share extraction state. Opts are
+    # copied because YoutubeDL mutates the dict it is given.
+    # Callers MUST close() the instance (prefer extract_info_sync): un-closed
+    # instances permanently retain HTTP sessions and SSL contexts (~1-2.5 MB
+    # each), which leaked ~170 MB/h in production.
+    # Caveat: with a cookiefile configured, every close() rewrites the jar and
+    # concurrent extractions would race on that file (plain truncate-and-write,
+    # no locking) — serialize load/save before enabling COOKIES_FILE.
+    return yt_dlp.YoutubeDL(dict(_ydl_opts))
+
+
+def extract_info_sync(query: str, download: bool = False):
+    # Blocking: create, use and close the YoutubeDL entirely inside the
+    # calling (executor) thread, so an abandoned wait_for timeout still
+    # releases its network resources when the thread eventually finishes.
+    ydl = get_ydl()
+    try:
+        return ydl.extract_info(query, download=download)
+    finally:
+        ydl.close()
 
 
 def extract_url(info) -> str:
@@ -134,7 +152,7 @@ async def extract_info(query: str, download: bool, state: BotState) -> VideoInfo
     if not info:
         try:
             loop = asyncio.get_running_loop()
-            future = loop.run_in_executor(None, partial(get_ydl().extract_info, query, download=False))
+            future = loop.run_in_executor(None, partial(extract_info_sync, query, download=False))
             raw_info = await asyncio.wait_for(future, TIMEOUT_SEC)
             url = extract_url(raw_info)
             info_url = state.videos.get(url)
@@ -165,7 +183,7 @@ async def extract_info(query: str, download: bool, state: BotState) -> VideoInfo
             async with _lock:
                 logger.debug("lock_acquire")
                 loop = asyncio.get_running_loop()
-                future = loop.run_in_executor(None, partial(get_ydl().extract_info, query, download=True))
+                future = loop.run_in_executor(None, partial(extract_info_sync, query, download=True))
                 raw_info = await asyncio.wait_for(future, TIMEOUT_SEC)
                 logger.info("extract_info downloaded: %s", query)
                 info = process_info(raw_info)

@@ -49,11 +49,20 @@ async def populate_subscriptions(state: BotState):
         await asyncio.sleep(INTERVAL_SEC)
 
 
-async def populate_playlist(channel: str, chat_ids: list, state: BotState):
+def _playlist_info_sync(channel: str) -> dict:
+    # Create, use and close the YoutubeDL inside the executor thread:
+    # un-closed instances permanently retain HTTP sessions and SSL contexts.
     ydl = get_ydl()
     try:
+        return ydl.extract_info(channel, download=False)
+    finally:
+        ydl.close()
+
+
+async def populate_playlist(channel: str, chat_ids: list, state: BotState):
+    try:
         loop = asyncio.get_running_loop()
-        info = await loop.run_in_executor(None, partial(ydl.extract_info, channel, download=False))
+        info = await loop.run_in_executor(None, partial(_playlist_info_sync, channel))
     except Exception:
         logger.error("populate_playlist error: %s", channel, exc_info=True)
         return
