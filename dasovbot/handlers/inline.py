@@ -47,6 +47,10 @@ async def inline_query_handler(update: Update, context):
     if not temporary_inline_query:
         temporary_inline_query = TemporaryInlineQuery(timestamp=now())
         state.temporary_inline_queries[query] = temporary_inline_query
+    else:
+        # A repeat query proves the entry is live: un-mark it so the two-pass
+        # sweeper doesn't evict it between passes
+        temporary_inline_query.marked = False
 
     if temporary_inline_query.ignored:
         logger.info("inline_query ignored: %s", query)

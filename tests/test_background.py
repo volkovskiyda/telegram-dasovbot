@@ -8,7 +8,8 @@ from dasovbot.models import Subscription, TemporaryInlineQuery, VideoInfo
 from dasovbot.constants import RESTART_DELAY_SEC
 from dasovbot.services.background import (
     populate_animation, populate_video, populate_playlist, run_populate_subscriptions,
-    populate_subscriptions, clear_temporary_inline_queries, monitor_backups, newest_backup_age,
+    populate_subscriptions, clear_temporary_inline_queries, sweep_temporary_inline_queries,
+    monitor_backups, newest_backup_age,
     start_background_tasks, stop_background_tasks, run_forever, _on_task_done,
 )
 from tests.helpers import make_state, make_config
@@ -351,6 +352,28 @@ class TestClearTemporaryInlineQueries(unittest.IsolatedAsyncioTestCase):
             await clear_temporary_inline_queries(state)
         self.assertIn('ignored', state.temporary_inline_queries)
         self.assertTrue(ignored.ignored)
+
+
+class TestSweepTemporaryInlineQueries(unittest.TestCase):
+    def test_ignored_entry_payloads_cleared_title_kept(self):
+        ignored = TemporaryInlineQuery(
+            ignored=True,
+            results=[MagicMock(title=''), MagicMock(title='Dead Video')],
+            inline_queries={'rid': 'https://example.com/v1'},
+        )
+        state = make_state(temporary_inline_queries={'url': ignored})
+        sweep_temporary_inline_queries(state)
+        self.assertIn('url', state.temporary_inline_queries)
+        self.assertEqual(ignored.results, [])
+        self.assertEqual(ignored.inline_queries, {})
+        self.assertEqual(ignored.title, 'Dead Video')
+
+    def test_ignored_entry_existing_title_not_overwritten(self):
+        ignored = TemporaryInlineQuery(ignored=True, title='Kept', results=[MagicMock(title='Other')])
+        state = make_state(temporary_inline_queries={'url': ignored})
+        sweep_temporary_inline_queries(state)
+        self.assertEqual(ignored.title, 'Kept')
+        self.assertEqual(ignored.results, [])
 
 
 class TestPopulateSubscriptionsLoop(unittest.IsolatedAsyncioTestCase):

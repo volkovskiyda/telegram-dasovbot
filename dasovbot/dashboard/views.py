@@ -173,7 +173,7 @@ async def ignored(request: web.Request) -> web.Response:
             })
     for url, tiq in state.temporary_inline_queries.items():
         if tiq.ignored:
-            title = url
+            title = tiq.title or url
             for result in tiq.results:
                 if hasattr(result, 'title') and result.title:
                     title = result.title

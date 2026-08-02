@@ -188,3 +188,5 @@ class TemporaryInlineQuery:
     inline_queries: dict = field(default_factory=dict)
     marked: bool = False
     ignored: bool = False
+    # Display title kept after the sweeper drops an ignored entry's payloads
+    title: str = ""

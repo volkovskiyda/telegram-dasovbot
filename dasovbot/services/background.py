@@ -121,20 +121,32 @@ async def populate_animation(bot: Bot, state: BotState):
     logger.error("populate_animation gave up: %s", query)
 
 
+def sweep_temporary_inline_queries(state: BotState):
+    for url in list(state.temporary_inline_queries.keys()):
+        tiq = state.temporary_inline_queries.get(url)
+        if not tiq:
+            continue
+        # Keep ignored entries: they stop repeated yt-dlp hits for dead
+        # videos and stay visible on the dashboard until handled there.
+        # Their payloads are dropped though — an ignored query always
+        # answers empty, and each results list can hold 20 cached videos.
+        if tiq.ignored:
+            if tiq.results:
+                if not tiq.title:
+                    tiq.title = next(
+                        (r.title for r in tiq.results if getattr(r, 'title', None)), '')
+                tiq.results = []
+                tiq.inline_queries = {}
+            continue
+        if tiq.marked:
+            del state.temporary_inline_queries[url]
+        else:
+            tiq.marked = True
+
+
 async def clear_temporary_inline_queries(state: BotState):
     while True:
-        for url in list(state.temporary_inline_queries.keys()):
-            tiq = state.temporary_inline_queries.get(url)
-            if not tiq:
-                continue
-            # Keep ignored entries: they stop repeated yt-dlp hits for dead
-            # videos and stay visible on the dashboard until handled there
-            if tiq.ignored:
-                continue
-            if tiq.marked:
-                del state.temporary_inline_queries[url]
-            else:
-                tiq.marked = True
+        sweep_temporary_inline_queries(state)
         state.background_task_status['clear_temporary_inline_queries'] = now()
         await asyncio.sleep(10 * 60)
 

@@ -72,6 +72,25 @@ class TestInlineQueryHandler(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context.user_data['inline_queries'], cached_inline_queries)
 
     @patch('dasovbot.handlers.inline.extract_info', new_callable=AsyncMock)
+    async def test_repeat_query_resets_sweeper_mark(self, mock_extract):
+        tiq = TemporaryInlineQuery(
+            timestamp='20240101_120000',
+            results=[MagicMock()],
+            inline_queries={'rid': 'https://example.com/v1'},
+            marked=True,
+        )
+        state = make_state(temporary_inline_queries={'https://example.com/v1': tiq})
+
+        query_obj = make_inline_query(query='https://example.com/v1')
+        update = make_update(inline_query=query_obj)
+        context = make_context(state=state)
+
+        from dasovbot.handlers.inline import inline_query_handler
+        await inline_query_handler(update, context)
+
+        self.assertFalse(tiq.marked)
+
+    @patch('dasovbot.handlers.inline.extract_info', new_callable=AsyncMock)
     async def test_ignored_query_answers_empty(self, mock_extract):
         tiq = TemporaryInlineQuery(timestamp='20240101_120000', ignored=True)
         state = make_state(temporary_inline_queries={'https://example.com/v1': tiq})
