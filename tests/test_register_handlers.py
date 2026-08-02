@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from telegram import Chat, Message, MessageEntity, Update
 from telegram.ext import Application, ConversationHandler, MessageHandler
 
+from dasovbot.constants import CONVERSATION_TIMEOUT_SEC
 from dasovbot.handlers import register_handlers
 
 
@@ -34,6 +35,17 @@ class TestRegisterHandlers(unittest.TestCase):
                         for state_handler in state_handlers:
                             if isinstance(state_handler, MessageHandler):
                                 yield state_handler
+
+    def test_conversations_time_out(self):
+        conversations = [
+            handler
+            for group in self.app.handlers.values()
+            for handler in group
+            if isinstance(handler, ConversationHandler)
+        ]
+        self.assertEqual(len(conversations), 4)
+        for handler in conversations:
+            self.assertEqual(handler.conversation_timeout, CONVERSATION_TIMEOUT_SEC)
 
     def test_conversation_text_states_ignore_commands(self):
         handlers = list(self._conversation_message_handlers())

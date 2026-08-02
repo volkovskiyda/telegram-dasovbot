@@ -5,8 +5,8 @@ from telegram.ext import (
 )
 
 from dasovbot.constants import (
-    DAS_URL, SUBSCRIBE_URL, SUBSCRIBE_PLAYLIST, SUBSCRIBE_SHOW,
-    UNSUBSCRIBE_PLAYLIST, MULTIPLE_SUBSCRIBE_URLS,
+    CONVERSATION_TIMEOUT_SEC, DAS_URL, SUBSCRIBE_URL, SUBSCRIBE_PLAYLIST,
+    SUBSCRIBE_SHOW, UNSUBSCRIBE_PLAYLIST, MULTIPLE_SUBSCRIBE_URLS,
 )
 from dasovbot.handlers.common import start, help_command, unknown, cancel, error_handler
 from dasovbot.handlers.download import download, download_url
@@ -31,6 +31,7 @@ def register_handlers(application: Application):
             DAS_URL: [MessageHandler(filters.TEXT & ~filters.COMMAND, download_url)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        conversation_timeout=CONVERSATION_TIMEOUT_SEC,
     ))
     application.add_handler(ConversationHandler(
         entry_points=[CommandHandler(['subscribe'], subscribe)],
@@ -40,6 +41,7 @@ def register_handlers(application: Application):
             SUBSCRIBE_SHOW: [CallbackQueryHandler(subscribe_show)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        conversation_timeout=CONVERSATION_TIMEOUT_SEC,
     ))
     application.add_handler(ConversationHandler(
         entry_points=[CommandHandler(['unsubscribe'], unsubscribe)],
@@ -47,6 +49,7 @@ def register_handlers(application: Application):
             UNSUBSCRIBE_PLAYLIST: [CallbackQueryHandler(unsubscribe_playlist)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        conversation_timeout=CONVERSATION_TIMEOUT_SEC,
     ))
     application.add_handler(CommandHandler(['playlists'], playlists))
     application.add_handler(ConversationHandler(
@@ -55,6 +58,7 @@ def register_handlers(application: Application):
             MULTIPLE_SUBSCRIBE_URLS: [MessageHandler(filters.TEXT & ~filters.COMMAND, multiple_subscribe_urls)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
+        conversation_timeout=CONVERSATION_TIMEOUT_SEC,
     ))
     application.add_handler(MessageHandler(filters.COMMAND, unknown))
     application.add_error_handler(error_handler)
