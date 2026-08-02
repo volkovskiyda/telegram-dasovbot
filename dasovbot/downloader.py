@@ -201,8 +201,11 @@ async def extract_info(query: str, download: bool, state: BotState) -> VideoInfo
 
 def _run_ffmpeg(input_path: str, output_path: str, codec_args: list[str]) -> bool:
     try:
+        # -nostats/-loglevel error: capture_output buffers everything ffmpeg
+        # prints, and default progress stats accumulate for the whole encode.
         result = subprocess.run(
-            ['ffmpeg', '-y', '-i', input_path, *codec_args, '-movflags', '+faststart', output_path],
+            ['ffmpeg', '-y', '-nostats', '-loglevel', 'error', '-i', input_path,
+             *codec_args, '-movflags', '+faststart', output_path],
             capture_output=True, timeout=600,
         )
         return result.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0
