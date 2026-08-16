@@ -234,11 +234,15 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
 
 async def retry_lower_quality(bot: Bot, query: str, info: VideoInfo, state: BotState) -> bool:
     """Re-download a too-large video at 360p and post it. Returns True when posted."""
+    from dasovbot.constants import FALLBACK_VIDEO_RES
     config = state.config
     caption = info.caption
     await send_message_developer(bot, f'[error_large_video]\n{caption}', config.developer_id)
     temp_ydl_opts = make_ydl_opts(config)
-    temp_ydl_opts['format'] = temp_ydl_opts['format'].replace('720', '360')
+    # Override the sort, not the format string: the resolution no longer
+    # appears in the format itself, so a textual substitution would be a
+    # silent no-op and re-download the same too-large rendition.
+    temp_ydl_opts['format_sort'] = [f'res:{FALLBACK_VIDEO_RES}']
     temp_ydl_opts['outtmpl'] = add_scaled_after_title(temp_ydl_opts['outtmpl'])
     temp_video_path = None
     temp_info = None

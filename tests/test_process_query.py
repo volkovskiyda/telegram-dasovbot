@@ -172,6 +172,17 @@ class TestRetryLowerQuality(unittest.IsolatedAsyncioTestCase):
         result = await retry_lower_quality(AsyncMock(), 'q', make_video_info(), state)
         self.assertFalse(result)
 
+    @patch('dasovbot.services.intent_processor.send_message_developer', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.yt_dlp.YoutubeDL')
+    async def test_fallback_downgrades_via_format_sort(self, mock_ydl_cls, mock_send_dev):
+        # The target resolution lives in format_sort, not in the format string,
+        # so downgrading by string substitution would be a silent no-op and
+        # re-download the same too-large rendition.
+        mock_ydl_cls.return_value.__enter__.return_value.extract_info.side_effect = ValueError('boom')
+        await retry_lower_quality(AsyncMock(), 'q', make_video_info(), self._make_state())
+        opts = mock_ydl_cls.call_args[0][0]
+        self.assertEqual(opts['format_sort'], ['res:360'])
+
     @patch('dasovbot.services.intent_processor.remove')
     @patch('dasovbot.services.intent_processor.process_intent', new_callable=AsyncMock)
     @patch('dasovbot.services.intent_processor.post_process', new_callable=AsyncMock, return_value='fid')

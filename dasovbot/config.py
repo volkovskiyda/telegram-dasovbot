@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 import dotenv
 
-from dasovbot.constants import DATETIME_FORMAT, DATE_FORMAT, VIDEO_FORMAT
+from dasovbot.constants import DATETIME_FORMAT, DATE_FORMAT, VIDEO_FORMAT, VIDEO_RES
 
 
 @dataclass
@@ -101,7 +101,8 @@ def match_filter(info, *, incomplete):
 def make_ydl_opts(config: Config) -> dict:
     media_folder = config.media_folder
     opts = {
-        'format': f"{VIDEO_FORMAT}+ba[ext=m4a] / {VIDEO_FORMAT}+ba[ext=mp4] / b[ext=mp4][height<=?720]",
+        'format': f"{VIDEO_FORMAT}+ba[ext=m4a] / {VIDEO_FORMAT}+ba[ext=mp4] / b[ext=mp4]",
+        'format_sort': [f'res:{VIDEO_RES}'],
         'outtmpl': f'{media_folder}/%(timestamp>{DATETIME_FORMAT},upload_date>{DATE_FORMAT}_u,epoch>{DATE_FORMAT}_e)s - %(title).80s [%(id).20s].%(ext)s',
         'retries': 5,
         'fragment_retries': 5,

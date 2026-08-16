@@ -42,4 +42,12 @@ SOURCE_INLINE = 'inline'
 # Format strings
 DATETIME_FORMAT = '%Y%m%d_%H%M%S'
 DATE_FORMAT = '%Y%m%d'
-VIDEO_FORMAT = 'bv*[ext=mp4][height<=?720][filesize_approx<=?2G]'
+VIDEO_FORMAT = 'bv*[ext=mp4][filesize_approx<=?2G]'
+
+# Target resolution, applied through format_sort's `res` field instead of a
+# height filter. `res` is min(height, width), so it caps portrait and
+# landscape alike; a height<=720 filter rejected 720x1280 outright and
+# silently pushed every vertical video to the bottom of the ladder.
+VIDEO_RES = 720
+# Resolution retried when a send exceeds LARGE_FILE_MB
+FALLBACK_VIDEO_RES = 360

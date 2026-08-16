@@ -217,6 +217,14 @@ class TestMakeYdlOpts(unittest.TestCase):
         self.assertIn('match_filter', opts)
         self.assertIn('merge_output_format', opts)
 
+    def test_resolution_capped_by_sort_not_height_filter(self):
+        # A height filter rejects portrait renditions outright (720x1280 has
+        # height 1280), silently dropping vertical videos to the bottom of the
+        # ladder. `res` is min(height, width), so it caps both orientations.
+        opts = make_ydl_opts(make_config())
+        self.assertEqual(opts['format_sort'], ['res:720'])
+        self.assertNotIn('height<=', opts['format'])
+
     def test_cookies_conditional(self):
         config = make_config(cookies_file='')
         opts = make_ydl_opts(config)
