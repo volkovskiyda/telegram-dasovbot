@@ -192,7 +192,7 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
                 logger.error("process_query no video path: %s", query)
                 if 'youtube' in extract_url(info):
                     await send_message_developer(bot, f'[error_no_video_path]\n{caption}', config.developer_id)
-                await state.pop_intent(query)
+                await drop_or_retry_intent(query, state)
                 return info
             video_path = await convert_to_mp4(video_path)
             if video_path != info.filepath:
