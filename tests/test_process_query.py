@@ -62,14 +62,25 @@ class TestProcessQuery(unittest.IsolatedAsyncioTestCase):
 
     @patch('dasovbot.services.intent_processor.send_message_developer', new_callable=AsyncMock)
     @patch('dasovbot.services.intent_processor.extract_info', new_callable=AsyncMock)
-    async def test_no_filepath_notifies_developer_and_pops(self, mock_extract, mock_send_dev):
+    async def test_no_filepath_notifies_developer_and_retries(self, mock_extract, mock_send_dev):
         info = make_video_info(filepath=None, webpage_url='https://www.youtube.com/watch?v=1')
         mock_extract.return_value = info
-        state = self._make_state(intents={'q': Intent(chat_ids=['1'])})
+        intent = Intent(chat_ids=['1'])
+        state = self._make_state(intents={'q': intent})
         bot = AsyncMock()
         await process_query(bot, 'q', state)
         mock_send_dev.assert_awaited_once()
         bot.send_video.assert_not_awaited()
+        self.assertIn('q', state.intents)
+        self.assertEqual(intent.retries, 1)
+
+    @patch('dasovbot.services.intent_processor.send_message_developer', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.extract_info', new_callable=AsyncMock)
+    async def test_no_filepath_drops_after_max_retries(self, mock_extract, mock_send_dev):
+        info = make_video_info(filepath=None, webpage_url='https://www.youtube.com/watch?v=1')
+        mock_extract.return_value = info
+        state = self._make_state(intents={'q': Intent(chat_ids=['1'], retries=MAX_INTENT_RETRIES - 1)})
+        await process_query(AsyncMock(), 'q', state)
         self.assertNotIn('q', state.intents)
 
     @patch('dasovbot.services.intent_processor.process_intent', new_callable=AsyncMock)
