@@ -487,6 +487,31 @@ class TestSubscribePlaylist(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, SUBSCRIBE_SHOW)
 
     @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_persists_plain_uploader_name(self, mock_get_ydl):
+        # The first button label is "Uploader1 Videos"; the stored uploader
+        # must be the carried-over plain name, not the label
+        state = make_state()
+        playlists = {
+            'first': {'title': 'Uploader1 Videos', 'url': 'https://example.com/c1/videos'},
+            'pid1': {'title': 'My Playlist', 'url': 'https://example.com/p1'},
+        }
+
+        message = make_message(chat_id=123)
+        cq = make_callback_query(data='pid1', message=message)
+        update = make_update(callback_query=cq)
+        context = make_context(
+            state=state,
+            user_data={'playlists': playlists, 'uploader': 'Uploader1'},
+        )
+
+        from dasovbot.handlers.subscription import subscribe_playlist
+        await subscribe_playlist(update, context)
+
+        sub = state.subscriptions['https://example.com/p1']
+        self.assertEqual(sub.uploader, 'Uploader1')
+        self.assertNotIn('uploader', context.user_data)
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
     async def test_already_subscribed(self, mock_get_ydl):
         existing_sub = Subscription(chat_ids=['123'], title='Existing', uploader='U', uploader_videos='v')
         state = make_state(subscriptions={'https://example.com/p1': existing_sub})

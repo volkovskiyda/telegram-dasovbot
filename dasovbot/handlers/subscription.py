@@ -172,6 +172,9 @@ async def subscribe_url(update: Update, context) -> int:
             return await subscribe_playlist(update, context)
 
     context.user_data['playlists'] = playlists
+    # The plain uploader name: the playlist button labels are "{uploader} Videos"
+    # etc., which must not end up persisted as the subscription's uploader
+    context.user_data['uploader'] = uploader
     await message.reply_markdown(
         f"Select playlist of [{uploader}]({uploader_url})",
         reply_markup=InlineKeyboardMarkup(build_paginated_keyboard(playlists, 0))
@@ -190,6 +193,7 @@ async def subscribe_playlist(update: Update, context) -> int:
         if callback_data == 'cancel':
             context.user_data.pop('playlists', None)
             context.user_data.pop('uploader_videos', None)
+            context.user_data.pop('uploader', None)
             try:
                 await message.delete()
             except Exception:
@@ -206,6 +210,7 @@ async def subscribe_playlist(update: Update, context) -> int:
             return SUBSCRIBE_PLAYLIST
         playlists = context.user_data.pop('playlists', None)
         uploader_videos = context.user_data.pop('uploader_videos', None)
+        uploader_name = context.user_data.pop('uploader', None)
         user = callback_query.from_user
         message_text = message.edit_text
 
@@ -225,6 +230,7 @@ async def subscribe_playlist(update: Update, context) -> int:
     else:
         playlists = context.user_data.pop('playlists', None)
         uploader_videos = context.user_data.pop('uploader_videos', None)
+        uploader_name = context.user_data.pop('uploader', None)
         message = update.message
         user = message.from_user
         message_text = message.reply_text
@@ -259,7 +265,8 @@ async def subscribe_playlist(update: Update, context) -> int:
             return SUBSCRIBE_SHOW
     elif playlists:
         uploader_info = next(iter(playlists.values()))
-        uploader = uploader_info['title']
+        # Fall back to the button label only when the name wasn't carried over
+        uploader = uploader_name or uploader_info['title']
         uploader_videos = uploader_info['url']
     else:
         try:
