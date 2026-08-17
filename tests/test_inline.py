@@ -220,6 +220,28 @@ class TestChosenQuery(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(call_kwargs['inline_message_id'], 'imid1')
 
     @patch('dasovbot.handlers.inline.append_intent', new_callable=AsyncMock)
+    async def test_cached_edit_failure_falls_back_to_intent(self, mock_append):
+        # A transient edit failure must not leave the placeholder looping:
+        # the intent worker retries the edit with the cached file_id
+        info = VideoInfo(title='Test', file_id='fid123', caption='cap', webpage_url='https://example.com/v1')
+        state = make_state(videos={'https://example.com/v1': info})
+
+        result = make_chosen_inline_result(result_id='rid1', inline_message_id='imid1')
+        update = make_update(chosen_inline_result=result)
+        context = make_context(
+            state=state,
+            user_data={'inline_queries': {'rid1': 'https://example.com/v1'}},
+        )
+        context.bot.edit_message_media.side_effect = Exception('flood control')
+
+        from dasovbot.handlers.inline import chosen_query
+        await chosen_query(update, context)
+
+        mock_append.assert_awaited_once()
+        call_kwargs = mock_append.call_args[1]
+        self.assertEqual(call_kwargs['inline_message_id'], 'imid1')
+
+    @patch('dasovbot.handlers.inline.append_intent', new_callable=AsyncMock)
     async def test_no_file_id_appends_intent(self, mock_append):
         state = make_state(videos={})
 

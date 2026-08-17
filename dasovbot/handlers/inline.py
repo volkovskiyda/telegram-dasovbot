@@ -153,15 +153,21 @@ async def chosen_query(update: Update, context):
     info = state.videos.get(query)
     file_id = info.file_id if info else None
     if file_id:
-        await context.bot.edit_message_media(
-            media=InputMediaVideo(
-                media=file_id,
-                caption=info.caption,
-            ),
-            inline_message_id=inline_message_id,
-        )
-        logger.info("%s # chosen_query fnsh: %s", extract_user(user), query)
-        return
+        try:
+            await context.bot.edit_message_media(
+                media=InputMediaVideo(
+                    media=file_id,
+                    caption=info.caption,
+                ),
+                inline_message_id=inline_message_id,
+            )
+            logger.info("%s # chosen_query fnsh: %s", extract_user(user), query)
+            return
+        except Exception as e:
+            # Transient failure (e.g. RetryAfter) would otherwise leave the
+            # placeholder looping forever despite the cached file_id: fall
+            # through to the intent path, whose delivery retries the edit
+            logger.error("%s # chosen_query edit error: %s", extract_user(user), query, exc_info=e)
 
     title = None
     for tiq in state.temporary_inline_queries.values():
