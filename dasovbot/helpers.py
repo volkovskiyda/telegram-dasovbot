@@ -29,6 +29,26 @@ async def send_message_developer(bot: Bot, text: str, developer_id: str, notific
         pass
 
 
+# Telegram rejects messages longer than 4096 characters
+TELEGRAM_MESSAGE_LIMIT = 4096
+
+
+def split_message(lines: list[str], separator: str = '\n', limit: int = TELEGRAM_MESSAGE_LIMIT) -> list[str]:
+    """Join lines into as few messages as fit Telegram's length limit."""
+    messages = []
+    current = ''
+    for line in lines:
+        candidate = f"{current}{separator}{line}" if current else line
+        if current and len(candidate) > limit:
+            messages.append(current)
+            current = line
+        else:
+            current = candidate
+    if current:
+        messages.append(current)
+    return messages
+
+
 def user_subscriptions(chat_id: str, subscriptions: dict) -> dict:
     result = {}
     for url, subscription in subscriptions.copy().items():

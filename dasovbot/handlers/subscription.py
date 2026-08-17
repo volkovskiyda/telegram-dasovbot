@@ -14,6 +14,7 @@ from dasovbot.constants import (
 from dasovbot.downloader import extract_url, get_ydl
 from dasovbot.helpers import (
     extract_user, remove_command_prefix, user_subscriptions, append_playlist,
+    split_message,
 )
 from dasovbot.models import Subscription
 from dasovbot.services.intent_processor import append_intent
@@ -98,11 +99,13 @@ async def subscription_list(update: Update, context):
 
     try:
         if sub_list:
-            await message.reply_markdown('\n\n'.join(sub_list))
+            # Chunked: one message per 4096 chars, or a long list gets no reply at all
+            for text in split_message(sub_list, separator='\n\n'):
+                await message.reply_markdown(text)
         else:
             await message.reply_text('No subscriptions')
     except Exception:
-        pass
+        logger.error("subscription_list reply error", exc_info=True)
 
 
 async def subscribe(update: Update, context) -> int:
@@ -444,18 +447,19 @@ async def playlists(update: Update, context) -> int:
                     pass
         except Exception:
             pass
-    if videos:
-        output = [f"{item}" for item in videos]
-        output.insert(0, "Available *Videos*")
-        await message.reply_text('\n'.join(output))
-    if streams:
-        output = [f"{item}" for item in streams]
-        output.insert(0, "Available *Streams*")
-        await message.reply_text('\n'.join(output))
-    if both:
-        output = [f"{item}" for item in both]
-        output.insert(0, "*Videos and Streams*")
-        await message.reply_text('\n'.join(output))
+    # Plain text (the previous *asterisks* rendered literally without a
+    # parse_mode), chunked to the message limit, and best-effort so a failed
+    # reply cannot abort the remaining groups
+    for header, items in (("Available Videos", videos),
+                          ("Available Streams", streams),
+                          ("Videos and Streams", both)):
+        if not items:
+            continue
+        try:
+            for text in split_message([header] + items):
+                await message.reply_text(text)
+        except Exception:
+            logger.error("playlists reply error: %s", header, exc_info=True)
     return ConversationHandler.END
 
 
@@ -509,10 +513,21 @@ async def multiple_subscribe_urls(update: Update, context) -> int:
                 uploader_videos=url,
             ))
             subscribed.append(url)
-    if already_subscribed:
-        await message.reply_text('\n'.join(["Already Subscribed"] + [f"{item}" for item in already_subscribed]))
-    if failed:
-        await message.reply_text('\n'.join(["Failed subscriptions"] + [f"{item}" for item in failed]))
+    # Chunked and best-effort: an oversized or failed reply must not abort the
+    # handler before the summary, or the conversation stays stuck in
+    # MULTIPLE_SUBSCRIBE_URLS and the next message is re-parsed as URLs
+    for header, items in (("Already Subscribed", already_subscribed),
+                          ("Failed subscriptions", failed)):
+        if not items:
+            continue
+        try:
+            for text in split_message([header] + items):
+                await message.reply_text(text)
+        except Exception:
+            logger.error("multiple_subscribe reply error: %s", header, exc_info=True)
     logger.info("%s # multiple_subscribe len: %s, already_subscribed: %s, failed: %s", extract_user(user), len(urls), len(already_subscribed), len(failed))
-    await message.reply_text("Multiple Subscribe" + (f"\n{len(subscribed)} urls successfully" if subscribed else "") + (f"\n{len(failed)} urls failed" if failed else "") + (f"\n{len(already_subscribed)} urls already subscribed" if already_subscribed else ""))
+    try:
+        await message.reply_text("Multiple Subscribe" + (f"\n{len(subscribed)} urls successfully" if subscribed else "") + (f"\n{len(failed)} urls failed" if failed else "") + (f"\n{len(already_subscribed)} urls already subscribed" if already_subscribed else ""))
+    except Exception:
+        logger.error("multiple_subscribe summary reply error", exc_info=True)
     return ConversationHandler.END

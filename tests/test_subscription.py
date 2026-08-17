@@ -182,7 +182,7 @@ class TestPlaylists(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, ConversationHandler.END)
         message.reply_text.assert_awaited_once()
         reply = message.reply_text.await_args.args[0]
-        self.assertIn('Available *Streams*', reply)
+        self.assertIn('Available Streams', reply)
         self.assertIn('https://example.com/c1/streams', reply)
 
     @patch('dasovbot.handlers.subscription.get_ydl')
@@ -208,7 +208,7 @@ class TestPlaylists(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, ConversationHandler.END)
         message.reply_text.assert_awaited_once()
         reply = message.reply_text.await_args.args[0]
-        self.assertIn('*Videos and Streams*', reply)
+        self.assertIn('Videos and Streams', reply)
         self.assertEqual(reply.count('https://example.com/c1'), 1)
 
     @patch('dasovbot.handlers.subscription.get_ydl')
@@ -258,6 +258,25 @@ class TestSubscriptionList(unittest.IsolatedAsyncioTestCase):
         await subscription_list(update, context)
 
         message.reply_text.assert_awaited_once_with('No subscriptions')
+
+    async def test_long_list_chunked_into_multiple_replies(self):
+        # An oversized single reply used to raise inside `except: pass`,
+        # leaving the user with no response at all
+        subs = {
+            f'https://example.com/c{i}/videos': Subscription(chat_ids=['123'], title=f'Channel {i} {"x" * 200}')
+            for i in range(40)
+        }
+        state = make_state(subscriptions=subs)
+        message = make_message(chat_id=123)
+        update = make_update(message=message)
+        context = make_context(state=state)
+
+        from dasovbot.handlers.subscription import subscription_list
+        await subscription_list(update, context)
+
+        self.assertGreater(message.reply_markdown.await_count, 1)
+        for call in message.reply_markdown.call_args_list:
+            self.assertLessEqual(len(call[0][0]), 4096)
 
     async def test_only_own_subscriptions(self):
         subs = {
@@ -823,6 +842,23 @@ class TestMultipleSubscribeUrls(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, ConversationHandler.END)
 
     @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_reply_failure_still_ends_conversation(self, mock_get_ydl):
+        # A raising reply used to abort before returning END, leaving the
+        # conversation stuck in MULTIPLE_SUBSCRIBE_URLS re-parsing messages as URLs
+        existing_sub = Subscription(chat_ids=['123'], title='Existing')
+        state = make_state(subscriptions={'https://example.com/c1': existing_sub})
+        mock_get_ydl.return_value = MagicMock()
+        message = make_message(chat_id=123, text='https://example.com/c1')
+        message.reply_text.side_effect = Exception('Message is too long')
+        update = make_update(message=message)
+        context = make_context(state=state)
+
+        from dasovbot.handlers.subscription import multiple_subscribe_urls
+        result = await multiple_subscribe_urls(update, context)
+
+        self.assertEqual(result, ConversationHandler.END)
+
+    @patch('dasovbot.handlers.subscription.get_ydl')
     async def test_appends_to_existing(self, mock_get_ydl):
         existing_sub = Subscription(chat_ids=['999'], title='Existing', uploader='U')
         state = make_state(subscriptions={'https://example.com/c1': existing_sub})
@@ -1114,7 +1150,7 @@ class TestPlaylistsBranches(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, ConversationHandler.END)
         replies = [call.args[0] for call in message.reply_text.await_args_list]
-        self.assertTrue(any('Available *Videos*' in reply for reply in replies))
+        self.assertTrue(any('Available Videos' in reply for reply in replies))
 
     @patch('dasovbot.handlers.subscription.get_ydl')
     async def test_probe_failures_suggest_nothing(self, mock_get_ydl):

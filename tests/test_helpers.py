@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 from dasovbot.helpers import (
     remove_command_prefix, user_subscriptions,
-    send_message_developer, append_playlist,
+    send_message_developer, append_playlist, split_message,
 )
 from dasovbot.models import Subscription
 
@@ -75,6 +75,26 @@ class TestSendMessageDeveloper(unittest.IsolatedAsyncioTestCase):
         bot.send_message.assert_awaited_once_with(
             chat_id='123', text='text', disable_notification=True
         )
+
+
+class TestSplitMessage(unittest.TestCase):
+    def test_empty_returns_no_messages(self):
+        self.assertEqual(split_message([]), [])
+
+    def test_short_list_joins_into_one(self):
+        self.assertEqual(split_message(['a', 'b'], separator='\n\n'), ['a\n\nb'])
+
+    def test_splits_at_limit(self):
+        lines = ['x' * 30 for _ in range(4)]
+        messages = split_message(lines, limit=70)
+        self.assertEqual(messages, ['x' * 30 + '\n' + 'x' * 30] * 2)
+        for message in messages:
+            self.assertLessEqual(len(message), 70)
+
+    def test_keeps_all_lines(self):
+        lines = [f'line{i}' for i in range(100)]
+        messages = split_message(lines, limit=50)
+        self.assertEqual('\n'.join(messages).split('\n'), lines)
 
 
 class TestAppendPlaylist(unittest.TestCase):
