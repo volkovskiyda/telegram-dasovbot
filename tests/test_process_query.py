@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from telegram.error import NetworkError
 
 from dasovbot.constants import MAX_INTENT_RETRIES, RESTART_DELAY_SEC
-from dasovbot.models import VideoInfo, Intent
+from dasovbot.models import VideoInfo, Intent, IntentMessage
 from dasovbot.services.intent_processor import (
     process_query, retry_lower_quality, process_intents, monitor_process_intents,
     drop_or_retry_intent,
@@ -329,7 +329,7 @@ class TestRetryBackoff(unittest.IsolatedAsyncioTestCase):
     async def test_retry_demotes_priority_and_sets_backoff(self):
         intent = Intent(priority=7, chat_ids=['1'])
         state = make_state(config=make_config(), intents={'q': intent})
-        await drop_or_retry_intent('q', state)
+        await drop_or_retry_intent(AsyncMock(), 'q', state)
         self.assertEqual(intent.priority, 0)
         self.assertGreater(state.intent_retry_after['q'], time.monotonic())
 
@@ -339,14 +339,14 @@ class TestRetryBackoff(unittest.IsolatedAsyncioTestCase):
         far = time.monotonic() + 9999
         state = make_state(config=make_config(), intents={'q': Intent(chat_ids=['1'])},
                            intent_retry_after={'q': far})
-        await drop_or_retry_intent('q', state)
+        await drop_or_retry_intent(AsyncMock(), 'q', state)
         self.assertEqual(state.intent_retry_after['q'], far)
 
     async def test_drop_clears_backoff(self):
         state = make_state(config=make_config(),
                            intents={'q': Intent(chat_ids=['1'], retries=MAX_INTENT_RETRIES - 1)},
                            intent_retry_after={'q': time.monotonic() + 60})
-        await drop_or_retry_intent('q', state)
+        await drop_or_retry_intent(AsyncMock(), 'q', state)
         self.assertNotIn('q', state.intents)
         self.assertNotIn('q', state.intent_retry_after)
 
@@ -386,6 +386,58 @@ class TestRetryBackoff(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(asyncio.CancelledError):
             await process_intents(bot, state)
         mock_process_query.assert_awaited_once_with(bot, 'q', state)
+
+
+class TestNotifyOnFailure(unittest.IsolatedAsyncioTestCase):
+    async def test_drop_edits_placeholders(self):
+        intent = Intent(messages=[IntentMessage(chat='1', message='10')],
+                        inline_message_ids=['im1'], title='My Video',
+                        retries=MAX_INTENT_RETRIES - 1)
+        state = make_state(config=make_config(), intents={'q': intent})
+        bot = AsyncMock()
+        await drop_or_retry_intent(bot, 'q', state)
+        self.assertNotIn('q', state.intents)
+        # Both the inline placeholder and the chat placeholder get the notice
+        self.assertEqual(bot.edit_message_caption.await_count, 2)
+        caption = bot.edit_message_caption.await_args.kwargs['caption']
+        self.assertIn('Download failed', caption)
+        self.assertIn('My Video', caption)
+        self.assertIn('q', caption)
+
+    async def test_retry_does_not_notify(self):
+        intent = Intent(messages=[IntentMessage(chat='1', message='10')])
+        state = make_state(config=make_config(), intents={'q': intent})
+        bot = AsyncMock()
+        await drop_or_retry_intent(bot, 'q', state)
+        bot.edit_message_caption.assert_not_awaited()
+        self.assertIn('q', state.intents)
+
+    async def test_notify_error_does_not_propagate(self):
+        intent = Intent(messages=[IntentMessage(chat='1', message='10')],
+                        retries=MAX_INTENT_RETRIES - 1)
+        state = make_state(config=make_config(), intents={'q': intent})
+        bot = AsyncMock()
+        bot.edit_message_caption.side_effect = Exception('message gone')
+        await drop_or_retry_intent(bot, 'q', state)
+        self.assertNotIn('q', state.intents)
+
+    async def test_ignored_notifies_once_and_clears_placeholders(self):
+        intent = Intent(ignored=True, inline_message_ids=['im1'],
+                        messages=[IntentMessage(chat='1', message='10')],
+                        chat_ids=['5'])
+        state = make_state(config=make_config(), intents={'q': intent})
+        bot = AsyncMock()
+        await drop_or_retry_intent(bot, 'q', state)
+        self.assertEqual(bot.edit_message_caption.await_count, 2)
+        self.assertIn('Video unavailable', bot.edit_message_caption.await_args.kwargs['caption'])
+        self.assertEqual(intent.inline_message_ids, [])
+        self.assertEqual(intent.messages, [])
+        # chat_ids requesters got no placeholder; keep them for a manual retry
+        self.assertEqual(intent.chat_ids, ['5'])
+        self.assertEqual(intent.retries, 0)
+        bot.reset_mock()
+        await drop_or_retry_intent(bot, 'q', state)
+        bot.edit_message_caption.assert_not_awaited()
 
 
 class TestMonitorProcessIntents(unittest.IsolatedAsyncioTestCase):

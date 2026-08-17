@@ -41,15 +41,43 @@ def file_size_mb(path: str) -> int:
         return 0
 
 
-async def drop_or_retry_intent(query: str, state: BotState):
+async def notify_intent_failed(bot: Bot, query: str, intent: Intent, reason: str = 'Download failed'):
+    """Close the loop with requesters when an intent permanently fails.
+
+    Their placeholder animations would keep looping forever otherwise. Edits
+    the placeholder captions in place; chat_ids requesters never got a
+    placeholder and are deliberately not messaged. Best-effort per recipient.
+    """
+    lines = [f'❌ {reason}']
+    if intent.title:
+        lines.append(intent.title)
+    lines.append(query)
+    text = '\n'.join(lines)
+    for item in intent.inline_message_ids:
+        await _deliver(lambda item=item: bot.edit_message_caption(inline_message_id=item, caption=text), 'failed_inline', query, item)
+    for item in intent.messages:
+        await _deliver(lambda item=item: bot.edit_message_caption(chat_id=item.chat, message_id=item.message, caption=text), 'failed_message', query, item)
+
+
+async def drop_or_retry_intent(bot: Bot, query: str, state: BotState):
     from dasovbot.constants import MAX_INTENT_RETRIES, INTENT_RETRY_BACKOFF_SEC
     intent = state.intents.get(query)
-    if not intent or intent.ignored:
+    if not intent:
+        return
+    if intent.ignored:
+        # Dead video (removed/private/age-gated): tell requesters once, then
+        # keep the ignored intent so the dashboard can still show/retry it
+        if intent.inline_message_ids or intent.messages:
+            await notify_intent_failed(bot, query, intent, reason='Video unavailable')
+            intent.inline_message_ids.clear()
+            intent.messages.clear()
+            await state.save_intent(query)
         return
     intent.retries += 1
     if intent.retries >= MAX_INTENT_RETRIES:
         logger.warning("intent dropped after %d failed attempts: %s", intent.retries, query)
         await state.pop_intent(query)
+        await notify_intent_failed(bot, query, intent)
     else:
         intent.priority = 0
         # max(): a download timeout already set a longer deadline (its
@@ -182,7 +210,7 @@ async def process_intents(bot: Bot, state: BotState):
             # letting it propagate restarts the loop with the same max-priority
             # intent, which crash-loops forever and starves every other intent.
             logger.error("process_query crashed: %s %s: %s", max_priority, type(e).__name__, e, exc_info=e)
-            await drop_or_retry_intent(max_priority, state)
+            await drop_or_retry_intent(bot, max_priority, state)
         await asyncio.sleep(PROCESS_INTERVAL_SEC)
 
 
@@ -205,7 +233,7 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
     info = await extract_info(query, download=True, state=state)
     if not info:
         logger.error("process_query error (no info): %s", query)
-        await drop_or_retry_intent(query, state)
+        await drop_or_retry_intent(bot, query, state)
         return info
     caption = info.caption
     file_id = info.file_id
@@ -218,7 +246,7 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
                 # extract_url may be None for dead videos with no url fields
                 if 'youtube' in (extract_url(info) or ''):
                     await send_message_developer(bot, f'[error_no_video_path]\n{caption}', config.developer_id)
-                await drop_or_retry_intent(query, state)
+                await drop_or_retry_intent(bot, query, state)
                 return info
             video_path = await convert_to_mp4(video_path)
             if video_path != info.filepath:
@@ -246,12 +274,12 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
                 if await retry_lower_quality(bot, query, info, state):
                     return info
             remove(info.filepath)
-            await drop_or_retry_intent(query, state)
+            await drop_or_retry_intent(bot, query, state)
             return info
         file_id = await post_process(query, info, message, state)
         logger.info("process_query post_process done: %s file_id=%s", query, file_id)
         if not file_id:
-            await drop_or_retry_intent(query, state)
+            await drop_or_retry_intent(bot, query, state)
             return info
 
     await process_intent(bot, query, file_id, caption, state)
