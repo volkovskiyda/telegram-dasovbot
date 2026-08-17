@@ -275,6 +275,30 @@ class TestProcessIntents(unittest.IsolatedAsyncioTestCase):
 
     @patch('dasovbot.services.intent_processor.process_query', new_callable=AsyncMock)
     @patch('dasovbot.services.intent_processor.asyncio.sleep', new_callable=AsyncMock)
+    async def test_process_query_crash_consumes_retry_and_keeps_worker_alive(self, mock_sleep, mock_process_query):
+        # An unhandled crash used to escape to monitor_process_intents, which
+        # re-picked the same intent without touching retries — a forever loop.
+        mock_sleep.side_effect = asyncio.CancelledError()
+        mock_process_query.side_effect = TypeError('boom')
+        intent = Intent(priority=5)
+        state = make_state(config=make_config(), intents={'q': intent})
+        with self.assertRaises(asyncio.CancelledError):
+            await process_intents(AsyncMock(), state)
+        self.assertEqual(intent.retries, 1)
+
+    @patch('dasovbot.services.intent_processor.process_query', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.asyncio.sleep', new_callable=AsyncMock)
+    async def test_process_query_crash_drops_after_max_retries(self, mock_sleep, mock_process_query):
+        mock_sleep.side_effect = asyncio.CancelledError()
+        mock_process_query.side_effect = TypeError('boom')
+        state = make_state(config=make_config(),
+                           intents={'q': Intent(priority=5, retries=MAX_INTENT_RETRIES - 1)})
+        with self.assertRaises(asyncio.CancelledError):
+            await process_intents(AsyncMock(), state)
+        self.assertNotIn('q', state.intents)
+
+    @patch('dasovbot.services.intent_processor.process_query', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.asyncio.sleep', new_callable=AsyncMock)
     async def test_waits_on_queue_when_all_intents_ignored(self, mock_sleep, mock_process_query):
         # Real queue would deadlock: the drain loop empties it before get() is
         # awaited, so stub the queue to observe the blocking wait directly. The

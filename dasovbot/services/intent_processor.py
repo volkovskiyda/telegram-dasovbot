@@ -157,7 +157,14 @@ async def process_intents(bot: Bot, state: BotState):
             await state.download_queue.get()
             continue
         max_priority = max(filtered_intents, key=lambda key: filtered_intents[key].priority)
-        await process_query(bot, max_priority, state)
+        try:
+            await process_query(bot, max_priority, state)
+        except Exception as e:
+            # An unexpected crash must still consume the intent's retry budget:
+            # letting it propagate restarts the loop with the same max-priority
+            # intent, which crash-loops forever and starves every other intent.
+            logger.error("process_query crashed: %s %s: %s", max_priority, type(e).__name__, e, exc_info=e)
+            await drop_or_retry_intent(max_priority, state)
         await asyncio.sleep(PROCESS_INTERVAL_SEC)
 
 
