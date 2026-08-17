@@ -22,3 +22,4 @@ requirements-test.txt
 .env.*example
 vpn/
 *.md
+internal/
