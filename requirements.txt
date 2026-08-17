@@ -1,8 +1,8 @@
 yt-dlp[default,deno,curl-cffi]
-python-telegram-bot[job-queue]==22.6
-python-dotenv==1.2.1
+python-telegram-bot[job-queue]==22.8
+python-dotenv==1.2.3
 ffmpeg-python==0.2.0
-aiohttp==3.13.3
+aiohttp==3.14.3
 aiohttp-jinja2==1.6
 jinja2==3.1.6
-aiosqlite==0.21.0
+aiosqlite==0.22.1
