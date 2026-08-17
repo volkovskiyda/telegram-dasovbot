@@ -190,7 +190,8 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
             video_path = info.filepath
             if not video_path:
                 logger.error("process_query no video path: %s", query)
-                if 'youtube' in extract_url(info):
+                # extract_url may be None for dead videos with no url fields
+                if 'youtube' in (extract_url(info) or ''):
                     await send_message_developer(bot, f'[error_no_video_path]\n{caption}', config.developer_id)
                 await drop_or_retry_intent(query, state)
                 return info
@@ -216,7 +217,7 @@ async def process_query(bot: Bot, query: str, state: BotState) -> VideoInfo:
         except Exception as e:
             logger.error("process_query send_video error: %s %s: %s", query, type(e).__name__, e)
             from dasovbot.constants import LARGE_FILE_MB
-            if isinstance(e, NetworkError) and video_path and file_size_mb(video_path) > LARGE_FILE_MB and 'youtube' in extract_url(info):
+            if isinstance(e, NetworkError) and video_path and file_size_mb(video_path) > LARGE_FILE_MB and 'youtube' in (extract_url(info) or ''):
                 if await retry_lower_quality(bot, query, info, state):
                     return info
             remove(info.filepath)

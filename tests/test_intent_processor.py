@@ -383,6 +383,21 @@ class TestProcessQuery(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(video_arg, str)
         self.assertEqual(video_arg, '/tmp/media/video.mp4')
 
+    @patch('dasovbot.services.intent_processor.drop_or_retry_intent', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.extract_info', new_callable=AsyncMock)
+    async def test_no_video_path_and_no_url_drops_instead_of_crashing(self, mock_extract, mock_drop):
+        # Dead videos can come back with neither webpage_url nor url: the
+        # youtube check must not TypeError on None, or the worker crash-loops
+        # on the same intent forever
+        mock_extract.return_value = self._make_info(webpage_url=None, filepath=None)
+        state = make_state(config=make_config())
+        bot = AsyncMock()
+
+        await process_query(bot, 'q', state)
+
+        mock_drop.assert_awaited_once()
+        bot.send_video.assert_not_awaited()
+
     @patch('dasovbot.services.intent_processor.process_intent', new_callable=AsyncMock)
     @patch('dasovbot.services.intent_processor.extract_info', new_callable=AsyncMock)
     async def test_cached_file_id_skips_upload(self, mock_extract, mock_process_intent):
