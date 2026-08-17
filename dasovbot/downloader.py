@@ -54,6 +54,29 @@ def extract_info_sync(query: str, download: bool = False):
         ydl.close()
 
 
+def _extract_info_opts_sync(opts: dict, query: str):
+    # Blocking: like extract_info_sync but with caller-supplied opts. Create,
+    # use and close the YoutubeDL entirely inside the executor thread.
+    ydl = yt_dlp.YoutubeDL(dict(opts))
+    try:
+        return ydl.extract_info(query, download=True)
+    finally:
+        ydl.close()
+
+
+async def download_with_opts(opts: dict, query: str):
+    """Serialized, time-bounded download with custom opts (the 360p fallback).
+
+    Acquires the same lock as the primary download path so yt-dlp downloads
+    never overlap, and bounds the wait like the primary path does. Raises
+    asyncio.TimeoutError when the bound is exceeded.
+    """
+    async with _lock:
+        loop = asyncio.get_running_loop()
+        future = loop.run_in_executor(None, partial(_extract_info_opts_sync, opts, query))
+        return await asyncio.wait_for(future, TIMEOUT_SEC)
+
+
 def extract_url(info) -> str:
     if isinstance(info, VideoInfo):
         return info.webpage_url or info.url

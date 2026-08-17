@@ -167,22 +167,31 @@ class TestRetryLowerQuality(unittest.IsolatedAsyncioTestCase):
         return make_state(config=make_config(), **overrides)
 
     @patch('dasovbot.services.intent_processor.send_message_developer', new_callable=AsyncMock)
-    @patch('dasovbot.services.intent_processor.yt_dlp.YoutubeDL')
-    async def test_fallback_download_error_returns_false(self, mock_ydl_cls, mock_send_dev):
-        mock_ydl_cls.return_value.__enter__.return_value.extract_info.side_effect = ValueError('boom')
+    @patch('dasovbot.services.intent_processor.download_with_opts', new_callable=AsyncMock)
+    async def test_fallback_download_error_returns_false(self, mock_download, mock_send_dev):
+        mock_download.side_effect = ValueError('boom')
         state = self._make_state()
         result = await retry_lower_quality(AsyncMock(), 'q', make_video_info(), state)
         self.assertFalse(result)
 
     @patch('dasovbot.services.intent_processor.send_message_developer', new_callable=AsyncMock)
-    @patch('dasovbot.services.intent_processor.yt_dlp.YoutubeDL')
-    async def test_fallback_downgrades_via_format_sort(self, mock_ydl_cls, mock_send_dev):
+    @patch('dasovbot.services.intent_processor.download_with_opts', new_callable=AsyncMock)
+    async def test_fallback_timeout_returns_false(self, mock_download, mock_send_dev):
+        # download_with_opts bounds the fallback like the primary path; the
+        # timeout must fail the fallback, not hang or kill the worker
+        mock_download.side_effect = asyncio.TimeoutError()
+        result = await retry_lower_quality(AsyncMock(), 'q', make_video_info(), self._make_state())
+        self.assertFalse(result)
+
+    @patch('dasovbot.services.intent_processor.send_message_developer', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.download_with_opts', new_callable=AsyncMock)
+    async def test_fallback_downgrades_via_format_sort(self, mock_download, mock_send_dev):
         # The target resolution lives in format_sort, not in the format string,
         # so downgrading by string substitution would be a silent no-op and
         # re-download the same too-large rendition.
-        mock_ydl_cls.return_value.__enter__.return_value.extract_info.side_effect = ValueError('boom')
+        mock_download.side_effect = ValueError('boom')
         await retry_lower_quality(AsyncMock(), 'q', make_video_info(), self._make_state())
-        opts = mock_ydl_cls.call_args[0][0]
+        opts = mock_download.call_args[0][0]
         self.assertEqual(opts['format_sort'], ['res:360'])
 
     @patch('dasovbot.services.intent_processor.remove')
@@ -190,10 +199,10 @@ class TestRetryLowerQuality(unittest.IsolatedAsyncioTestCase):
     @patch('dasovbot.services.intent_processor.post_process', new_callable=AsyncMock, return_value='fid')
     @patch('dasovbot.services.intent_processor.convert_to_mp4', new_callable=AsyncMock, return_value='/media/video.scaled.mp4')
     @patch('dasovbot.services.intent_processor.send_message_developer', new_callable=AsyncMock)
-    @patch('dasovbot.services.intent_processor.yt_dlp.YoutubeDL')
+    @patch('dasovbot.services.intent_processor.download_with_opts', new_callable=AsyncMock)
     async def test_success_posts_and_cleans_up(
-            self, mock_ydl_cls, mock_send_dev, mock_convert, mock_post, mock_process_intent, mock_remove):
-        mock_ydl_cls.return_value.__enter__.return_value.extract_info.return_value = {
+            self, mock_download, mock_send_dev, mock_convert, mock_post, mock_process_intent, mock_remove):
+        mock_download.return_value = {
             'webpage_url': 'https://www.youtube.com/watch?v=1',
             'title': 'title',
             'width': 640,
@@ -213,10 +222,10 @@ class TestRetryLowerQuality(unittest.IsolatedAsyncioTestCase):
     @patch('dasovbot.services.intent_processor.remove')
     @patch('dasovbot.services.intent_processor.convert_to_mp4', new_callable=AsyncMock, return_value='/media/video.scaled.mp4')
     @patch('dasovbot.services.intent_processor.send_message_developer', new_callable=AsyncMock)
-    @patch('dasovbot.services.intent_processor.yt_dlp.YoutubeDL')
+    @patch('dasovbot.services.intent_processor.download_with_opts', new_callable=AsyncMock)
     async def test_send_failure_returns_false_and_cleans(
-            self, mock_ydl_cls, mock_send_dev, mock_convert, mock_remove):
-        mock_ydl_cls.return_value.__enter__.return_value.extract_info.return_value = {
+            self, mock_download, mock_send_dev, mock_convert, mock_remove):
+        mock_download.return_value = {
             'webpage_url': 'https://www.youtube.com/watch?v=1',
             'title': 'title',
             'requested_downloads': [
@@ -237,10 +246,10 @@ class TestRetryLowerQualityPostProcess(unittest.IsolatedAsyncioTestCase):
     @patch('dasovbot.services.intent_processor.post_process', new_callable=AsyncMock, return_value=None)
     @patch('dasovbot.services.intent_processor.convert_to_mp4', new_callable=AsyncMock, return_value='/media/video.scaled.mp4')
     @patch('dasovbot.services.intent_processor.send_message_developer', new_callable=AsyncMock)
-    @patch('dasovbot.services.intent_processor.yt_dlp.YoutubeDL')
+    @patch('dasovbot.services.intent_processor.download_with_opts', new_callable=AsyncMock)
     async def test_post_process_failure_returns_false(
-            self, mock_ydl_cls, mock_send_dev, mock_convert, mock_post, mock_process_intent, mock_remove):
-        mock_ydl_cls.return_value.__enter__.return_value.extract_info.return_value = {
+            self, mock_download, mock_send_dev, mock_convert, mock_post, mock_process_intent, mock_remove):
+        mock_download.return_value = {
             'webpage_url': 'https://www.youtube.com/watch?v=1',
             'title': 'title',
             'requested_downloads': [

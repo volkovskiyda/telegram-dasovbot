@@ -462,10 +462,10 @@ class TestRetryLowerQuality(unittest.IsolatedAsyncioTestCase):
     @patch('dasovbot.services.intent_processor.process_intent', new_callable=AsyncMock)
     @patch('dasovbot.services.intent_processor.post_process', new_callable=AsyncMock, return_value='fid1')
     @patch('dasovbot.services.intent_processor.process_info')
-    @patch('dasovbot.services.intent_processor.yt_dlp.YoutubeDL')
+    @patch('dasovbot.services.intent_processor.download_with_opts', new_callable=AsyncMock)
     async def test_fallback_upload_waits_for_semaphore_and_sends_path(
-            self, mock_ydl_cls, mock_process_info, mock_post, mock_process_intent, mock_remove):
-        mock_ydl_cls.return_value.__enter__.return_value = MagicMock()
+            self, mock_download, mock_process_info, mock_post, mock_process_intent, mock_remove):
+        mock_download.return_value = MagicMock()
         mock_process_info.return_value = VideoInfo(
             title='T', webpage_url='https://example.com/v', caption='caption',
             filepath='/tmp/media/video.scaled.mp4', width=320, height=180,

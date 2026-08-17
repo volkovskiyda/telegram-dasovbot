@@ -5,17 +5,15 @@ import logging
 import os
 import shutil
 import time
-from functools import partial
 from typing import TYPE_CHECKING
 
-import yt_dlp
 from telegram import Bot, InputMediaVideo, Message
 from telegram.error import NetworkError
 
 from dasovbot.config import make_ydl_opts
 from dasovbot.downloader import (
     extract_info, extract_url, process_info,
-    add_scaled_after_title, convert_to_mp4,
+    add_scaled_after_title, convert_to_mp4, download_with_opts,
 )
 from dasovbot.helpers import send_message_developer, now
 from dasovbot.models import VideoInfo, VideoOrigin, Intent, IntentMessage
@@ -274,16 +272,12 @@ async def retry_lower_quality(bot: Bot, query: str, info: VideoInfo, state: BotS
     temp_ydl_opts['outtmpl'] = add_scaled_after_title(temp_ydl_opts['outtmpl'])
     temp_video_path = None
     temp_info = None
-    loop = asyncio.get_running_loop()
-    with yt_dlp.YoutubeDL(temp_ydl_opts) as temp_ydl:
-        try:
-            temp_info_raw = await loop.run_in_executor(
-                None, partial(temp_ydl.extract_info, query, download=True)
-            )
-            temp_info = process_info(temp_info_raw)
-            temp_video_path = temp_info.filepath
-        except Exception:
-            logger.error("fallback download error: %s", query, exc_info=True)
+    try:
+        temp_info_raw = await download_with_opts(temp_ydl_opts, query)
+        temp_info = process_info(temp_info_raw)
+        temp_video_path = temp_info.filepath
+    except Exception:
+        logger.error("fallback download error: %s", query, exc_info=True)
     if not temp_info or not temp_video_path:
         return False
     temp_video_path = await convert_to_mp4(temp_video_path)

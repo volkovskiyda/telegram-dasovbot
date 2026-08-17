@@ -143,6 +143,31 @@ class TestExtractInfo(unittest.IsolatedAsyncioTestCase):
         for call in mock_get_ydl.return_value.extract_info.call_args_list:
             self.assertFalse(call.kwargs.get('download'))
 
+    @patch('dasovbot.downloader.yt_dlp.YoutubeDL')
+    async def test_download_with_opts_serializes_behind_lock(self, mock_ydl_cls):
+        from dasovbot import downloader
+        mock_ydl_cls.return_value.extract_info.return_value = {'id': '1'}
+        # The fallback path must queue behind the primary download, never
+        # overlap with it
+        await downloader._lock.acquire()
+        task = asyncio.create_task(downloader.download_with_opts({}, 'q'))
+        try:
+            for _ in range(5):
+                await asyncio.sleep(0)
+            mock_ydl_cls.assert_not_called()
+        finally:
+            downloader._lock.release()
+        result = await task
+        self.assertEqual(result, {'id': '1'})
+        mock_ydl_cls.return_value.close.assert_called_once()
+
+    @patch('dasovbot.downloader.asyncio.wait_for', side_effect=asyncio.TimeoutError)
+    @patch('dasovbot.downloader.yt_dlp.YoutubeDL')
+    async def test_download_with_opts_timeout_propagates(self, mock_ydl_cls, mock_wait):
+        from dasovbot import downloader
+        with self.assertRaises(asyncio.TimeoutError):
+            await downloader.download_with_opts({}, 'q')
+
     @patch('dasovbot.downloader.get_ydl')
     async def test_metadata_error_skips_download(self, mock_get_ydl):
         mock_get_ydl.return_value.extract_info.side_effect = ValueError('boom')
