@@ -49,6 +49,10 @@ services:
       EMPTY_MEDIA_FOLDER: $EMPTY_MEDIA_FOLDER
       DASHBOARD_PASSWORD: $DASHBOARD_PASSWORD
       DASHBOARD_PORT: $DASHBOARD_PORT
+      # Compose only uses .env for substitution: without this passthrough the
+      # flag never reaches the container, so behind a reverse proxy the rate
+      # limiter keys on the proxy's IP and the cookie is never marked Secure
+      DASHBOARD_BEHIND_PROXY: $DASHBOARD_BEHIND_PROXY
       BACKUP_CRON: ${BACKUP_CRON:-0 */12 * * *}
       BACKUP_MAX_COUNT: ${BACKUP_MAX_COUNT:-14}
       # Without a cap, glibc creates a malloc arena per executor thread and
