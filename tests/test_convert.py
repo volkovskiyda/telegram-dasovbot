@@ -19,13 +19,16 @@ class TestRunFfmpeg(unittest.TestCase):
         self.assertIn('-c', args)
         self.assertIn('copy', args)
 
+    @patch('dasovbot.downloader.os.remove')
     @patch('dasovbot.downloader.os.path.getsize', return_value=1024)
     @patch('dasovbot.downloader.os.path.exists', return_value=True)
     @patch('dasovbot.downloader.subprocess.run')
-    def test_failure_nonzero_return(self, mock_run, mock_exists, mock_size):
+    def test_failure_nonzero_return_removes_partial_output(self, mock_run, mock_exists, mock_size, mock_remove):
         mock_run.return_value = MagicMock(returncode=1)
         result = _run_ffmpeg('/tmp/in.mkv', '/tmp/out.mp4', ['-c', 'copy'])
         self.assertFalse(result)
+        # A nonzero exit used to leave the partial .mp4 in the media folder forever
+        mock_remove.assert_called_once_with('/tmp/out.mp4')
 
     @patch('dasovbot.downloader.os.path.exists', return_value=False)
     @patch('dasovbot.downloader.subprocess.run')
@@ -40,13 +43,15 @@ class TestRunFfmpeg(unittest.TestCase):
         result = _run_ffmpeg('/tmp/in.mkv', '/tmp/out.mp4', ['-c', 'copy'])
         self.assertFalse(result)
 
+    @patch('dasovbot.downloader.os.remove')
     @patch('dasovbot.downloader.os.path.getsize', return_value=0)
     @patch('dasovbot.downloader.os.path.exists', return_value=True)
     @patch('dasovbot.downloader.subprocess.run')
-    def test_failure_empty_output(self, mock_run, mock_exists, mock_size):
+    def test_failure_empty_output_removed(self, mock_run, mock_exists, mock_size, mock_remove):
         mock_run.return_value = MagicMock(returncode=0)
         result = _run_ffmpeg('/tmp/in.mkv', '/tmp/out.mp4', ['-c', 'copy'])
         self.assertFalse(result)
+        mock_remove.assert_called_once_with('/tmp/out.mp4')
 
 
 class TestConvertToMp4(unittest.IsolatedAsyncioTestCase):
@@ -89,15 +94,6 @@ class TestConvertToMp4(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, '/tmp/video.webm')
         self.assertEqual(mock_ffmpeg.call_count, 2)
 
-    @patch('dasovbot.downloader._cleanup_original')
-    @patch('dasovbot.downloader.os.remove')
-    @patch('dasovbot.downloader.os.path.exists', return_value=True)
-    @patch('dasovbot.downloader._run_ffmpeg', side_effect=[False, True])
-    async def test_partial_remux_output_removed_before_transcode(
-            self, mock_ffmpeg, mock_exists, mock_remove, mock_cleanup):
-        result = await convert_to_mp4('/tmp/video.webm')
-        self.assertEqual(result, '/tmp/video.mp4')
-        mock_remove.assert_called_once_with('/tmp/video.mp4')
 
 
 class TestRunFfmpegErrorCleanup(unittest.TestCase):

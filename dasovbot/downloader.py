@@ -235,11 +235,14 @@ def _run_ffmpeg(input_path: str, output_path: str, codec_args: list[str]) -> boo
              *codec_args, '-movflags', '+faststart', output_path],
             capture_output=True, timeout=600,
         )
-        return result.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0
+        ok = result.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0
     except (subprocess.TimeoutExpired, OSError):
-        if os.path.exists(output_path):
-            os.remove(output_path)
-        return False
+        ok = False
+    if not ok and os.path.exists(output_path):
+        # Any failed run (nonzero exit included) must not leave a partial
+        # .mp4 accumulating in the media folder
+        os.remove(output_path)
+    return ok
 
 
 def _cleanup_original(original: str, new: str):
@@ -260,9 +263,6 @@ async def convert_to_mp4(filepath: str | None) -> str | None:
         logger.info("convert_to_mp4 remuxed: %s", filepath)
         _cleanup_original(filepath, output_path)
         return output_path
-
-    if os.path.exists(output_path):
-        os.remove(output_path)
 
     if await loop.run_in_executor(None, _run_ffmpeg, filepath, output_path, ['-c:v', 'libx264', '-preset', 'fast', '-c:a', 'aac']):
         logger.info("convert_to_mp4 transcoded: %s", filepath)
