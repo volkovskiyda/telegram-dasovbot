@@ -105,6 +105,9 @@ class TestMain(unittest.TestCase):
 
         mock_dashboard.assert_awaited_once_with(state)
         mock_app_cls.builder.assert_not_called()
+        # The DB must be closed on abort: aiosqlite's worker thread is
+        # non-daemon, so a leaked connection keeps the dead process alive
+        state.close.assert_awaited_once()
 
 
 class TestBuildApplication(unittest.TestCase):

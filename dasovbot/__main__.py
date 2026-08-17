@@ -66,6 +66,10 @@ def main():
         loop.run_until_complete(state.migrate_and_load())
     except Exception as e:
         logging.error(f"Failed to migrate/load database: {e}")
+        # Close the DB so aiosqlite's non-daemon worker thread exits; otherwise
+        # the process lingers as a zombie (dashboard up, no bot) and Docker's
+        # restart policy never fires
+        loop.run_until_complete(state.close())
         return
 
     async def post_init(app: Application):
