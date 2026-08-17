@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import shutil
+import time
 from functools import partial
 from typing import TYPE_CHECKING
 
@@ -43,7 +44,7 @@ def file_size_mb(path: str) -> int:
 
 
 async def drop_or_retry_intent(query: str, state: BotState):
-    from dasovbot.constants import MAX_INTENT_RETRIES
+    from dasovbot.constants import MAX_INTENT_RETRIES, INTENT_RETRY_BACKOFF_SEC
     intent = state.intents.get(query)
     if not intent or intent.ignored:
         return
@@ -52,6 +53,13 @@ async def drop_or_retry_intent(query: str, state: BotState):
         logger.warning("intent dropped after %d failed attempts: %s", intent.retries, query)
         await state.pop_intent(query)
     else:
+        intent.priority = 0
+        # max(): a download timeout already set a longer deadline (its
+        # abandoned executor thread may still be writing the output path)
+        state.intent_retry_after[query] = max(
+            state.intent_retry_after.get(query, 0),
+            time.monotonic() + INTENT_RETRY_BACKOFF_SEC,
+        )
         await state.save_intent(query)
 
 
@@ -151,12 +159,24 @@ async def process_intents(bot: Bot, state: BotState):
         while not state.download_queue.empty():
             state.download_queue.get_nowait()
         filtered_intents = filter_intents(state.intents)
-        if not filtered_intents:
-            # Nothing to do: block until a new request signals the queue, then
-            # loop back and re-scan immediately (no throttle on the idle path).
-            await state.download_queue.get()
+        now_mono = time.monotonic()
+        eligible = {query: intent for query, intent in filtered_intents.items()
+                    if state.intent_retry_after.get(query, 0) <= now_mono}
+        if not eligible:
+            if filtered_intents:
+                # Everything is backing off after failures: wait for the
+                # earliest deadline or a new request, whichever comes first.
+                delay = min(state.intent_retry_after.get(query, 0) for query in filtered_intents) - now_mono
+                try:
+                    await asyncio.wait_for(state.download_queue.get(), timeout=max(delay, 1))
+                except asyncio.TimeoutError:
+                    pass
+            else:
+                # Nothing to do: block until a new request signals the queue, then
+                # loop back and re-scan immediately (no throttle on the idle path).
+                await state.download_queue.get()
             continue
-        max_priority = max(filtered_intents, key=lambda key: filtered_intents[key].priority)
+        max_priority = max(eligible, key=lambda key: eligible[key].priority)
         try:
             await process_query(bot, max_priority, state)
         except Exception as e:

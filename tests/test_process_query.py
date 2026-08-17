@@ -1,4 +1,5 @@
 import asyncio
+import time
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -8,6 +9,7 @@ from dasovbot.constants import MAX_INTENT_RETRIES, RESTART_DELAY_SEC
 from dasovbot.models import VideoInfo, Intent
 from dasovbot.services.intent_processor import (
     process_query, retry_lower_quality, process_intents, monitor_process_intents,
+    drop_or_retry_intent,
 )
 from tests.helpers import make_state, make_config
 
@@ -312,6 +314,69 @@ class TestProcessIntents(unittest.IsolatedAsyncioTestCase):
             await process_intents(AsyncMock(), state)
         queue.get.assert_awaited_once()
         mock_process_query.assert_not_awaited()
+
+
+class TestRetryBackoff(unittest.IsolatedAsyncioTestCase):
+    async def test_retry_demotes_priority_and_sets_backoff(self):
+        intent = Intent(priority=7, chat_ids=['1'])
+        state = make_state(config=make_config(), intents={'q': intent})
+        await drop_or_retry_intent('q', state)
+        self.assertEqual(intent.priority, 0)
+        self.assertGreater(state.intent_retry_after['q'], time.monotonic())
+
+    async def test_retry_keeps_longer_existing_backoff(self):
+        # A download timeout sets a full-timeout deadline; the generic retry
+        # backoff must not shorten it
+        far = time.monotonic() + 9999
+        state = make_state(config=make_config(), intents={'q': Intent(chat_ids=['1'])},
+                           intent_retry_after={'q': far})
+        await drop_or_retry_intent('q', state)
+        self.assertEqual(state.intent_retry_after['q'], far)
+
+    async def test_drop_clears_backoff(self):
+        state = make_state(config=make_config(),
+                           intents={'q': Intent(chat_ids=['1'], retries=MAX_INTENT_RETRIES - 1)},
+                           intent_retry_after={'q': time.monotonic() + 60})
+        await drop_or_retry_intent('q', state)
+        self.assertNotIn('q', state.intents)
+        self.assertNotIn('q', state.intent_retry_after)
+
+    @patch('dasovbot.services.intent_processor.process_query', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.asyncio.sleep', new_callable=AsyncMock)
+    async def test_backing_off_intent_skipped_for_eligible_one(self, mock_sleep, mock_process_query):
+        mock_sleep.side_effect = asyncio.CancelledError()
+        state = make_state(config=make_config(), intents={
+            'failing': Intent(priority=9),
+            'fresh': Intent(priority=1),
+        })
+        state.intent_retry_after['failing'] = time.monotonic() + 600
+        bot = AsyncMock()
+        with self.assertRaises(asyncio.CancelledError):
+            await process_intents(bot, state)
+        mock_process_query.assert_awaited_once_with(bot, 'fresh', state)
+
+    @patch('dasovbot.services.intent_processor.process_query', new_callable=AsyncMock)
+    async def test_waits_when_all_intents_backing_off(self, mock_process_query):
+        queue = MagicMock()
+        queue.empty.return_value = True
+        queue.get = AsyncMock(side_effect=asyncio.CancelledError())
+        state = make_state(config=make_config(), intents={'q': Intent(priority=5)},
+                           download_queue=queue)
+        state.intent_retry_after['q'] = time.monotonic() + 600
+        with self.assertRaises(asyncio.CancelledError):
+            await process_intents(AsyncMock(), state)
+        mock_process_query.assert_not_awaited()
+
+    @patch('dasovbot.services.intent_processor.process_query', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.asyncio.sleep', new_callable=AsyncMock)
+    async def test_expired_backoff_is_eligible_again(self, mock_sleep, mock_process_query):
+        mock_sleep.side_effect = asyncio.CancelledError()
+        state = make_state(config=make_config(), intents={'q': Intent(priority=5)})
+        state.intent_retry_after['q'] = time.monotonic() - 1
+        bot = AsyncMock()
+        with self.assertRaises(asyncio.CancelledError):
+            await process_intents(bot, state)
+        mock_process_query.assert_awaited_once_with(bot, 'q', state)
 
 
 class TestMonitorProcessIntents(unittest.IsolatedAsyncioTestCase):

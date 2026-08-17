@@ -197,6 +197,8 @@ async def retry_ignored(request: web.Request) -> web.Response:
     if url:
         if item_type == 'intent' and url in state.intents:
             state.intents[url].ignored = False
+            # A manual retry is an explicit request: skip any failure backoff
+            state.intent_retry_after.pop(url, None)
             await state.save_intent(url)
             state.download_queue.put_nowait(url)
         elif item_type == 'inline' and url in state.temporary_inline_queries:

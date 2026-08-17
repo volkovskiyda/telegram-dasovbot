@@ -31,6 +31,10 @@ class BotState:
     # Health warnings surfaced on the dashboard, keyed by a stable id so an
     # ongoing condition updates in place instead of piling up duplicates
     health_alerts: dict[str, dict] = field(default_factory=dict)
+    # Monotonic deadlines before which a failed intent must not be retried.
+    # Deliberately not persisted: after a process restart no abandoned
+    # download thread can exist, so an immediate retry is safe.
+    intent_retry_after: dict[str, float] = field(default_factory=dict)
     db: aiosqlite.Connection = field(default=None)
 
     @classmethod
@@ -94,6 +98,7 @@ class BotState:
     async def pop_intent(self, key: str) -> Intent | None:
         from dasovbot.database import delete_intent
         intent = self.intents.pop(key, None)
+        self.intent_retry_after.pop(key, None)
         await delete_intent(self.db, key)
         return intent
 

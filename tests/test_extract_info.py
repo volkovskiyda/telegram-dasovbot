@@ -127,6 +127,11 @@ class TestExtractInfo(unittest.IsolatedAsyncioTestCase):
         result = await extract_info('q', download=True, state=state)
         self.assertIs(result, cached)
         self.assertIsNone(result.file_id)
+        # The abandoned executor thread may still be writing the output path:
+        # the intent must be held back for a full timeout window
+        import time
+        from dasovbot.constants import TIMEOUT_SEC
+        self.assertGreater(state.intent_retry_after['q'], time.monotonic() + TIMEOUT_SEC - 60)
 
     @patch('dasovbot.downloader.asyncio.wait_for', side_effect=asyncio.TimeoutError)
     @patch('dasovbot.downloader.get_ydl')

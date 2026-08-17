@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import subprocess
+import time
 from datetime import datetime
 from functools import partial
 from typing import TYPE_CHECKING
@@ -189,7 +190,10 @@ async def extract_info(query: str, download: bool, state: BotState) -> VideoInfo
                 info = process_info(raw_info)
         except asyncio.TimeoutError:
             # The executor thread cannot be cancelled: yt-dlp may keep
-            # downloading in the background after the lock is released.
+            # downloading in the background after the lock is released. Hold
+            # the intent back for a full timeout window so a retry does not
+            # write the same output path concurrently with that thread.
+            state.intent_retry_after[query] = time.monotonic() + TIMEOUT_SEC
             logger.warning("extract_info timeout, download may still be running: %s", query)
         except Exception as e:
             logger.error("extract_info download error: %s", query, exc_info=e)

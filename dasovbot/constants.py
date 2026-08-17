@@ -28,6 +28,12 @@ BACKUP_STALE_SEC = 26 * 60 * 60  # alert if newest backup is older than this (2x
 # Attempts before a failing intent is dropped
 MAX_INTENT_RETRIES = 3
 
+# Minimum delay before a failed intent becomes eligible again (it is also
+# demoted to priority 0 so it cannot head-of-line-block fresh requests).
+# A timed-out download backs off for a full TIMEOUT_SEC instead: its executor
+# thread cannot be cancelled and may still be writing the same output path.
+INTENT_RETRY_BACKOFF_SEC = 60
+
 # Retries when Telegram rate-limits a delivery (RetryAfter)
 MAX_SEND_RETRIES = 2
 
