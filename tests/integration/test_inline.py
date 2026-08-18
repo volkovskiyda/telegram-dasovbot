@@ -250,7 +250,7 @@ class TestInlineQueryEndToEnd(IntegrationTestBase):
     def setUp(self):
         """Check if E2E tests are enabled"""
         import os
-        if not os.getenv('ENABLE_E2E_TESTS'):
+        if os.getenv('ENABLE_E2E_TESTS') != '1':
             self.skipTest("E2E tests disabled. Set ENABLE_E2E_TESTS=1 to enable")
 
     async def test_inline_mode_enabled(self):

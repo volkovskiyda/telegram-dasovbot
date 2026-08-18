@@ -326,7 +326,7 @@ class TestVideoDownload(IntegrationTestBase):
 
     def setUp(self):
         _requires_real_video(self.test_config)
-        if not os.getenv('TEST_ENABLE_DOWNLOAD'):
+        if os.getenv('TEST_ENABLE_DOWNLOAD') != '1':
             self.skipTest(
                 'Download tests disabled. Set TEST_ENABLE_DOWNLOAD=1 to enable'
             )

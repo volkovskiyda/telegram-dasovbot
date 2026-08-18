@@ -271,7 +271,7 @@ class RealDownloadTestBase(RealPipelineTestBase):
     TEST_ENABLE_DOWNLOAD, creates the media/export folders, cleans them up."""
 
     def setUp(self):
-        if not os.getenv('TEST_ENABLE_DOWNLOAD'):
+        if os.getenv('TEST_ENABLE_DOWNLOAD') != '1':
             self.skipTest('Download tests disabled. Set TEST_ENABLE_DOWNLOAD=1 to enable')
 
     async def asyncSetUp(self):
@@ -399,7 +399,7 @@ class TestInlineRealUploadE2E(RealDownloadTestBase):
 
     def setUp(self):
         _requires_real_video(self.test_config)
-        if not os.getenv('ENABLE_E2E_TESTS'):
+        if os.getenv('ENABLE_E2E_TESTS') != '1':
             self.skipTest('E2E tests disabled. Set ENABLE_E2E_TESTS=1 to enable')
         super().setUp()
 
@@ -486,7 +486,7 @@ class TestLocalModeIntentPipeline(TestIntentPipelineDownload):
     """
 
     def setUp(self):
-        if not os.getenv('TEST_LOCAL_MODE'):
+        if os.getenv('TEST_LOCAL_MODE') != '1':
             self.skipTest('Set TEST_LOCAL_MODE=1 (needs a --local Bot API '
                           'server sharing /tmp/test_config/media)')
         super().setUp()
