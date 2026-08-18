@@ -250,5 +250,28 @@ class TestIntentPipelineDownload(RealPipelineTestBase):
         self.assertNotIn(url, self.state.intents)
 
 
+class TestLocalModeIntentPipeline(TestIntentPipelineDownload):
+    """The same intent pipeline with PTB local_mode: the upload reaches the
+    Bot API server as a file:// path it reads from the shared media folder,
+    so the video bytes never pass through the bot process.
+
+    Requires TEST_LOCAL_MODE=1 with TEST_BASE_URL pointing at a Bot API
+    server started with --local that mounts /tmp/test_config/media at the
+    same absolute path (mirrors the production LOCAL_MODE contract).
+    """
+
+    def setUp(self):
+        if not os.getenv('TEST_LOCAL_MODE'):
+            self.skipTest('Set TEST_LOCAL_MODE=1 (needs a --local Bot API '
+                          'server sharing /tmp/test_config/media)')
+        super().setUp()
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.assertTrue(self.state.config.local_mode)
+        self.assertTrue(self.test_config.base_url,
+                        'local_mode requires the local Bot API server')
+
+
 if __name__ == '__main__':
     unittest.main()

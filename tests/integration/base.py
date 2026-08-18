@@ -17,6 +17,9 @@ import os
 class IntegrationTestConfig:
     """Configuration for integration tests"""
 
+    # Probe result cache: base_url -> reachable, shared across all test classes
+    _reachable: dict[str, bool] = {}
+
     def __init__(self):
         # Load test environment variables
         load_dotenv('.env.test')
@@ -27,11 +30,36 @@ class IntegrationTestConfig:
         self.base_url = os.getenv('TEST_BASE_URL', '')
         self.read_timeout = int(os.getenv('TEST_READ_TIMEOUT', '30'))
         self.test_video_url = os.getenv('TEST_VIDEO_URL', 'https://example.com/video')
+        self.local_mode = os.getenv('TEST_LOCAL_MODE', '') == '1'
 
         if not self.bot_token:
             raise ValueError('TEST_BOT_TOKEN not set in .env.test')
         if not self.user_id:
             raise ValueError('TEST_USER_ID not set in .env.test')
+
+        # A configured local Bot API server may simply not be running; fall
+        # back to the official API so the suite still runs, unless the test
+        # explicitly needs the local server (TEST_LOCAL_MODE=1).
+        if self.base_url and not self._base_url_reachable():
+            if self.local_mode:
+                raise ValueError(
+                    f'TEST_LOCAL_MODE=1 but {self.base_url} is unreachable')
+            print(f'WARNING: {self.base_url} unreachable, '
+                  'falling back to the official Telegram API')
+            self.base_url = ''
+
+    def _base_url_reachable(self) -> bool:
+        if self.base_url not in self._reachable:
+            import socket
+            from urllib.parse import urlparse
+            parsed = urlparse(self.base_url)
+            try:
+                with socket.create_connection(
+                        (parsed.hostname, parsed.port or 80), timeout=3):
+                    self._reachable[self.base_url] = True
+            except OSError:
+                self._reachable[self.base_url] = False
+        return self._reachable[self.base_url]
 
     def to_bot_config(self) -> Config:
         """Convert to bot Config object"""
@@ -42,6 +70,7 @@ class IntegrationTestConfig:
             developer_id=str(self.user_id),
             read_timeout=float(self.read_timeout),
             config_folder='/tmp/test_config',
+            local_mode=self.local_mode,
         )
 
 
@@ -82,6 +111,8 @@ class IntegrationTestBase(unittest.IsolatedAsyncioTestCase):
         builder = Application.builder().token(config.bot_token)
         if config.base_url:
             builder = builder.base_url(config.base_url)
+        if config.local_mode:
+            builder = builder.local_mode(True)
         builder = builder.read_timeout(config.read_timeout)
 
         self.application = builder.build()
