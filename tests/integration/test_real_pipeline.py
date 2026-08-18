@@ -250,6 +250,115 @@ class TestIntentPipelineDownload(RealPipelineTestBase):
         self.assertNotIn(url, self.state.intents)
 
 
+class TestInlineRealUploadE2E(RealPipelineTestBase):
+    """Manual E2E for the inline flow with a real inline_message_id:
+
+    1. You type `@<bot> <TEST_VIDEO_URL>` in the test chat and tap the result
+    2. The real inline_query is answered with the loading placeholder
+    3. Your chosen_inline_result queues an intent with the inline_message_id
+    4. The pipeline downloads, uploads, and edits your inline message into
+       the real video
+
+    Requires ENABLE_E2E_TESTS=1, TEST_ENABLE_DOWNLOAD=1, and the bot to have
+    inline mode AND inline feedback at 100% configured via @BotFather
+    (/setinline, /setinlinefeedback) — without feedback no
+    chosen_inline_result update ever arrives.
+    """
+
+    def setUp(self):
+        super().setUp()
+        if not os.getenv('ENABLE_E2E_TESTS'):
+            self.skipTest('E2E tests disabled. Set ENABLE_E2E_TESTS=1 to enable')
+        if not os.getenv('TEST_ENABLE_DOWNLOAD'):
+            self.skipTest('Download tests disabled. Set TEST_ENABLE_DOWNLOAD=1 to enable')
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        config = self.state.config
+        os.makedirs(config.media_folder, exist_ok=True)
+        os.makedirs(f'{config.config_folder}/export', exist_ok=True)
+
+    async def asyncTearDown(self):
+        for pattern in ('media', 'export'):
+            for path in glob.glob(f'{self.state.config.config_folder}/{pattern}/*'):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+        await super().asyncTearDown()
+
+    async def _seed_animation_file_id(self):
+        """The inline handler can only answer an un-downloaded video when a
+        loading-animation file_id exists; upload the clip once to get one."""
+        from dasovbot.downloader import extract_info
+        info = await extract_info(self.test_config.test_video_url,
+                                  download=True, state=self.state)
+        self.assertIsNotNone(info, 'could not download the seed clip')
+        self.assertTrue(info.filepath and os.path.exists(info.filepath))
+        message = await self.bot.send_video(
+            chat_id=self.test_config.chat_id, video=info.filepath,
+            disable_notification=True)
+        self.state.animation_file_id = message.video.file_id
+        await self.bot.delete_message(self.test_config.chat_id, message.message_id)
+
+    async def test_inline_chosen_result_delivers_video(self):
+        url = self.test_config.test_video_url
+        user_id = self.test_config.user_id
+        await self.clear_updates()
+        await self._seed_animation_file_id()
+
+        await self.bot.send_message(
+            chat_id=self.test_config.chat_id,
+            text=(f'🤖 Integration Test: in this chat, paste\n\n'
+                  f'@{self.bot_user.username} {url}\n\n'
+                  f'wait for the result to appear, then tap it. '
+                  f'(2 minutes; paste the full line, do not type it gradually)'))
+        print('\n⏳ Waiting for your inline query and result tap… (120s)')
+
+        loop = asyncio.get_event_loop()
+        deadline = loop.time() + 120
+        answered = False
+        chosen = None
+        while loop.time() < deadline and chosen is None:
+            updates = await self.bot.get_updates(timeout=5)
+            for update in updates:
+                if (update.inline_query
+                        and update.inline_query.from_user.id == user_id):
+                    await self.simulate_update(update)
+                    answered = True
+                    print('✓ inline query answered with placeholder')
+                elif (update.chosen_inline_result
+                        and update.chosen_inline_result.from_user.id == user_id):
+                    chosen = update
+            if updates:
+                await self.bot.get_updates(offset=updates[-1].update_id + 1)
+
+        self.assertTrue(answered, 'no inline query received — was the inline '
+                                  'query typed in time?')
+        self.assertIsNotNone(
+            chosen,
+            'no chosen_inline_result received — inline feedback must be '
+            'enabled at 100% via @BotFather (/setinlinefeedback)')
+        self.assertTrue(chosen.chosen_inline_result.inline_message_id,
+                        'chosen result carries no inline_message_id — the '
+                        'result needs an inline keyboard (loading button)')
+
+        await self.simulate_update(chosen)
+        intent = self.state.intents.get(url)
+        self.assertIsNotNone(intent, 'chosen_query queued no intent')
+        self.assertTrue(intent.inline_message_ids)
+        print('✓ chosen result queued an inline intent, processing…')
+
+        info = await process_query(self.bot, url, self.state)
+
+        self.assertIsNotNone(info)
+        cached = self.state.videos.get(url)
+        self.assertIsNotNone(cached)
+        self.assertTrue(cached.file_id)
+        self.assertNotIn(url, self.state.intents)
+        print('✓ inline message edited to the real video — check your chat')
+
+
 class TestLocalModeIntentPipeline(TestIntentPipelineDownload):
     """The same intent pipeline with PTB local_mode: the upload reaches the
     Bot API server as a file:// path it reads from the shared media folder,
