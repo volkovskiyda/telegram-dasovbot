@@ -12,8 +12,8 @@ TEST_VIDEO_URL (a short video — it is downloaded and uploaded for real).
 Optional TEST_CHANNEL_URL sets the channel used for subscription tests;
 without it, the channel that owns TEST_VIDEO_URL is used.
 Optional TEST_PLAYLIST_URLS (comma-separated) enables the real-playlist
-subscription tests; the gated playlist download test only ever picks the
-shortest entry, and skips entirely if nothing is under 5 minutes.
+subscription tests; the gated playlist download test only tries the
+shortest entries, and skips entirely if nothing is under 5 minutes.
 """
 import asyncio
 import glob
@@ -330,17 +330,24 @@ class TestIntentPipelineDownload(RealDownloadTestBase):
 
 class TestRealPlaylistIntentDownload(RealDownloadTestBase):
     """A subscription-sourced intent from a real playlist goes through the
-    actual download/upload/delivery pipeline. ISP-safe: scans the playlists
-    for their shortest entry and refuses anything over MAX_DURATION_SEC."""
+    actual download/upload/delivery pipeline. ISP-safe: only entries up to
+    MAX_DURATION_SEC qualify, tried shortest-first. YouTube blocks the data
+    download of some individual videos (PO-token enforcement — extraction
+    succeeds, the download 403s), so up to MAX_ATTEMPTS candidates are tried
+    before the test fails."""
 
     MAX_DURATION_SEC = 300
+    MAX_ATTEMPTS = 3
 
     def setUp(self):
         _requires_playlists(self.test_config)
         super().setUp()
 
-    async def _shortest_playlist_entry(self) -> dict:
+    async def _short_entries(self) -> list[dict]:
+        """All entries under MAX_DURATION_SEC across the playlists, shortest
+        first, deduplicated by URL."""
         loop = asyncio.get_running_loop()
+        entries: dict[str, dict] = {}
         for playlist_url in self.test_config.playlist_urls:
             def _extract(url=playlist_url):
                 ydl = get_ydl()
@@ -350,31 +357,50 @@ class TestRealPlaylistIntentDownload(RealDownloadTestBase):
                     ydl.close()
 
             info = await loop.run_in_executor(None, _extract)
-            entries = [entry for entry in filter_entries(info.get('entries') or [])
-                       if entry.get('duration')
-                       and entry['duration'] <= self.MAX_DURATION_SEC]
-            if entries:
-                return min(entries, key=lambda entry: entry['duration'])
-        self.skipTest(f'no playlist entry under {self.MAX_DURATION_SEC}s — '
-                      'refusing to download a long video')
+            for entry in filter_entries(info.get('entries') or []):
+                if entry.get('duration') and entry['duration'] <= self.MAX_DURATION_SEC:
+                    entries.setdefault(extract_url(entry), entry)
+        if not entries:
+            self.skipTest(f'no playlist entry under {self.MAX_DURATION_SEC}s — '
+                          'refusing to download a long video')
+        return sorted(entries.values(), key=lambda entry: entry['duration'])
 
     async def test_subscription_intent_downloads_and_delivers(self):
         chat_id = str(self.test_config.chat_id)
-        entry = await self._shortest_playlist_entry()
-        url = extract_url(entry)
-        print(f"\n⏬ downloading shortest playlist entry "
-              f"({entry['duration']}s): {entry.get('title')}")
+        candidates = (await self._short_entries())[:self.MAX_ATTEMPTS]
+        failures = []
+        cached = info = url = None
+        for entry in candidates:
+            url = extract_url(entry)
+            print(f"\n⏬ downloading playlist entry "
+                  f"({entry['duration']}s): {entry.get('title')}")
 
-        await append_intent(url, self.state, chat_ids=[chat_id],
-                            source=SOURCE_SUBSCRIPTION, title=entry.get('title'),
-                            upload_date=entry.get('upload_date'))
-        self.assertIn(url, self.state.intents)
+            await append_intent(url, self.state, chat_ids=[chat_id],
+                                source=SOURCE_SUBSCRIPTION, title=entry.get('title'),
+                                upload_date=entry.get('upload_date'))
+            self.assertIn(url, self.state.intents)
 
-        info = await process_query(self.bot, url, self.state)
+            # On a failed download process_query still returns the metadata
+            # info (and keeps the intent for retry); real success is the
+            # video cached with a file_id from the upload
+            info = await process_query(self.bot, url, self.state)
+            cached = self.state.videos.get(url)
+            if info is not None and cached is not None and cached.file_id:
+                break
+            cached = None
+            # Typically YouTube 403ing this video's data download; the next
+            # candidate still proves the subscription download pipeline
+            failures.append(f"{url} ({entry['duration']}s)")
+            print(f'✗ download failed, trying next candidate: {url}')
 
-        self.assertIsNotNone(info, f'process_query returned no info for {url}')
-        cached = self.state.videos.get(url)
-        self.assertIsNotNone(cached, 'video was not cached after processing')
+        self.assertIsNotNone(
+            cached,
+            f'no candidate could be downloaded, tried: {failures}. If each '
+            f'failed with a mid-download HTTP 403, YouTube is enforcing PO '
+            f'tokens for these videos — the production bot would fail on '
+            f'them too (see the [error_no_video_path] developer messages)')
+        if failures:
+            print(f'⚠ succeeded only after failed candidates: {failures}')
         self.assertTrue(cached.file_id, 'no file_id captured from the upload')
         self.assertNotIn(url, self.state.intents)
         if info.filepath:
