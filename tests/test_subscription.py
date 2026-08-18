@@ -227,6 +227,40 @@ class TestPlaylists(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, ConversationHandler.END)
         message.reply_text.assert_not_awaited()
 
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_reply_error_does_not_abort_remaining_groups(self, mock_get_ydl):
+        # c1: streams-only subscriber -> "Available Videos" suggestion;
+        # c2: subscribed to both -> "Videos and Streams" group.
+        state = make_state(subscriptions={
+            'https://example.com/c1/streams': Subscription(
+                chat_ids=['123'], title='C1 Streams', uploader='u1',
+                uploader_videos='https://example.com/c1/videos'),
+            'https://example.com/c2/videos': Subscription(
+                chat_ids=['123'], title='C2 Videos', uploader='u2',
+                uploader_videos='https://example.com/c2/videos'),
+            'https://example.com/c2/streams': Subscription(
+                chat_ids=['123'], title='C2 Streams', uploader='u2',
+                uploader_videos='https://example.com/c2/videos'),
+        })
+        ydl = MagicMock()
+        ydl.extract_info.side_effect = lambda url, download=False: {
+            'uploader_url': url.rsplit('/', 1)[0] if url.endswith(('/videos', '/streams')) else url,
+        }
+        mock_get_ydl.return_value = ydl
+        message = make_message(chat_id=123)
+        message.reply_text.side_effect = [Exception('network error'), None]
+        update = make_update(message=message)
+        context = make_context(state=state)
+
+        from dasovbot.handlers.subscription import playlists
+        result = await playlists(update, context)
+
+        self.assertEqual(result, ConversationHandler.END)
+        # First group's reply failed; the second group must still be sent
+        self.assertEqual(message.reply_text.await_count, 2)
+        second_reply = message.reply_text.await_args_list[1].args[0]
+        self.assertIn('Videos and Streams', second_reply)
+
 
 class TestSubscriptionList(unittest.IsolatedAsyncioTestCase):
 

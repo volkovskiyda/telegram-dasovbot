@@ -324,6 +324,43 @@ class TestProcessIntents(unittest.IsolatedAsyncioTestCase):
         queue.get.assert_awaited_once()
         mock_process_query.assert_not_awaited()
 
+    @patch('dasovbot.services.intent_processor.process_query', new_callable=AsyncMock)
+    async def test_backoff_wait_timeout_rescans_without_processing(self, mock_process_query):
+        # All intents backing off: the worker waits with a timeout; when the
+        # wait times out (no new request arrived) it must re-scan, not process.
+        state = make_state(config=make_config(), intents={'q': Intent(chat_ids=['1'])},
+                           intent_retry_after={'q': time.monotonic() + 60})
+        timeouts = []
+
+        async def fake_wait_for(coro, timeout):
+            coro.close()
+            timeouts.append(timeout)
+            if len(timeouts) == 1:
+                raise asyncio.TimeoutError()
+            raise asyncio.CancelledError()
+
+        with patch('dasovbot.services.intent_processor.asyncio.wait_for', fake_wait_for):
+            with self.assertRaises(asyncio.CancelledError):
+                await process_intents(AsyncMock(), state)
+        # First wait timed out, the loop re-scanned and waited again
+        self.assertEqual(len(timeouts), 2)
+        # The wait is clamped to at least 1s so a past deadline cannot spin
+        self.assertTrue(all(t >= 1 for t in timeouts))
+        mock_process_query.assert_not_awaited()
+
+    @patch('dasovbot.services.intent_processor.process_query', new_callable=AsyncMock)
+    async def test_idle_wakeup_with_no_intents_rescans(self, mock_process_query):
+        # A queue signal that brings no new intents must loop straight back to
+        # waiting instead of processing anything.
+        queue = MagicMock()
+        queue.empty.return_value = True
+        queue.get = AsyncMock(side_effect=[None, asyncio.CancelledError()])
+        state = make_state(config=make_config(), download_queue=queue)
+        with self.assertRaises(asyncio.CancelledError):
+            await process_intents(AsyncMock(), state)
+        self.assertEqual(queue.get.await_count, 2)
+        mock_process_query.assert_not_awaited()
+
 
 class TestRetryBackoff(unittest.IsolatedAsyncioTestCase):
     async def test_retry_demotes_priority_and_sets_backoff(self):
@@ -341,6 +378,11 @@ class TestRetryBackoff(unittest.IsolatedAsyncioTestCase):
                            intent_retry_after={'q': far})
         await drop_or_retry_intent(AsyncMock(), 'q', state)
         self.assertEqual(state.intent_retry_after['q'], far)
+
+    async def test_missing_intent_is_noop(self):
+        state = make_state(config=make_config())
+        await drop_or_retry_intent(AsyncMock(), 'unknown', state)
+        self.assertEqual(state.intent_retry_after, {})
 
     async def test_drop_clears_backoff(self):
         state = make_state(config=make_config(),

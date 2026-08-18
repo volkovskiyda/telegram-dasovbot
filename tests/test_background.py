@@ -311,6 +311,18 @@ class TestMonitorBackups(unittest.IsolatedAsyncioTestCase):
         # A failed alert must retry on the next cycle rather than latch silent
         self.assertEqual(bot.send_message.await_count, 2)
 
+    @patch('dasovbot.services.background.asyncio.sleep', new_callable=AsyncMock)
+    @patch('dasovbot.services.background.newest_backup_age', side_effect=TypeError('boom'))
+    async def test_unexpected_error_keeps_loop_alive(self, mock_age, mock_sleep):
+        # An unexpected crash inside the check must be swallowed so the
+        # monitor keeps running on its next cycle.
+        mock_sleep.side_effect = asyncio.CancelledError()
+        state = make_state(config=make_config())
+        with self.assertRaises(asyncio.CancelledError):
+            await monitor_backups(AsyncMock(), state)
+        # The loop reached the sleep, i.e. the error did not propagate
+        mock_sleep.assert_awaited_once()
+
 
 class TestStopBackgroundTasks(unittest.IsolatedAsyncioTestCase):
     async def test_cancels_running_tasks(self):

@@ -267,5 +267,17 @@ class TestHealthAlerts(DashboardViewTestCase):
         self.assertIn('Live database is empty.', text)
 
 
+class TestHealthAlertsProcessor(unittest.IsolatedAsyncioTestCase):
+    async def test_returns_empty_when_app_has_no_state(self):
+        # The context processor runs for error pages served before the state
+        # is attached; it must degrade to an empty list, not crash
+        from unittest.mock import MagicMock
+        from dasovbot.dashboard.views import health_alerts_processor
+        request = MagicMock()
+        request.app = {}
+        result = await health_alerts_processor(request)
+        self.assertEqual(result, {'health_alerts': []})
+
+
 if __name__ == '__main__':
     unittest.main()

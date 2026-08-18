@@ -190,6 +190,18 @@ class TestCreateAndLoad(unittest.IsolatedAsyncioTestCase):
         await state.migrate_and_load()
         return state
 
+    async def test_migrate_and_load_alerts_when_data_missing(self):
+        state = await BotState.create(self.config)
+        try:
+            with patch('dasovbot.database.warn_if_data_missing',
+                       new_callable=AsyncMock, return_value='3 videos vanished'):
+                await state.migrate_and_load()
+            self.assertIn('data_missing', state.health_alerts)
+            self.assertEqual(state.health_alerts['data_missing']['level'], 'error')
+            self.assertEqual(state.health_alerts['data_missing']['message'], '3 videos vanished')
+        finally:
+            await state.close()
+
     async def test_database_roundtrip(self):
         state = await self._load()
         await state.set_video('k', VideoInfo(title='T'))
