@@ -36,6 +36,15 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 async def init_db(db_path: str) -> aiosqlite.Connection:
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     db = await aiosqlite.connect(db_path)
+    # WAL: backup.py runs Connection.backup from a separate process, and in
+    # rollback-journal mode its whole-file read lock makes bot commits fail
+    # with "database is locked" once the copy outlasts the 5s default wait.
+    # WAL readers never block writers, so the backup window stops mattering.
+    # Persistent (stored in the DB file); the -wal/-shm companion files next
+    # to bot.db are expected. busy_timeout is per-connection: wait out any
+    # residual lock (e.g. a checkpoint) instead of raising immediately.
+    await db.execute("PRAGMA journal_mode=WAL")
+    await db.execute("PRAGMA busy_timeout=30000")
     await db.executescript(SCHEMA)
     await db.commit()
     return db

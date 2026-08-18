@@ -12,6 +12,10 @@ from datetime import datetime
 def create_backup(db_path: str, backup_path: str):
     try:
         with closing(sqlite3.connect(db_path)) as src, closing(sqlite3.connect(backup_path)) as dst:
+            # Wait out transient locks from the live bot instead of failing;
+            # busy_timeout is per-connection so both ends set their own
+            src.execute("PRAGMA busy_timeout=30000")
+            dst.execute("PRAGMA busy_timeout=30000")
             src.backup(dst)
     except Exception:
         # A failed backup leaves a validly-named partial file that retention

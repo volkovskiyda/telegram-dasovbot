@@ -38,6 +38,30 @@ class TestInitDb(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row[0], 1)
 
 
+class TestInitDbPragmas(unittest.IsolatedAsyncioTestCase):
+    # A real file DB: journal_mode=WAL is a no-op on :memory: databases
+    async def test_wal_and_busy_timeout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = await init_db(os.path.join(tmp, 'bot.db'))
+            try:
+                cursor = await db.execute("PRAGMA journal_mode")
+                self.assertEqual((await cursor.fetchone())[0], 'wal')
+                cursor = await db.execute("PRAGMA busy_timeout")
+                self.assertEqual((await cursor.fetchone())[0], 30000)
+            finally:
+                await db.close()
+
+    async def test_wal_persists_for_later_connections(self):
+        # journal_mode is stored in the DB file: backup.py's separate
+        # connection must also see WAL without setting anything itself
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = os.path.join(tmp, 'bot.db')
+            db = await init_db(db_path)
+            await db.close()
+            with sqlite3.connect(db_path) as raw:
+                self.assertEqual(raw.execute("PRAGMA journal_mode").fetchone()[0], 'wal')
+
+
 class TestVideosCrud(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.db = await make_memory_db()
