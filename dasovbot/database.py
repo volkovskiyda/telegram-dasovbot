@@ -43,8 +43,10 @@ async def init_db(db_path: str) -> aiosqlite.Connection:
     # Persistent (stored in the DB file); the -wal/-shm companion files next
     # to bot.db are expected. busy_timeout is per-connection: wait out any
     # residual lock (e.g. a checkpoint) instead of raising immediately.
-    await db.execute("PRAGMA journal_mode=WAL")
+    # Timeout first: the one-time WAL conversion needs a moment of exclusive
+    # access, and must wait out e.g. a running backup rather than abort startup
     await db.execute("PRAGMA busy_timeout=30000")
+    await db.execute("PRAGMA journal_mode=WAL")
     await db.executescript(SCHEMA)
     await db.commit()
     return db
