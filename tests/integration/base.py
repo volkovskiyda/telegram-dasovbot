@@ -1,5 +1,6 @@
 import unittest
 from typing import Optional
+from unittest.mock import AsyncMock
 
 from dotenv import load_dotenv
 from telegram import Bot, Chat, Message, Update, User
@@ -71,8 +72,11 @@ class IntegrationTestBase(unittest.IsolatedAsyncioTestCase):
         # Initialize downloader with test config
         init_downloader(config)
 
-        # Create a fresh state for each test
-        self.state = BotState()
+        # Create a fresh state for each test. Handlers write through to the
+        # database; there is no real DB here, so absorb the writes like the
+        # unit-test helpers do
+        self.state = BotState(db=AsyncMock())
+        self.state.config = config
 
         # Build application
         builder = Application.builder().token(config.bot_token)
