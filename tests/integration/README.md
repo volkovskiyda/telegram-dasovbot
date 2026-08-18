@@ -44,10 +44,16 @@ Unlike unit tests that mock Telegram components, these integration tests:
 ### 4. Install Test Dependencies
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-test.txt
 ```
 
 ## Running Tests
+
+### Full Suite Script
+
+The project root has `run_tests.sh`, which runs unit tests, integration tests
+(with real downloads), the LOCAL_MODE upload stage, and the manual E2E stage in
+order — see the Tests section of the main [README](../../README.md) for details.
 
 ### Run All Integration Tests
 
@@ -88,11 +94,15 @@ The `-s` flag shows print statements, which is useful for seeing test progress.
 
 These tests simulate Telegram updates and verify handler behavior:
 
+- **test_api.py**: Tests basic Telegram API connectivity with the test bot
 - **test_commands.py**: Tests `/start`, `/help`, and unknown commands
 - **test_download.py**: Tests download conversation flow
 - **test_inline.py**: Tests inline query handling
+- **test_inline_download.py**: Tests inline query → download → send flow
+- **test_subscription.py**: Tests subscription handlers
+- **test_real_pipeline.py**: Real yt-dlp extraction and (optionally) real downloads/uploads through the intent pipeline — gated by `TEST_ENABLE_DOWNLOAD=1` and `TEST_LOCAL_MODE=1`
 
-These tests mock the `extract_info` function to avoid actual video downloads.
+Most handler tests mock the `extract_info` function to avoid actual video downloads; `test_real_pipeline.py` deliberately does not.
 
 #### Configuring Test Video URL
 

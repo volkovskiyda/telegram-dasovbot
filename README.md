@@ -33,6 +33,7 @@ Password-protected web UI served on `DASHBOARD_PORT` (default 8080).
 - **Overview** (`/`) — stats cards, processing queue with remove buttons, populate subscriptions trigger
 - **Videos** (`/videos`) — downloaded videos with sorting and source filtering
 - **Ignored** (`/ignored`) — failed/skipped videos with retry and remove actions
+- **Subscriptions** (`/subscriptions`) — subscriptions with per-subscriber badges, remove a single subscriber or the whole subscription
 - **System** (`/system`) — background task status, state sizes, manual subscription polling trigger
 
 ### **Configuration:**
@@ -61,12 +62,16 @@ Password-protected web UI served on `DASHBOARD_PORT` (default 8080).
 | `UPLOAD_CONCURRENCY` | No | `1` | Max simultaneous video-file uploads; keep at `1` to bound memory and IO |
 | `LOADING_VIDEO_ID` | No | | Video URL used for loading animation |
 | `ANIMATION_FILE_ID` | No | | Pre-cached animation file ID (skips loading upload) |
-| `CONFIG_FOLDER` | No | `/` | Root folder for data/media/export directories |
-| `EMPTY_MEDIA_FOLDER` | No | `false` | Clear media folder on process crash recovery |
+| `CONFIG_FOLDER` | No | `./config` | Root folder for data/media/export directories. Docker deployments must set `/` so data lands on the mounted `/data`, `/media`, `/export` volumes (docker-compose.yml does) |
+| `EMPTY_MEDIA_FOLDER` | No | `false` | Clear the media folder when the intent worker crashes and restarts |
 | `DASHBOARD_PASSWORD` | No | | Password for web dashboard access (auto-generated if not set; written to `data/dashboard_password.txt`) |
 | `DASHBOARD_PORT` | No | `8080` | Port for web dashboard server |
 | `DASHBOARD_BEHIND_PROXY` | No | `false` | Set `true` when the dashboard sits behind a reverse proxy (Traefik, nginx, …): login rate limiting uses the client IP from `X-Forwarded-For`, and the session cookie is marked `Secure` when the proxy reports HTTPS via `X-Forwarded-Proto` |
 | `COOKIES_FILE` | No | | Path to cookies file for yt-dlp |
+| `BACKUP_CRON` | Docker | | Cron schedule for automatic SQLite backups (`entrypoint.sh` installs it into cron; empty disables). docker-compose defaults it to `0 */12 * * *` |
+| `BACKUP_MAX_COUNT` | Docker | `14` | Backups kept by `backup.py`; older ones are pruned |
+| `DB_PATH` | Docker | `/data/bot.db` | Database path `backup.py` reads from |
+| `BACKUP_DIR` | Docker | folder of `DB_PATH` | Folder `backup.py` writes backups to |
 | `TELEGRAM_API_ID` | Docker | | Telegram API ID (for local Bot API server) |
 | `TELEGRAM_API_HASH` | Docker | | Telegram API hash (for local Bot API server) |
 
@@ -91,6 +96,8 @@ subscriptions.py       # CLI: bulk subscription management
 empty_media_folder.py  # CLI: clear media folder
 backup.py              # CLI: SQLite online backup
 preview_dashboard.py   # CLI: start the dashboard with mock data
+conftest.py            # Pytest config (silences PTB warnings)
+run_tests.sh           # Full test suite runner (unit + integration + E2E)
 entrypoint.sh          # Docker entrypoint (cron + bot; backup schedule from BACKUP_CRON)
 ```
 
@@ -161,6 +168,11 @@ python info.py '<url>' -d
 
 ### **Tests:**
 
+Install the test dependencies first (pytest + pytest-asyncio, on top of the app requirements):
+```bash
+pip install -r requirements-test.txt
+```
+
 #### Unit tests
 No bot token or external services required.
 ```bash
@@ -169,25 +181,25 @@ python -m pytest tests --ignore=tests/integration
 
 #### Run a specific test file
 ```bash
-python -m unittest tests.test_database -v
+python -m pytest tests/test_database.py -v
 ```
 
 #### Run a specific test class or method
 ```bash
-python -m unittest tests.test_state.TestSetVideo -v
-python -m unittest tests.test_helpers.TestRemoveCommandPrefix.test_strips_command -v
+python -m pytest tests/test_state.py::TestSetVideo -v
+python -m pytest tests/test_helpers.py::TestRemoveCommandPrefix::test_strips_command -v
 ```
 
 #### Integration tests
 Requires `.env.test` with test bot credentials. See `tests/integration/README.md` for setup.
 ```bash
 cp .env.test.example .env.test   # fill in test bot token and user ID
-python -m unittest discover -s tests/integration -v
+python -m pytest tests/integration -v
 ```
 
 #### All tests (unit + integration, requires `.env.test`)
 ```bash
-python -m unittest discover -s tests -v
+python -m pytest tests -v
 ```
 
 #### Full suite via script (unit + integration + downloads + E2E)
@@ -209,7 +221,7 @@ Required in `.env.test` (copy from `.env.test.example`):
 |---|---|---|
 | `TEST_BOT_TOKEN` | Yes | Test bot token from @BotFather (use a separate bot, not production) |
 | `TEST_USER_ID` | Yes | Your Telegram user ID (from @userinfobot) |
-| `TEST_CHAT_ID` | Yes | Chat for test messages (same as user ID for private chats) |
+| `TEST_CHAT_ID` | No | Chat for test messages; defaults to `TEST_USER_ID` |
 | `TEST_VIDEO_URL` | Yes | A real, **short** video URL — it is downloaded and uploaded for real |
 | `TEST_BASE_URL` | No | Local Bot API server URL; when unreachable, tests fall back to the official API with a warning |
 | `TEST_CHANNEL_URL` | No | Channel for subscription tests (defaults to the channel that owns `TEST_VIDEO_URL`) |
@@ -233,9 +245,9 @@ Then set `TEST_BASE_URL=http://<host>:8081/bot` in `.env.test`.
 ### **Docker container**
 
 ```bash
-docker run -dit --rm --name telegram --pull=always -e TELEGRAM_API_ID=<api_id> -e TELEGRAM_API_HASH=<api_hash> -v $PWD/config/media:/media -p 8081:8081 ghcr.io/volkovskiyda/telegram-bot-api --local ; docker run -dit --rm --name dasovbot --pull=always -e READ_TIMEOUT=30 -e BASE_URL=http://host.docker.internal:8081/bot -e LOCAL_MODE=true -e CONFIG_FOLDER=/ -e BOT_TOKEN=<your_bot_token> -e LOADING_VIDEO_ID=<loading_animation_video_url> -e DEVELOPER_CHAT_ID=<developer_chat_id> -v $PWD/config/media:/media ghcr.io/volkovskiyda/dasovbot
+docker run -dit --rm --name telegram --pull=always -e TELEGRAM_API_ID=<api_id> -e TELEGRAM_API_HASH=<api_hash> -v $PWD/config/media:/media -p 8081:8081 ghcr.io/volkovskiyda/telegram-bot-api --local ; docker run -dit --rm --name dasovbot --pull=always -e READ_TIMEOUT=30 -e BASE_URL=http://host.docker.internal:8081/bot -e LOCAL_MODE=true -e CONFIG_FOLDER=/ -e BOT_TOKEN=<your_bot_token> -e LOADING_VIDEO_ID=<loading_animation_video_url> -e DEVELOPER_CHAT_ID=<developer_chat_id> -v $PWD/config/data:/data -v $PWD/config/media:/media ghcr.io/volkovskiyda/dasovbot
 ```
-##### **Note**: change `<api_id>`, `<api_hash>`, `<your_bot_token>`, `<loading_animation_video_url>` and `<developer_chat_id>`. Both containers mount the same media folder at `/media` so the api server (running with `--local`) can read the files the bot passes by path.
+##### **Note**: change `<api_id>`, `<api_hash>`, `<your_bot_token>`, `<loading_animation_video_url>` and `<developer_chat_id>`. Both containers mount the same media folder at `/media` so the api server (running with `--local`) can read the files the bot passes by path. The `/data` mount keeps the SQLite database outside the (`--rm`) container — without it the database is lost when the container is removed.
 
 ### **Docker compose**
 ##### **Note**: Populate `.env` based on `.env.example`. See [Configuration](#configuration) for details
