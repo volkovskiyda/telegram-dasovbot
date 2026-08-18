@@ -190,6 +190,45 @@ python -m unittest discover -s tests/integration -v
 python -m unittest discover -s tests -v
 ```
 
+#### Full suite via script (unit + integration + downloads + E2E)
+```bash
+./run_tests.sh           # all stages
+./run_tests.sh --no-e2e  # skip the manual E2E stage
+```
+
+The script runs four stages in order and stops on the first failure:
+
+1. **Unit tests** — no credentials or network needed
+2. **Integration tests** — real yt-dlp extraction against YouTube and real Telegram API calls, including an actual download/upload of `TEST_VIDEO_URL` (keep it a short clip)
+3. **LOCAL_MODE uploads** — the intent pipeline hands the video to a local Bot API server as a `file://` path; skipped automatically when the server is unreachable
+4. **Manual E2E tests** — always last, because they **require user interaction**: the script prints a banner and waits for confirmation, then the test bot messages you in Telegram to send `/start` (30 s window) and to run an inline query and tap the result (120 s window). Needs inline mode and 100% inline feedback enabled via @BotFather (`/setinline`, `/setinlinefeedback`). Skipped when the terminal is non-interactive or with `--no-e2e`.
+
+Required in `.env.test` (copy from `.env.test.example`):
+
+| Variable | Required | Description |
+|---|---|---|
+| `TEST_BOT_TOKEN` | Yes | Test bot token from @BotFather (use a separate bot, not production) |
+| `TEST_USER_ID` | Yes | Your Telegram user ID (from @userinfobot) |
+| `TEST_CHAT_ID` | Yes | Chat for test messages (same as user ID for private chats) |
+| `TEST_VIDEO_URL` | Yes | A real, **short** video URL — it is downloaded and uploaded for real |
+| `TEST_BASE_URL` | No | Local Bot API server URL; when unreachable, tests fall back to the official API with a warning |
+| `TEST_CHANNEL_URL` | No | Channel for subscription tests (defaults to the channel that owns `TEST_VIDEO_URL`) |
+
+The script sets `TEST_ENABLE_DOWNLOAD`, `TEST_LOCAL_MODE`, and `ENABLE_E2E_TESTS` itself per stage, so they don't need to be set in `.env.test`.
+
+##### Local Bot API server for tests
+Stage 3 (and testing against `TEST_BASE_URL` in general) needs a local [telegram-bot-api](https://github.com/volkovskiyda/docker-telegram-bot-api) server started with `--local` that mounts `/tmp/test_config/media` at the same absolute path — that is where the tests write downloaded media, and in local mode the server reads the uploads from that folder by `file://` path. Get `api_id`/`api_hash` at [my.telegram.org](https://my.telegram.org):
+
+```bash
+docker run -dit --rm --name telegram-bot-api \
+  -e TELEGRAM_API_ID=<api_id> -e TELEGRAM_API_HASH=<api_hash> \
+  -v /tmp/test_config/media:/tmp/test_config/media \
+  -p 8081:8081 \
+  ghcr.io/volkovskiyda/telegram-bot-api --local
+```
+
+Then set `TEST_BASE_URL=http://<host>:8081/bot` in `.env.test`.
+
 ### **Docker container**
 
 ```bash
