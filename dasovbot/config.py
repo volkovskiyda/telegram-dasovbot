@@ -114,6 +114,9 @@ def make_ydl_opts(config: Config) -> dict:
         'match_filter': match_filter,
         'no_warnings': True,
         'quiet': True,
+        # YouTube 403s the default clients' streams mid-download for some
+        # videos (PO-token enforcement); the tv_simply client is not enforced
+        'extractor_args': {'youtube': {'player_client': ['tv_simply']}},
         'postprocessors': [{'key': 'FFmpegMetadata'}],
     }
     if config.cookies_file:
