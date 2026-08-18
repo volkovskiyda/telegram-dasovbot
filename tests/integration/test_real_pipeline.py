@@ -11,6 +11,9 @@ Requires .env.test with TEST_BOT_TOKEN, TEST_USER_ID, TEST_CHAT_ID and a real
 TEST_VIDEO_URL (a short video — it is downloaded and uploaded for real).
 Optional TEST_CHANNEL_URL sets the channel used for subscription tests;
 without it, the channel that owns TEST_VIDEO_URL is used.
+Optional TEST_PLAYLIST_URLS (comma-separated) enables the real-playlist
+subscription tests; the gated playlist download test only ever picks the
+shortest entry, and skips entirely if nothing is under 5 minutes.
 """
 import asyncio
 import glob
@@ -19,9 +22,9 @@ import unittest
 from unittest.mock import MagicMock
 
 from dasovbot.constants import SOURCE_SUBSCRIPTION, SUBSCRIBE_SHOW
-from dasovbot.downloader import get_ydl
+from dasovbot.downloader import extract_url, filter_entries, get_ydl
 from dasovbot.models import Subscription
-from dasovbot.services.background import run_populate_subscriptions
+from dasovbot.services.background import populate_playlist, run_populate_subscriptions
 from dasovbot.services.intent_processor import append_intent, process_query
 from tests.integration.base import IntegrationTestBase
 
@@ -30,6 +33,12 @@ def _requires_real_video(test_config):
     url = test_config.test_video_url
     if not url or 'example.com' in url:
         raise unittest.SkipTest('TEST_VIDEO_URL must be a real video URL (not example.com)')
+
+
+def _requires_playlists(test_config):
+    if not test_config.playlist_urls:
+        raise unittest.SkipTest(
+            'TEST_PLAYLIST_URLS not set in .env.test (comma-separated playlist URLs)')
 
 
 _channel_cache: dict[str, str] = {}
@@ -196,13 +205,72 @@ class TestRealPlaylistsCommand(RealPipelineTestBase):
         self.assertEqual(result, ConversationHandler.END)
 
 
-class TestIntentPipelineDownload(RealPipelineTestBase):
-    """Full intent pipeline: intent -> real download -> real Telegram upload ->
-    delivery to requesters -> file_id cached. Gated: actually downloads
-    TEST_VIDEO_URL (keep it a short clip) and posts it to the test chat."""
+class TestRealPlaylistSubscriptions(RealPipelineTestBase):
+    """Subscription behaviour against the real playlists in TEST_PLAYLIST_URLS.
+    Flat metadata extraction only — nothing is downloaded here."""
 
     def setUp(self):
-        super().setUp()
+        # Only needs playlists; TEST_VIDEO_URL is irrelevant for these tests
+        _requires_playlists(self.test_config)
+
+    async def test_populate_creates_intents_from_each_playlist(self):
+        chat_id = str(self.test_config.chat_id)
+        for playlist_url in self.test_config.playlist_urls:
+            with self.subTest(playlist=playlist_url):
+                self.state.intents.clear()
+                await populate_playlist(playlist_url, [chat_id], self.state)
+
+                self.assertTrue(self.state.intents,
+                                f'polling {playlist_url} created no intents')
+                self.assertLessEqual(len(self.state.intents), 5)
+                for query, intent in self.state.intents.items():
+                    self.assertTrue(query.startswith('http'), query)
+                    self.assertIn(chat_id, intent.chat_ids)
+                    self.assertEqual(intent.source, SOURCE_SUBSCRIPTION)
+                    self.assertTrue(intent.title, f'intent has no title: {query}')
+                self.assertFalse(self.state.download_queue.empty())
+
+    async def test_populate_subscriptions_polls_all_playlists(self):
+        chat_id = str(self.test_config.chat_id)
+        for playlist_url in self.test_config.playlist_urls:
+            self.state.subscriptions[playlist_url] = Subscription(
+                chat_ids=[chat_id], title='Test Playlist', uploader='uploader',
+                uploader_videos=playlist_url,
+            )
+
+        await run_populate_subscriptions(self.state)
+
+        self.assertTrue(self.state.intents,
+                        'polling the subscribed playlists created no intents')
+        self.assertLessEqual(len(self.state.intents),
+                             5 * len(self.test_config.playlist_urls))
+        self.assertIn('populate_subscriptions', self.state.background_task_status)
+
+    async def test_subscribe_playlist_creates_real_subscriptions(self):
+        from dasovbot.handlers.subscription import subscribe_playlist
+        chat_id = str(self.test_config.chat_id)
+        for playlist_url in self.test_config.playlist_urls:
+            with self.subTest(playlist=playlist_url):
+                update = self.make_bound_update(playlist_url)
+                context = self.make_context()
+
+                result = await subscribe_playlist(update, context)
+
+                self.assertEqual(result, SUBSCRIBE_SHOW)
+                subscription = self.state.subscriptions.get(playlist_url)
+                self.assertIsNotNone(
+                    subscription, f'no subscription created for {playlist_url}')
+                self.assertIn(chat_id, subscription.chat_ids)
+                self.assertTrue(subscription.title)
+                self.assertEqual(context.user_data.get('subscription_url'),
+                                 playlist_url)
+
+
+class RealDownloadTestBase(RealPipelineTestBase):
+    """Shared setup for tests that really download and upload: gated behind
+    TEST_ENABLE_DOWNLOAD, creates the media/export folders, cleans them up."""
+
+    def setUp(self):
         if not os.getenv('TEST_ENABLE_DOWNLOAD'):
             self.skipTest('Download tests disabled. Set TEST_ENABLE_DOWNLOAD=1 to enable')
 
@@ -221,6 +289,16 @@ class TestIntentPipelineDownload(RealPipelineTestBase):
                 except OSError:
                     pass
         await super().asyncTearDown()
+
+
+class TestIntentPipelineDownload(RealDownloadTestBase):
+    """Full intent pipeline: intent -> real download -> real Telegram upload ->
+    delivery to requesters -> file_id cached. Gated: actually downloads
+    TEST_VIDEO_URL (keep it a short clip) and posts it to the test chat."""
+
+    def setUp(self):
+        _requires_real_video(self.test_config)
+        super().setUp()
 
     async def test_intent_download_upload_and_delivery(self):
         url = self.test_config.test_video_url
@@ -250,7 +328,61 @@ class TestIntentPipelineDownload(RealPipelineTestBase):
         self.assertNotIn(url, self.state.intents)
 
 
-class TestInlineRealUploadE2E(RealPipelineTestBase):
+class TestRealPlaylistIntentDownload(RealDownloadTestBase):
+    """A subscription-sourced intent from a real playlist goes through the
+    actual download/upload/delivery pipeline. ISP-safe: scans the playlists
+    for their shortest entry and refuses anything over MAX_DURATION_SEC."""
+
+    MAX_DURATION_SEC = 300
+
+    def setUp(self):
+        _requires_playlists(self.test_config)
+        super().setUp()
+
+    async def _shortest_playlist_entry(self) -> dict:
+        loop = asyncio.get_running_loop()
+        for playlist_url in self.test_config.playlist_urls:
+            def _extract(url=playlist_url):
+                ydl = get_ydl()
+                try:
+                    return ydl.extract_info(url, download=False)
+                finally:
+                    ydl.close()
+
+            info = await loop.run_in_executor(None, _extract)
+            entries = [entry for entry in filter_entries(info.get('entries') or [])
+                       if entry.get('duration')
+                       and entry['duration'] <= self.MAX_DURATION_SEC]
+            if entries:
+                return min(entries, key=lambda entry: entry['duration'])
+        self.skipTest(f'no playlist entry under {self.MAX_DURATION_SEC}s — '
+                      'refusing to download a long video')
+
+    async def test_subscription_intent_downloads_and_delivers(self):
+        chat_id = str(self.test_config.chat_id)
+        entry = await self._shortest_playlist_entry()
+        url = extract_url(entry)
+        print(f"\n⏬ downloading shortest playlist entry "
+              f"({entry['duration']}s): {entry.get('title')}")
+
+        await append_intent(url, self.state, chat_ids=[chat_id],
+                            source=SOURCE_SUBSCRIPTION, title=entry.get('title'),
+                            upload_date=entry.get('upload_date'))
+        self.assertIn(url, self.state.intents)
+
+        info = await process_query(self.bot, url, self.state)
+
+        self.assertIsNotNone(info, f'process_query returned no info for {url}')
+        cached = self.state.videos.get(url)
+        self.assertIsNotNone(cached, 'video was not cached after processing')
+        self.assertTrue(cached.file_id, 'no file_id captured from the upload')
+        self.assertNotIn(url, self.state.intents)
+        if info.filepath:
+            self.assertFalse(os.path.exists(info.filepath),
+                             f'downloaded file was not cleaned up: {info.filepath}')
+
+
+class TestInlineRealUploadE2E(RealDownloadTestBase):
     """Manual E2E for the inline flow with a real inline_message_id:
 
     1. You type `@<bot> <TEST_VIDEO_URL>` in the test chat and tap the result
@@ -266,26 +398,10 @@ class TestInlineRealUploadE2E(RealPipelineTestBase):
     """
 
     def setUp(self):
-        super().setUp()
+        _requires_real_video(self.test_config)
         if not os.getenv('ENABLE_E2E_TESTS'):
             self.skipTest('E2E tests disabled. Set ENABLE_E2E_TESTS=1 to enable')
-        if not os.getenv('TEST_ENABLE_DOWNLOAD'):
-            self.skipTest('Download tests disabled. Set TEST_ENABLE_DOWNLOAD=1 to enable')
-
-    async def asyncSetUp(self):
-        await super().asyncSetUp()
-        config = self.state.config
-        os.makedirs(config.media_folder, exist_ok=True)
-        os.makedirs(f'{config.config_folder}/export', exist_ok=True)
-
-    async def asyncTearDown(self):
-        for pattern in ('media', 'export'):
-            for path in glob.glob(f'{self.state.config.config_folder}/{pattern}/*'):
-                try:
-                    os.remove(path)
-                except OSError:
-                    pass
-        await super().asyncTearDown()
+        super().setUp()
 
     async def _seed_animation_file_id(self):
         """The inline handler can only answer an un-downloaded video when a

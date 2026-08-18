@@ -4,7 +4,8 @@
 #
 # Requires .env.test (copy .env.test.example) with at least:
 #   TEST_BOT_TOKEN, TEST_USER_ID, TEST_CHAT_ID, TEST_VIDEO_URL (short clip!)
-# Optional: TEST_BASE_URL (local Bot API server), TEST_CHANNEL_URL
+# Optional: TEST_BASE_URL (local Bot API server), TEST_CHANNEL_URL,
+#           TEST_PLAYLIST_URLS (real playlists for subscription tests)
 #
 # Usage: ./run_tests.sh [--no-e2e]
 

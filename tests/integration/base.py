@@ -31,6 +31,12 @@ class IntegrationTestConfig:
         self.read_timeout = int(os.getenv('TEST_READ_TIMEOUT', '30'))
         self.test_video_url = os.getenv('TEST_VIDEO_URL', 'https://example.com/video')
         self.local_mode = os.getenv('TEST_LOCAL_MODE', '') == '1'
+        # Real playlists for subscription tests, comma-separated
+        self.playlist_urls = [
+            url.strip().rstrip('/')
+            for url in os.getenv('TEST_PLAYLIST_URLS', '').split(',')
+            if url.strip()
+        ]
 
         if not self.bot_token:
             raise ValueError('TEST_BOT_TOKEN not set in .env.test')

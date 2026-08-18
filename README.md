@@ -213,6 +213,7 @@ Required in `.env.test` (copy from `.env.test.example`):
 | `TEST_VIDEO_URL` | Yes | A real, **short** video URL — it is downloaded and uploaded for real |
 | `TEST_BASE_URL` | No | Local Bot API server URL; when unreachable, tests fall back to the official API with a warning |
 | `TEST_CHANNEL_URL` | No | Channel for subscription tests (defaults to the channel that owns `TEST_VIDEO_URL`) |
+| `TEST_PLAYLIST_URLS` | No | Comma-separated real playlist URLs for subscription tests: each is polled with flat metadata only; with downloads enabled, one test downloads the **shortest** entry (skipped if nothing is under 5 min) |
 
 The script sets `TEST_ENABLE_DOWNLOAD`, `TEST_LOCAL_MODE`, and `ENABLE_E2E_TESTS` itself per stage, so they don't need to be set in `.env.test`.
 
