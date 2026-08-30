@@ -37,7 +37,7 @@ Password-protected web UI served on `DASHBOARD_PORT` (default 8080).
 - **System** (`/system`) — background task status, state sizes, manual subscription polling trigger
 
 ### **JSON API**
-Machine-readable video metadata served on the same port under `/api/`, authorized per-request with `Authorization: Bearer <API_TOKEN>` (never the dashboard session cookie). Entry key names mirror yt-dlp's `.info.json` (`id`, `title`, `channel`, `channel_id`, `duration`, `upload_date`, `tags`, `categories`, `description`, `thumbnail`, `chapters`, `epoch`), so consumers of a sidecar-built library index can parse them unchanged; `webpage_url` and `exported` (file moved to the export folder / media library) are added.
+Machine-readable video metadata served on the same port under `/api/`, authorized per-request with `Authorization: Bearer <API_TOKEN>` (never the dashboard session cookie). Entry key names mirror a sidecar-built library index (`id`, `title`, `channel`, `channelId`, `duration`, `uploadDate`, `tags`, `categories`, `description`, `thumbnail`, `chapters` as `[{start, title}]` with `start` in seconds, `fetchedAt` in epoch seconds), so index consumers can parse them unchanged; `webpageUrl` and `exported` (file moved to the export folder / media library) are added.
 
 - `GET /api/videos` — all videos with a cached `file_id`, deduplicated by YouTube id, newest upload first. Supports `?exported=true|false` filtering and `ETag`/`If-None-Match` (returns `304 Not Modified` when unchanged). Rows stored before metadata enrichment (no `video_id`) are skipped
 - `GET /api/videos/{id}` — a single entry by YouTube video id, `404` when unknown

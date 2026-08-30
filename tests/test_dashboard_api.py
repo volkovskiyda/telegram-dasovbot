@@ -116,20 +116,21 @@ class TestApiVideos(DashboardApiTestCase):
         items = await self._get_json('/api/videos')
         self.assertEqual([item['id'] for item in items], ['idgood12345'])
 
-    async def test_entry_shape_matches_info_json_keys(self):
+    async def test_entry_shape_matches_index_schema(self):
         video = make_video(description='Full description', exported=True)
         self.state.videos = {video.webpage_url: video}
         items = await self._get_json('/api/videos')
         entry = items[0]
         self.assertEqual(entry['channel'], 'Cats')
-        self.assertEqual(entry['channel_id'], 'UCcats')
-        self.assertEqual(entry['upload_date'], '20260101')
+        self.assertEqual(entry['channelId'], 'UCcats')
+        self.assertEqual(entry['uploadDate'], '20260101')
         self.assertEqual(entry['duration'], 120)
         self.assertEqual(entry['tags'], ['cat'])
         self.assertEqual(entry['categories'], ['Pets'])
         self.assertEqual(entry['description'], 'Full description')
-        self.assertEqual(entry['chapters'], [{'start_time': 0.0, 'title': 'Intro'}])
-        self.assertEqual(entry['epoch'], 1750750807)
+        # Stored chapter start_time is renamed to the index schema's 'start'
+        self.assertEqual(entry['chapters'], [{'start': 0.0, 'title': 'Intro'}])
+        self.assertEqual(entry['fetchedAt'], 1750750807)
         self.assertTrue(entry['exported'])
         self.assertEqual(entry['thumbnail'], 'https://i.ytimg.com/vi/abc123def45/maxresdefault.webp')
 

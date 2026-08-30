@@ -14,22 +14,26 @@ if TYPE_CHECKING:
 
 
 def video_entry(info: VideoInfo) -> dict:
-    # Key names mirror yt-dlp's info.json, so clients of a sidecar-built
-    # library index can parse API entries unchanged
+    # Key names mirror a sidecar-built library index (camelCase, chapter
+    # 'start' in seconds, 'fetchedAt' in epoch seconds), so index consumers
+    # can parse API entries unchanged
     return {
         'id': info.video_id,
         'title': info.title,
         'channel': info.channel,
-        'channel_id': info.channel_id,
+        'channelId': info.channel_id,
         'duration': info.duration,
-        'upload_date': info.upload_date,
+        'uploadDate': info.upload_date,
         'tags': info.tags or [],
         'categories': info.categories or [],
         'description': info.description,
         'thumbnail': info.thumbnail_url or f'https://i.ytimg.com/vi/{info.video_id}/hqdefault.jpg',
-        'chapters': info.chapters,
-        'epoch': info.epoch,
-        'webpage_url': info.webpage_url,
+        'chapters': [
+            {'start': chapter.get('start_time'), 'title': chapter.get('title')}
+            for chapter in info.chapters
+        ] if info.chapters else None,
+        'fetchedAt': info.epoch,
+        'webpageUrl': info.webpage_url,
         'exported': info.exported,
     }
 
@@ -57,7 +61,7 @@ async def api_videos(request: web.Request) -> web.Response:
     if exported is not None:
         want = parse_bool(exported)
         items = [item for item in items if item['exported'] == want]
-    items.sort(key=lambda item: (item['upload_date'] or '', item['id']), reverse=True)
+    items.sort(key=lambda item: (item['uploadDate'] or '', item['id']), reverse=True)
     body = json.dumps(items, ensure_ascii=False)
     etag = f'"{hashlib.sha256(body.encode()).hexdigest()[:32]}"'
     if request.headers.get('If-None-Match') == etag:
