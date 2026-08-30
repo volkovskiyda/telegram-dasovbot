@@ -26,7 +26,9 @@ def inline_video(info: VideoInfo, inline_queries: dict, animation_file_id: str) 
         id=id,
         video_file_id=video_file_id,
         title=info.title,
-        description=info.description,
+        # Stored descriptions are full-length (the API serves them); an inline
+        # answer carries up to 50 results, so cap what each result ships
+        description=info.description[:1000],
         caption=info.caption,
         reply_markup=reply_markup,
     )

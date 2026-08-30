@@ -43,6 +43,15 @@ class TestVideoInfo(unittest.TestCase):
             format='mp4',
             entries=None,
             origin=VideoOrigin(width=3840, height=2160, format='webm'),
+            video_id='abc123def45',
+            channel='Test Channel',
+            channel_id='UCxyz',
+            tags=['one', 'two'],
+            categories=['Entertainment'],
+            chapters=[{'start_time': 0.0, 'title': 'Intro'}],
+            thumbnail_url='https://i.ytimg.com/vi/abc123def45/maxresdefault.webp',
+            epoch=1750750807,
+            exported=True,
         )
         d = info.to_dict()
         restored = VideoInfo.from_dict(d)
@@ -55,6 +64,10 @@ class TestVideoInfo(unittest.TestCase):
         self.assertEqual(info.description, '')
         self.assertIsNone(info.file_id)
         self.assertEqual(info.duration, 0)
+        # Rows stored before metadata enrichment load with the new fields empty
+        self.assertIsNone(info.video_id)
+        self.assertIsNone(info.chapters)
+        self.assertFalse(info.exported)
 
     def test_from_dict_empty(self):
         d = {}

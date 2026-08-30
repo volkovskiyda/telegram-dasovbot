@@ -12,6 +12,7 @@ MAX_LOGIN_ATTEMPTS = 5
 LOGIN_ATTEMPT_WINDOW_SEC = 60
 
 _generated_password: str | None = None
+_generated_api_token: str | None = None
 _sessions: dict[str, float] = {}
 _failed_logins: dict[str, list[float]] = {}
 
@@ -24,6 +25,24 @@ def get_password() -> str:
     if _generated_password is None:
         _generated_password = secrets.token_urlsafe(16)
     return _generated_password
+
+
+def get_api_token() -> str:
+    global _generated_api_token
+    token = os.getenv('API_TOKEN')
+    if token:
+        return token
+    if _generated_api_token is None:
+        _generated_api_token = secrets.token_urlsafe(32)
+    return _generated_api_token
+
+
+def check_api_token(request: web.Request) -> bool:
+    header = request.headers.get('Authorization', '')
+    scheme, _, token = header.partition(' ')
+    if scheme.lower() != 'bearer' or not token.strip():
+        return False
+    return hmac.compare_digest(token.strip().encode(), get_api_token().encode())
 
 
 def behind_proxy() -> bool:
@@ -100,6 +119,12 @@ def _rate_limited(remote: str) -> bool:
 async def auth_middleware(request: web.Request, handler):
     # Static assets stay public so the login page can load its favicon
     if request.path == '/login' or request.path.startswith('/static/'):
+        return await handler(request)
+    if request.path.startswith('/api/'):
+        # Machine clients authenticate per-request with a bearer token and
+        # must get a JSON 401, never a redirect to the HTML login page
+        if not check_api_token(request):
+            return web.json_response({'error': 'unauthorized'}, status=401)
         return await handler(request)
     if not check_token(request):
         raise web.HTTPFound('/login')

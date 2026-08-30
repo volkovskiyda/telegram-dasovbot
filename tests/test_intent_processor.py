@@ -278,6 +278,18 @@ class TestPostProcess(unittest.IsolatedAsyncioTestCase):
         await post_process('q', info, msg, state)
         mock_move.assert_called_once_with('/tmp/media/v.mp4', '/tmp/export/v.mp4')
         mock_remove.assert_not_called()
+        self.assertTrue(info.exported)
+
+    @patch('dasovbot.services.intent_processor.remove')
+    @patch('dasovbot.database.upsert_intent', new_callable=AsyncMock)
+    @patch('dasovbot.database.upsert_video', new_callable=AsyncMock)
+    async def test_non_developer_video_not_marked_exported(self, mock_upsert_video, mock_upsert_intent, mock_remove):
+        intent = Intent(chat_ids=['555'])
+        state = make_state(config=make_config(developer_id='123'), intents={'q': intent})
+        info = VideoInfo(title='T', webpage_url='https://example.com', filepath='/tmp/media/v.mp4')
+        msg = self._make_message()
+        await post_process('q', info, msg, state)
+        self.assertFalse(info.exported)
 
     @patch('dasovbot.services.intent_processor.remove')
     @patch('dasovbot.services.intent_processor.shutil.move', side_effect=OSError('boom'))
@@ -290,6 +302,7 @@ class TestPostProcess(unittest.IsolatedAsyncioTestCase):
         msg = self._make_message()
         await post_process('q', info, msg, state)
         mock_remove.assert_called_once_with('/tmp/media/v.mp4')
+        self.assertFalse(info.exported)
 
     @patch('dasovbot.services.intent_processor.remove')
     @patch('dasovbot.services.intent_processor.shutil.move')

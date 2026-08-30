@@ -110,13 +110,18 @@ def process_info(info) -> VideoInfo | None:
         timestamp = datetime.fromtimestamp(timestamp).strftime(DATETIME_FORMAT)
 
     upload_date = info.get('upload_date')
-    info_description = info.get('description')
-    description = info_description[:1000] if info_description else ''
+    description = info.get('description') or ''
     info_title = info.get('title')
     title = info_title or url
     caption_title = info_title[:100] if info_title else ''
     date_prefix = f"[{upload_date}] " if upload_date else ''
     caption = f"{date_prefix}{caption_title}\n{url}"
+
+    raw_chapters = info.get('chapters')
+    chapters = [
+        {'start_time': chapter.get('start_time'), 'title': chapter.get('title')}
+        for chapter in raw_chapters
+    ] if raw_chapters else None
 
     return VideoInfo(
         file_id=info.get('file_id'),
@@ -136,6 +141,14 @@ def process_info(info) -> VideoInfo | None:
         filename=filename,
         format=info.get('format'),
         entries=info.get('entries'),
+        video_id=id,
+        channel=info.get('channel') or info.get('uploader'),
+        channel_id=info.get('channel_id') or info.get('uploader_id'),
+        tags=info.get('tags'),
+        categories=info.get('categories'),
+        chapters=chapters,
+        thumbnail_url=info.get('thumbnail'),
+        epoch=int(info.get('epoch') or time.time()),
     )
 
 

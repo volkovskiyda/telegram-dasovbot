@@ -36,6 +36,16 @@ Password-protected web UI served on `DASHBOARD_PORT` (default 8080).
 - **Subscriptions** (`/subscriptions`) — subscriptions with per-subscriber badges, remove a single subscriber or the whole subscription
 - **System** (`/system`) — background task status, state sizes, manual subscription polling trigger
 
+### **JSON API**
+Machine-readable video metadata served on the same port under `/api/`, authorized per-request with `Authorization: Bearer <API_TOKEN>` (never the dashboard session cookie). Entry key names mirror yt-dlp's `.info.json` (`id`, `title`, `channel`, `channel_id`, `duration`, `upload_date`, `tags`, `categories`, `description`, `thumbnail`, `chapters`, `epoch`), so consumers of a sidecar-built library index can parse them unchanged; `webpage_url` and `exported` (file moved to the export folder / media library) are added.
+
+- `GET /api/videos` — all videos with a cached `file_id`, deduplicated by YouTube id, newest upload first. Supports `?exported=true|false` filtering and `ETag`/`If-None-Match` (returns `304 Not Modified` when unchanged). Rows stored before metadata enrichment (no `video_id`) are skipped
+- `GET /api/videos/{id}` — a single entry by YouTube video id, `404` when unknown
+
+```bash
+curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8080/api/videos?exported=true
+```
+
 ### **Configuration:**
 - Copy `.env.example` file to `.env` and change `READ_TIMEOUT`, `BASE_URL`, `BOT_TOKEN`, `DEVELOPER_CHAT_ID` and `LOADING_VIDEO_ID` environment variables.
 - `READ_TIMEOUT` variable sets the waiting timeout for bot requests
@@ -67,6 +77,7 @@ Password-protected web UI served on `DASHBOARD_PORT` (default 8080).
 | `DASHBOARD_PASSWORD` | No | | Password for web dashboard access (auto-generated if not set; written to `data/dashboard_password.txt`) |
 | `DASHBOARD_PORT` | No | `8080` | Port for web dashboard server |
 | `DASHBOARD_BEHIND_PROXY` | No | `false` | Set `true` when the dashboard sits behind a reverse proxy (Traefik, nginx, …): login rate limiting uses the client IP from `X-Forwarded-For`, and the session cookie is marked `Secure` when the proxy reports HTTPS via `X-Forwarded-Proto` |
+| `API_TOKEN` | No | | Bearer token for the JSON API under `/api/` (auto-generated if not set; written to `data/api_token.txt`) |
 | `COOKIES_FILE` | No | | Path to cookies file for yt-dlp |
 | `BACKUP_CRON` | Docker | | Cron schedule for automatic SQLite backups (`entrypoint.sh` installs it into cron; empty disables). docker-compose defaults it to `0 */12 * * *` |
 | `BACKUP_MAX_COUNT` | Docker | `14` | Backups kept by `backup.py`; older ones are pruned |

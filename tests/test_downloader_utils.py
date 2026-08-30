@@ -129,19 +129,63 @@ class TestProcessInfo(unittest.TestCase):
         result = process_info(raw)
         self.assertEqual(result.title, 'https://example.com/video')
 
-    def test_description_truncation(self):
+    def test_description_kept_full(self):
+        # Full descriptions are served by the API; the inline handler
+        # truncates at its call site instead
         raw = {
             'title': 'T',
             'url': 'https://x.com',
             'description': 'x' * 2000,
         }
         result = process_info(raw)
-        self.assertEqual(len(result.description), 1000)
+        self.assertEqual(len(result.description), 2000)
 
     def test_no_description(self):
         raw = {'title': 'T', 'url': 'https://x.com'}
         result = process_info(raw)
         self.assertEqual(result.description, '')
+
+    def test_index_metadata_fields(self):
+        raw = {
+            'title': 'T',
+            'url': 'https://youtube.com/watch?v=abc123',
+            'id': 'abc123',
+            'channel': 'My Channel',
+            'channel_id': 'UCxyz',
+            'tags': ['tag1', 'tag2'],
+            'categories': ['Entertainment'],
+            'chapters': [{'start_time': 0.0, 'end_time': 10.0, 'title': 'Intro'}],
+            'thumbnail': 'https://i.ytimg.com/vi/abc123/maxresdefault.webp',
+            'epoch': 1750750807,
+        }
+        result = process_info(raw)
+        self.assertEqual(result.video_id, 'abc123')
+        self.assertEqual(result.channel, 'My Channel')
+        self.assertEqual(result.channel_id, 'UCxyz')
+        self.assertEqual(result.tags, ['tag1', 'tag2'])
+        self.assertEqual(result.categories, ['Entertainment'])
+        # end_time is dropped: only start_time/title are consumed downstream
+        self.assertEqual(result.chapters, [{'start_time': 0.0, 'title': 'Intro'}])
+        self.assertEqual(result.thumbnail_url, 'https://i.ytimg.com/vi/abc123/maxresdefault.webp')
+        self.assertEqual(result.epoch, 1750750807)
+        # The Telegram-facing thumbnail stays pinned to the small jpg
+        self.assertEqual(result.thumbnail, 'https://i.ytimg.com/vi/abc123/default.jpg')
+
+    def test_channel_falls_back_to_uploader(self):
+        raw = {
+            'title': 'T',
+            'url': 'https://x.com',
+            'uploader': 'Uploader Name',
+            'uploader_id': '@handle',
+        }
+        result = process_info(raw)
+        self.assertEqual(result.channel, 'Uploader Name')
+        self.assertEqual(result.channel_id, '@handle')
+
+    def test_epoch_defaults_to_now(self):
+        result = process_info({'title': 'T', 'url': 'https://x.com'})
+        self.assertIsInstance(result.epoch, int)
+        self.assertGreater(result.epoch, 0)
 
 
 class TestCaptionWithoutUploadDate(unittest.TestCase):

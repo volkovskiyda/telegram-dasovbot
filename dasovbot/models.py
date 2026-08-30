@@ -45,6 +45,18 @@ class VideoInfo:
     origin: VideoOrigin | None = None
     source: str | None = None
     processed_at: str | None = None
+    # Library-index metadata for the /api/videos endpoint; absent (None) on
+    # rows stored before these fields existed, which the API skips
+    video_id: str | None = None
+    channel: str | None = None
+    channel_id: str | None = None
+    tags: list | None = None
+    categories: list | None = None
+    chapters: list | None = None
+    thumbnail_url: str | None = None
+    epoch: int | None = None
+    # True once the file was moved to the export folder (media library)
+    exported: bool = False
 
     def to_dict(self) -> dict:
         d = {
@@ -67,6 +79,15 @@ class VideoInfo:
             'entries': self.entries,
             'source': self.source,
             'processed_at': self.processed_at,
+            'video_id': self.video_id,
+            'channel': self.channel,
+            'channel_id': self.channel_id,
+            'tags': self.tags,
+            'categories': self.categories,
+            'chapters': self.chapters,
+            'thumbnail_url': self.thumbnail_url,
+            'epoch': self.epoch,
+            'exported': self.exported,
         }
         if self.origin is not None:
             d['origin'] = self.origin.to_dict()
@@ -97,6 +118,15 @@ class VideoInfo:
             origin=origin,
             source=data.get('source'),
             processed_at=data.get('processed_at'),
+            video_id=data.get('video_id'),
+            channel=data.get('channel'),
+            channel_id=data.get('channel_id'),
+            tags=data.get('tags'),
+            categories=data.get('categories'),
+            chapters=data.get('chapters'),
+            thumbnail_url=data.get('thumbnail_url'),
+            epoch=data.get('epoch'),
+            exported=bool(data.get('exported')),
         )
 
 

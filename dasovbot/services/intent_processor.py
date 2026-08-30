@@ -164,12 +164,20 @@ async def post_process(query: str, info: VideoInfo, message: Message, state: Bot
         developer_id = state.config.developer_id
         if (developer_id in chat_ids or str(message.chat_id) == developer_id) and '/media/' in filepath:
             export_path = '/export/'.join(filepath.rsplit('/media/', 1))
+            moved = False
             try:
                 loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, shutil.move, filepath, export_path)
+                moved = True
             except Exception:
                 logger.error("move_file error: %s", query, exc_info=True)
                 remove(filepath)
+            if moved and store_info:
+                # Only now is the file part of the media library, so the flag
+                # is set after the stores above and persisted again
+                info.exported = True
+                await state.set_video(query, info)
+                await state.set_video(extract_url(info), info)
         else:
             # A path outside the media folder cannot be mapped to /export/;
             # moving it onto itself would silently leak the file on disk
