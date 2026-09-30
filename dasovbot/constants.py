@@ -34,6 +34,11 @@ MAX_INTENT_RETRIES = 3
 # cancelled at yt-dlp's next callback and may briefly still write its output.
 INTENT_RETRY_BACKOFF_SEC = 60
 
+# Media folder sweep: files older than this are leftovers (every download is
+# sent within minutes or cleaned up), so they are removed hourly
+MEDIA_SWEEP_INTERVAL_SEC = 60 * 60
+MEDIA_MAX_AGE_SEC = 6 * 60 * 60
+
 # Retries when Telegram rate-limits a delivery (RetryAfter)
 MAX_SEND_RETRIES = 2
 

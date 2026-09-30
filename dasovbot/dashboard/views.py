@@ -305,6 +305,7 @@ async def system(request: web.Request) -> web.Response:
         {'name': 'populate_subscriptions', 'description': 'Checks subscriptions for new videos', 'interval': '1 hour'},
         {'name': 'clear_temporary_inline_queries', 'description': 'Cleans up stale inline queries', 'interval': '10 min'},
         {'name': 'monitor_process_intents', 'description': 'Processes download queue', 'interval': 'continuous'},
+        {'name': 'sweep_media_folder', 'description': 'Removes leftover media files older than 6 hours', 'interval': '1 hour'},
     ]
     for task in tasks:
         last_run = state.background_task_status.get(task['name'], '')

@@ -128,6 +128,7 @@ entrypoint.sh          # Docker entrypoint (cron + bot; backup schedule from BAC
 - Intent queue processing
 - Inline query cache cleanup
 - Backup freshness monitoring (alerts the developer if backups stop)
+- Media folder sweep (hourly; removes leftover files older than 6 hours)
 
 The web dashboard is started separately in `__main__.py` (`start_dashboard`) before the Telegram application is built.
 
@@ -142,7 +143,7 @@ The web dashboard is started separately in `__main__.py` (`start_dashboard`) bef
 
 **Key modules:**
 - `handlers/` — Telegram command and inline query handlers (`download.py`, `inline.py`, `subscription.py`, `common.py`)
-- `services/background.py` — Hourly subscription polling, intent queue processing, inline cache cleanup
+- `services/background.py` — Hourly subscription polling, intent queue processing, inline cache cleanup, media folder sweep
 - `services/intent_processor.py` — Download execution and Telegram posting
 - `downloader.py` — yt-dlp wrapper with `asyncio.Lock` for synchronized access, MP4 conversion via ffmpeg
 - `dashboard/` — aiohttp web server with cookie-based session auth, jinja2 templates, overview, videos, ignored, and system pages

@@ -198,6 +198,23 @@ async def monitor_backups(bot: Bot, state: BotState):
         await asyncio.sleep(BACKUP_CHECK_INTERVAL_SEC)
 
 
+async def sweep_media_folder(state: BotState):
+    from dasovbot.constants import MEDIA_MAX_AGE_SEC, MEDIA_SWEEP_INTERVAL_SEC
+    from dasovbot.persistence import remove_stale_media_files
+
+    while True:
+        try:
+            loop = asyncio.get_running_loop()
+            removed = await loop.run_in_executor(
+                None, remove_stale_media_files, state.config.media_folder, MEDIA_MAX_AGE_SEC)
+            if removed:
+                logger.info("sweep_media_folder removed %d stale file(s): %s", len(removed), removed)
+            state.background_task_status['sweep_media_folder'] = now()
+        except Exception:
+            logger.error("sweep_media_folder error", exc_info=True)
+        await asyncio.sleep(MEDIA_SWEEP_INTERVAL_SEC)
+
+
 async def run_forever(factory, name: str):
     from dasovbot.constants import RESTART_DELAY_SEC
     while True:
@@ -232,6 +249,9 @@ def start_background_tasks(bot: Bot, state: BotState):
         asyncio.create_task(
             run_forever(partial(monitor_backups, bot, state), 'monitor_backups'),
             name="monitor_backups"),
+        asyncio.create_task(
+            run_forever(partial(sweep_media_folder, state), 'sweep_media_folder'),
+            name="sweep_media_folder"),
     ]
     for task in tasks:
         state.background_tasks.add(task)

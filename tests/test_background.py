@@ -9,7 +9,7 @@ from dasovbot.constants import RESTART_DELAY_SEC
 from dasovbot.services.background import (
     populate_animation, populate_video, populate_playlist, run_populate_subscriptions,
     populate_subscriptions, clear_temporary_inline_queries, sweep_temporary_inline_queries,
-    monitor_backups, newest_backup_age,
+    monitor_backups, newest_backup_age, sweep_media_folder,
     start_background_tasks, stop_background_tasks, run_forever, _on_task_done,
 )
 from tests.helpers import make_state, make_config
@@ -215,6 +215,7 @@ class TestRunForever(unittest.IsolatedAsyncioTestCase):
 
 
 class TestStartBackgroundTasks(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.services.background.sweep_media_folder', new_callable=AsyncMock)
     @patch('dasovbot.services.background.monitor_backups', new_callable=AsyncMock)
     @patch('dasovbot.services.intent_processor.monitor_process_intents', new_callable=AsyncMock)
     @patch('dasovbot.services.background.clear_temporary_inline_queries', new_callable=AsyncMock)
@@ -223,7 +224,7 @@ class TestStartBackgroundTasks(unittest.IsolatedAsyncioTestCase):
     async def test_keeps_strong_references_until_done(self, *mocks):
         state = make_state()
         start_background_tasks(AsyncMock(), state)
-        self.assertEqual(len(state.background_tasks), 5)
+        self.assertEqual(len(state.background_tasks), 6)
         tasks = list(state.background_tasks)
         await asyncio.gather(*tasks)
         await asyncio.sleep(0)  # let done callbacks run
@@ -242,6 +243,28 @@ class TestNewestBackupAge(unittest.TestCase):
             age = newest_backup_age(tmp)
             self.assertIsNotNone(age)
             self.assertGreaterEqual(age, 0)
+
+
+class TestSweepMediaFolder(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.services.background.asyncio.sleep', new_callable=AsyncMock)
+    @patch('dasovbot.persistence.remove_stale_media_files', return_value=['old.mp4'])
+    async def test_sweeps_configured_folder_and_records_status(self, mock_sweep, mock_sleep):
+        from dasovbot.constants import MEDIA_MAX_AGE_SEC
+        mock_sleep.side_effect = asyncio.CancelledError()
+        state = make_state(config=make_config())
+        with self.assertRaises(asyncio.CancelledError):
+            await sweep_media_folder(state)
+        mock_sweep.assert_called_once_with(state.config.media_folder, MEDIA_MAX_AGE_SEC)
+        self.assertIn('sweep_media_folder', state.background_task_status)
+
+    @patch('dasovbot.services.background.asyncio.sleep', new_callable=AsyncMock)
+    @patch('dasovbot.persistence.remove_stale_media_files', side_effect=[OSError('boom'), []])
+    async def test_error_does_not_stop_the_loop(self, mock_sweep, mock_sleep):
+        mock_sleep.side_effect = [None, asyncio.CancelledError()]
+        state = make_state(config=make_config())
+        with self.assertRaises(asyncio.CancelledError):
+            await sweep_media_folder(state)
+        self.assertEqual(mock_sweep.call_count, 2)
 
 
 class TestMonitorBackups(unittest.IsolatedAsyncioTestCase):
