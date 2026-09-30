@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import glob
 import logging
 import os
 import re
 import subprocess
+import threading
 import time
 from datetime import datetime
 from functools import partial
@@ -15,6 +17,7 @@ import yt_dlp
 from dasovbot.config import Config, make_ydl_opts
 from dasovbot.constants import DATETIME_FORMAT, TIMEOUT_SEC, VIDEO_ERROR_MESSAGES
 from dasovbot.models import VideoInfo
+from dasovbot.persistence import remove
 
 if TYPE_CHECKING:
     from dasovbot.state import BotState
@@ -43,25 +46,147 @@ def get_ydl() -> yt_dlp.YoutubeDL:
     return yt_dlp.YoutubeDL(dict(_ydl_opts))
 
 
-def extract_info_sync(query: str, download: bool = False):
-    # Blocking: create, use and close the YoutubeDL entirely inside the
-    # calling (executor) thread, so an abandoned wait_for timeout still
-    # releases its network resources when the thread eventually finishes.
-    ydl = get_ydl()
-    try:
-        return ydl.extract_info(query, download=download)
-    finally:
-        ydl.close()
+# Path -> the attempt that most recently touched it. A retry of a YouTube
+# video renders the same output path as the attempt it replaces, so a late
+# cleanup from the abandoned attempt must not delete the retry's files.
+_path_owners: dict[str, DownloadAttempt] = {}
+_path_owners_lock = threading.Lock()
 
 
-def _extract_info_opts_sync(opts: dict, query: str):
-    # Blocking: like extract_info_sync but with caller-supplied opts. Create,
-    # use and close the YoutubeDL entirely inside the executor thread.
-    ydl = yt_dlp.YoutubeDL(dict(opts))
+class DownloadAttempt:
+    """One yt-dlp download: cancellable, and removes its files unless it succeeds.
+
+    The executor thread running yt-dlp cannot be killed, so a timed-out
+    download used to keep running and leave a finished (never sent) file in
+    the media folder, once per retry. cancel() makes the next progress or
+    postprocessor callback raise DownloadCancelled; the thread then deletes
+    everything the attempt wrote when it ends. A download that had already
+    finished when cancel() arrived is deleted as well: its caller is
+    discarding the result.
+    """
+
+    def __init__(self):
+        self._cancelled = threading.Event()
+        self._paths: set[str] = set()
+        # Orders cancel() (event loop thread) against finish() (executor
+        # thread): the two cross when wait_for times out in the same instant
+        # the download succeeds
+        self._lock = threading.Lock()
+        # Paths a successful finish() kept for the caller
+        self._kept: list[str] = []
+
+    def cancel(self):
+        with self._lock:
+            self._cancelled.set()
+            kept, self._kept = self._kept, []
+        if not kept:
+            return
+        # Succeeded just before the timeout: the caller never sees the
+        # result, so nothing would ever send or remove the file
+        with _path_owners_lock:
+            for path in kept:
+                if path not in _path_owners:
+                    _remove_download_files(path)
+        logger.info("download attempt cancelled after success, removed %d path(s): %s", len(kept), sorted(kept))
+
+    @property
+    def cancelled(self) -> bool:
+        return self._cancelled.is_set()
+
+    def attach(self, ydl: yt_dlp.YoutubeDL):
+        ydl.add_progress_hook(self._progress_hook)
+        ydl.add_postprocessor_hook(self._postprocessor_hook)
+
+    def _claim(self, path: str | None):
+        if not path:
+            return
+        with _path_owners_lock:
+            self._paths.add(path)
+            _path_owners[path] = self
+
+    def _check_cancelled(self):
+        if self._cancelled.is_set():
+            raise yt_dlp.utils.DownloadCancelled('download attempt cancelled')
+
+    def _progress_hook(self, status: dict):
+        self._claim(status.get('tmpfilename'))
+        self._claim(status.get('filename'))
+        self._check_cancelled()
+
+    def _postprocessor_hook(self, status: dict):
+        self._claim((status.get('info_dict') or {}).get('filepath'))
+        self._check_cancelled()
+
+    def finish(self, succeeded: bool):
+        """Called in the executor thread once yt-dlp returns or raises.
+
+        A download that completed after cancel() is discarded too: its caller
+        already gave up on it and nothing else will ever send or remove it.
+        """
+        with self._lock:
+            discard = not succeeded or self.cancelled
+            with _path_owners_lock:
+                owned = [path for path in self._paths if _path_owners.get(path) is self]
+                for path in owned:
+                    del _path_owners[path]
+                if discard:
+                    for path in owned:
+                        _remove_download_files(path)
+            if not discard:
+                self._kept = owned
+        if discard and owned:
+            logger.info("download attempt cleaned up %d path(s): %s", len(owned), sorted(owned))
+
+
+def _remove_download_files(path: str):
+    remove(path)
+    # Fragmented (HLS/DASH) downloads keep per-fragment files and a resume
+    # state file next to the .part until they are assembled
+    remove(f'{path}.ytdl')
+    for fragment in glob.glob(f'{glob.escape(path)}-Frag*'):
+        remove(fragment)
+
+
+def _run_ydl(ydl: yt_dlp.YoutubeDL, query: str, download: bool, attempt: DownloadAttempt | None):
+    # Blocking: use and close the YoutubeDL entirely inside the calling
+    # (executor) thread, so an abandoned wait_for timeout still releases its
+    # network resources when the thread eventually finishes.
+    if attempt:
+        attempt.attach(ydl)
+    succeeded = False
     try:
-        return ydl.extract_info(query, download=True)
+        result = ydl.extract_info(query, download=download)
+        succeeded = True
+        return result
     finally:
         ydl.close()
+        if attempt:
+            attempt.finish(succeeded)
+
+
+def extract_info_sync(query: str, download: bool = False, attempt: DownloadAttempt | None = None):
+    return _run_ydl(get_ydl(), query, download, attempt)
+
+
+def _extract_info_opts_sync(opts: dict, query: str, attempt: DownloadAttempt):
+    # Like extract_info_sync, with caller-supplied opts (the 360p fallback)
+    return _run_ydl(yt_dlp.YoutubeDL(dict(opts)), query, True, attempt)
+
+
+async def _run_download(func, attempt: DownloadAttempt):
+    """Run a blocking yt-dlp download bounded by TIMEOUT_SEC.
+
+    On timeout (or task cancellation) the attempt is cancelled so yt-dlp stops
+    at its next callback and cleans up, instead of finishing in the background.
+    """
+    loop = asyncio.get_running_loop()
+    future = loop.run_in_executor(None, func)
+    try:
+        return await asyncio.wait_for(future, TIMEOUT_SEC)
+    except BaseException:
+        # Harmless when the thread itself raised: it already finished
+        attempt.cancel()
+        raise
 
 
 async def download_with_opts(opts: dict, query: str):
@@ -72,9 +197,8 @@ async def download_with_opts(opts: dict, query: str):
     asyncio.TimeoutError when the bound is exceeded.
     """
     async with _lock:
-        loop = asyncio.get_running_loop()
-        future = loop.run_in_executor(None, partial(_extract_info_opts_sync, opts, query))
-        return await asyncio.wait_for(future, TIMEOUT_SEC)
+        attempt = DownloadAttempt()
+        return await _run_download(partial(_extract_info_opts_sync, opts, query, attempt), attempt)
 
 
 def extract_url(info) -> str:
@@ -219,18 +343,18 @@ async def extract_info(query: str, download: bool, state: BotState) -> VideoInfo
         try:
             async with _lock:
                 logger.debug("lock_acquire")
-                loop = asyncio.get_running_loop()
-                future = loop.run_in_executor(None, partial(extract_info_sync, query, download=True))
-                raw_info = await asyncio.wait_for(future, TIMEOUT_SEC)
+                attempt = DownloadAttempt()
+                raw_info = await _run_download(
+                    partial(extract_info_sync, query, download=True, attempt=attempt), attempt)
                 logger.info("extract_info downloaded: %s", query)
                 info = process_info(raw_info)
         except asyncio.TimeoutError:
-            # The executor thread cannot be cancelled: yt-dlp may keep
-            # downloading in the background after the lock is released. Hold
-            # the intent back for a full timeout window so a retry does not
-            # write the same output path concurrently with that thread.
+            # The attempt was cancelled, but yt-dlp only stops at its next
+            # callback (a merge or a stalled socket delays that). Hold the
+            # intent back for a full timeout window so a retry does not write
+            # the same output path concurrently with that thread.
             state.intent_retry_after[query] = time.monotonic() + TIMEOUT_SEC
-            logger.warning("extract_info timeout, download may still be running: %s", query)
+            logger.warning("extract_info timeout, download cancelled: %s", query)
         except Exception as e:
             logger.error("extract_info download error: %s", query, exc_info=e)
         finally:

@@ -134,7 +134,7 @@ The web dashboard is started separately in `__main__.py` (`start_dashboard`) bef
 **Video processing pipeline:**
 1. User sends URL → handler creates an `Intent` (download request)
 2. Background task `monitor_process_intents` picks up intents from an `asyncio.Queue`
-3. `intent_processor.py` extracts metadata and downloads via yt-dlp (blocking calls run in executor)
+3. `intent_processor.py` extracts metadata and downloads via yt-dlp (blocking calls run in executor). Each download is a `DownloadAttempt`: on timeout it is cancelled at yt-dlp's next progress callback, and a failed or cancelled attempt deletes everything it wrote (`.part`, fragments, merged output)
 4. Non-MP4 videos (MKV, WebM, etc.) are converted to MP4 via ffmpeg — fast remux first, transcode fallback
 5. Video posted to Telegram, `file_id` cached for future reuse. With `LOCAL_MODE=true` the bot sends only the file path (`file:///media/...`) and the Bot API server reads the bytes from the shared media volume — the video never passes through bot memory. Sends that upload an actual file hold `state.upload_semaphore` (`UPLOAD_CONCURRENCY`, default 1), so the intent worker, the retry fallback, and background tasks never upload concurrently
 

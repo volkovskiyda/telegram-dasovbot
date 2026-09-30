@@ -1,4 +1,6 @@
 import asyncio
+import os
+import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -183,6 +185,130 @@ class TestExtractInfo(unittest.IsolatedAsyncioTestCase):
         state = self._make_state(videos={'q': cached})
         result = await extract_info('q', download=True, state=state)
         self.assertIs(result, cached)
+
+
+class TestDownloadAttempt(unittest.TestCase):
+    def setUp(self):
+        downloader._path_owners.clear()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def _touch(self, name):
+        path = os.path.join(self.tmp.name, name)
+        with open(path, 'w') as f:
+            f.write('x')
+        return path
+
+    def test_progress_hook_raises_once_cancelled(self):
+        attempt = downloader.DownloadAttempt()
+        attempt._progress_hook({'filename': '/media/v.mp4'})
+        attempt.cancel()
+        with self.assertRaises(yt_dlp.utils.DownloadCancelled):
+            attempt._progress_hook({'filename': '/media/v.mp4'})
+        with self.assertRaises(yt_dlp.utils.DownloadCancelled):
+            attempt._postprocessor_hook({'info_dict': {'filepath': '/media/v.mp4'}})
+
+    def test_failed_attempt_removes_part_fragments_and_state(self):
+        part = self._touch('v.mp4.part')
+        fragments = [self._touch('v.mp4.part-Frag1'), self._touch('v.mp4.part-Frag2.part')]
+        state_file = self._touch('v.mp4.part.ytdl')
+        other = self._touch('other.mp4')
+        attempt = downloader.DownloadAttempt()
+        attempt._progress_hook({'tmpfilename': part, 'filename': part[:-5]})
+        attempt.finish(succeeded=False)
+        for path in [part, state_file, *fragments]:
+            self.assertFalse(os.path.exists(path), path)
+        self.assertTrue(os.path.exists(other))
+        self.assertEqual(downloader._path_owners, {})
+
+    def test_successful_attempt_keeps_file(self):
+        video = self._touch('v.mp4')
+        attempt = downloader.DownloadAttempt()
+        attempt._postprocessor_hook({'info_dict': {'filepath': video}})
+        attempt.finish(succeeded=True)
+        self.assertTrue(os.path.exists(video))
+        self.assertEqual(downloader._path_owners, {})
+
+    def test_success_after_cancel_is_discarded(self):
+        # Finished in the background after the caller timed out: nothing
+        # would ever send or remove it
+        video = self._touch('v.mp4')
+        attempt = downloader.DownloadAttempt()
+        attempt._postprocessor_hook({'info_dict': {'filepath': video}})
+        attempt.cancel()
+        attempt.finish(succeeded=True)
+        self.assertFalse(os.path.exists(video))
+
+    def test_cancel_after_success_discards_file(self):
+        # wait_for timed out in the same instant the thread succeeded: the
+        # caller never sees the result, so the kept file must go too
+        video = self._touch('v.mp4')
+        attempt = downloader.DownloadAttempt()
+        attempt._postprocessor_hook({'info_dict': {'filepath': video}})
+        attempt.finish(succeeded=True)
+        self.assertTrue(os.path.exists(video))
+        attempt.cancel()
+        self.assertFalse(os.path.exists(video))
+        # Idempotent: a second cancel has nothing left to remove
+        attempt.cancel()
+
+    def test_cancel_after_success_spares_paths_a_newer_attempt_claimed(self):
+        video = self._touch('v.mp4')
+        done = downloader.DownloadAttempt()
+        done._postprocessor_hook({'info_dict': {'filepath': video}})
+        done.finish(succeeded=True)
+        retry = downloader.DownloadAttempt()
+        retry._postprocessor_hook({'info_dict': {'filepath': video}})
+        done.cancel()
+        self.assertTrue(os.path.exists(video))
+
+    def test_late_cleanup_spares_paths_a_newer_attempt_claimed(self):
+        # A YouTube retry renders the same output path as the abandoned attempt
+        part = self._touch('v.mp4.part')
+        abandoned = downloader.DownloadAttempt()
+        abandoned._progress_hook({'tmpfilename': part})
+        abandoned.cancel()
+        retry = downloader.DownloadAttempt()
+        retry._progress_hook({'tmpfilename': part})
+        abandoned.finish(succeeded=False)
+        self.assertTrue(os.path.exists(part))
+        self.assertIs(downloader._path_owners[part], retry)
+
+    def test_extract_info_sync_attaches_hooks_and_finishes(self):
+        attempt = MagicMock()
+        with patch('dasovbot.downloader.get_ydl') as mock_get_ydl:
+            mock_get_ydl.return_value.extract_info.side_effect = ValueError('boom')
+            with self.assertRaises(ValueError):
+                downloader.extract_info_sync('q', download=True, attempt=attempt)
+        attempt.attach.assert_called_once_with(mock_get_ydl.return_value)
+        attempt.finish.assert_called_once_with(False)
+        mock_get_ydl.return_value.close.assert_called_once()
+
+    @patch('dasovbot.downloader.yt_dlp.YoutubeDL')
+    def test_extract_info_opts_sync_shares_the_attempt_lifecycle(self, mock_ydl_cls):
+        attempt = MagicMock()
+        mock_ydl_cls.return_value.extract_info.return_value = {'id': '1'}
+        result = downloader._extract_info_opts_sync({'format': 'x'}, 'q', attempt)
+        self.assertEqual(result, {'id': '1'})
+        mock_ydl_cls.assert_called_once_with({'format': 'x'})
+        mock_ydl_cls.return_value.extract_info.assert_called_once_with('q', download=True)
+        attempt.attach.assert_called_once_with(mock_ydl_cls.return_value)
+        attempt.finish.assert_called_once_with(True)
+        mock_ydl_cls.return_value.close.assert_called_once()
+
+
+class TestRunDownload(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.downloader.asyncio.wait_for', side_effect=asyncio.TimeoutError)
+    async def test_timeout_cancels_attempt(self, mock_wait):
+        attempt = downloader.DownloadAttempt()
+        with self.assertRaises(asyncio.TimeoutError):
+            await downloader._run_download(lambda: None, attempt)
+        self.assertTrue(attempt.cancelled)
+
+    async def test_success_leaves_attempt_running(self):
+        attempt = downloader.DownloadAttempt()
+        self.assertEqual(await downloader._run_download(lambda: 'ok', attempt), 'ok')
+        self.assertFalse(attempt.cancelled)
 
 
 if __name__ == '__main__':
