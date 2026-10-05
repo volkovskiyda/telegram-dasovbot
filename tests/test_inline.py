@@ -259,6 +259,42 @@ class TestChosenQuery(unittest.IsolatedAsyncioTestCase):
         call_kwargs = mock_append.call_args[1]
         self.assertEqual(call_kwargs['inline_message_id'], 'imid1')
 
+    @patch('dasovbot.handlers.inline.append_intent', new_callable=AsyncMock)
+    async def test_records_request_and_user(self, mock_append):
+        state = make_state(videos={})
+        user = make_user(id=55, username='inliner')
+        result = make_chosen_inline_result(result_id='rid1', inline_message_id='imid1', from_user=user)
+        update = make_update(chosen_inline_result=result)
+        context = make_context(
+            state=state,
+            user_data={'inline_queries': {'rid1': 'https://example.com/v1'}},
+        )
+
+        from dasovbot.handlers.inline import chosen_query
+        await chosen_query(update, context)
+
+        self.assertEqual(state.video_requesters, {'https://example.com/v1': ['55']})
+        self.assertEqual(state.user_requests['55']['count'], 1)
+        self.assertEqual(state.users['55'], {'id': 55, 'username': 'inliner'})
+
+    async def test_records_after_delivery(self):
+        # A failing request-log write (e.g. 'database is locked') must not
+        # keep the cached video from the user
+        info = VideoInfo(title='Test', file_id='fid123', caption='cap', webpage_url='https://example.com/v1')
+        state = make_state(videos={'https://example.com/v1': info})
+        result = make_chosen_inline_result(result_id='rid1', inline_message_id='imid1')
+        context = make_context(
+            state=state,
+            user_data={'inline_queries': {'rid1': 'https://example.com/v1'}},
+        )
+
+        from dasovbot.handlers.inline import chosen_query
+        with patch.object(state, 'record_request', side_effect=Exception('database is locked')):
+            with self.assertRaises(Exception):
+                await chosen_query(make_update(chosen_inline_result=result), context)
+
+        context.bot.edit_message_media.assert_awaited_once()
+
     async def test_pops_inline_queries(self):
         info = VideoInfo(title='Test', file_id='fid123', caption='cap', webpage_url='https://example.com/v1')
         state = make_state(videos={'https://example.com/v1': info})

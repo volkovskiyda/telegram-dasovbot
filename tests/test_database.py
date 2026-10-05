@@ -12,6 +12,7 @@ from dasovbot.database import (
     upsert_intent, delete_intent, load_intents,
     upsert_user, load_users,
     upsert_subscription, delete_subscription, load_subscriptions,
+    insert_request, load_request_stats,
     SCHEMA,
 )
 from dasovbot.models import VideoInfo, Intent, IntentMessage, Subscription
@@ -27,6 +28,7 @@ class TestInitDb(unittest.IsolatedAsyncioTestCase):
         self.assertIn('intents', tables)
         self.assertIn('users', tables)
         self.assertIn('subscriptions', tables)
+        self.assertIn('requests', tables)
 
     async def test_idempotent_schema(self):
         db = await make_memory_db()
@@ -166,6 +168,32 @@ class TestUsersCrud(unittest.IsolatedAsyncioTestCase):
     async def test_load_empty(self):
         result = await load_users(self.db)
         self.assertEqual(result, {})
+
+
+class TestRequestsLog(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.db = await make_memory_db()
+
+    async def asyncTearDown(self):
+        await self.db.close()
+
+    async def test_load_empty(self):
+        self.assertEqual(await load_request_stats(self.db), ({}, {}))
+
+    async def test_aggregates_requesters_and_counts(self):
+        await insert_request(self.db, '2', 'u1', 'inline', '20260101_000000')
+        await insert_request(self.db, '1', 'u1', 'download', '20260102_000000')
+        await insert_request(self.db, '2', 'u1', 'inline', '20260103_000000')
+        await insert_request(self.db, '2', 'u2', 'inline', '20260104_000000')
+
+        video_requesters, user_requests = await load_request_stats(self.db)
+
+        # First-request order, each user once per url
+        self.assertEqual(video_requesters, {'u1': ['2', '1'], 'u2': ['2']})
+        self.assertEqual(user_requests, {
+            '1': {'count': 1, 'last_at': '20260102_000000'},
+            '2': {'count': 3, 'last_at': '20260104_000000'},
+        })
 
 
 class TestSubscriptionsCrud(unittest.IsolatedAsyncioTestCase):

@@ -154,6 +154,7 @@ async def chosen_query(update: Update, context):
 
     info = state.videos.get(query)
     file_id = info.file_id if info else None
+    delivered = False
     if file_id:
         try:
             await context.bot.edit_message_media(
@@ -164,23 +165,30 @@ async def chosen_query(update: Update, context):
                 inline_message_id=inline_message_id,
             )
             logger.info("%s # chosen_query fnsh: %s", extract_user(user), query)
-            return
+            delivered = True
         except Exception as e:
             # Transient failure (e.g. RetryAfter) would otherwise leave the
             # placeholder looping forever despite the cached file_id: fall
             # through to the intent path, whose delivery retries the edit
             logger.error("%s # chosen_query edit error: %s", extract_user(user), query, exc_info=e)
 
-    title = None
-    for tiq in state.temporary_inline_queries.values():
-        for result in tiq.results:
-            if result.id == inline_result.result_id:
-                title = result.title
+    if not delivered:
+        title = None
+        for tiq in state.temporary_inline_queries.values():
+            for result in tiq.results:
+                if result.id == inline_result.result_id:
+                    title = result.title
+                    break
+            if title:
                 break
-        if title:
-            break
-    await append_intent(query, state, inline_message_id=inline_message_id, source=SOURCE_INLINE, title=title, upload_date=upload_date)
-    logger.info("%s # chosen_query aint: %s", extract_user(user), query)
+        await append_intent(query, state, inline_message_id=inline_message_id, source=SOURCE_INLINE, title=title, upload_date=upload_date)
+        logger.info("%s # chosen_query aint: %s", extract_user(user), query)
+
+    # Inline users never pass through /download, so this is where they are
+    # recorded; private-chat ids equal user ids. Last, once delivery is on its
+    # way: a slow or failing database write must not hold the video back
+    await state.record_request(user.id, query, SOURCE_INLINE)
+    await state.set_user(str(user.id), user.to_dict())
 
 
 async def _populate_video(query: str, chat_ids: list, state: BotState):

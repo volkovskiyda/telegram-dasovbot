@@ -17,6 +17,21 @@ class TestSetVideo(unittest.IsolatedAsyncioTestCase):
         mock_upsert.assert_awaited_once_with(state.db, 'k1', video)
 
 
+class TestRecordRequest(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.database.insert_request', new_callable=AsyncMock)
+    async def test_updates_aggregates_and_calls_db(self, mock_insert):
+        state = make_state()
+        await state.record_request(7, 'u1', 'inline')
+        await state.record_request('7', 'u1', 'inline')
+        await state.record_request(8, 'u1', 'download')
+
+        self.assertEqual(state.video_requesters, {'u1': ['7', '8']})
+        self.assertEqual(state.user_requests['7']['count'], 2)
+        self.assertEqual(state.user_requests['8']['count'], 1)
+        self.assertEqual(mock_insert.await_count, 3)
+        self.assertEqual(mock_insert.await_args.args[1:4], ('8', 'u1', 'download'))
+
+
 class TestSetIntent(unittest.IsolatedAsyncioTestCase):
     @patch('dasovbot.database.upsert_intent', new_callable=AsyncMock)
     async def test_stores_in_memory_and_calls_db(self, mock_upsert):
@@ -208,6 +223,7 @@ class TestCreateAndLoad(unittest.IsolatedAsyncioTestCase):
         await state.set_user('1', {'id': 1})
         await state.set_subscription('u', Subscription(chat_ids=['1'], title='S'))
         await state.set_intent('q', Intent(chat_ids=['1']))
+        await state.record_request(1, 'q', 'download')
         await state.close()
 
         reloaded = await self._load()
@@ -216,6 +232,8 @@ class TestCreateAndLoad(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(reloaded.users['1'], {'id': 1})
             self.assertEqual(reloaded.subscriptions['u'].title, 'S')
             self.assertEqual(reloaded.intents['q'].chat_ids, ['1'])
+            self.assertEqual(reloaded.video_requesters, {'q': ['1']})
+            self.assertEqual(reloaded.user_requests['1']['count'], 1)
             self.assertEqual(reloaded.migration_progress['status'], 'skipped')
         finally:
             await reloaded.close()

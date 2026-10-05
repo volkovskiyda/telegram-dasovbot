@@ -30,6 +30,13 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     key TEXT PRIMARY KEY,
     data TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    url TEXT NOT NULL,
+    source TEXT,
+    requested_at TEXT NOT NULL
+);
 """
 
 
@@ -241,3 +248,35 @@ async def load_subscriptions(db: aiosqlite.Connection) -> dict[str, Subscription
     cursor = await db.execute("SELECT key, data FROM subscriptions")
     rows = await cursor.fetchall()
     return {key: Subscription.from_dict(json.loads(data)) for key, data in rows}
+
+
+# --- Requests ---
+
+async def insert_request(db: aiosqlite.Connection, user_id: str, url: str, source: str | None, requested_at: str):
+    await db.execute(
+        "INSERT INTO requests (user_id, url, source, requested_at) VALUES (?, ?, ?, ?)",
+        (user_id, url, source, requested_at),
+    )
+    await db.commit()
+
+
+async def load_request_stats(db: aiosqlite.Connection) -> tuple[dict[str, list[str]], dict[str, dict]]:
+    """Aggregate the request log into (url -> requester ids, user id -> stats).
+
+    Requester ids keep first-request order; stats hold the request count and
+    the latest request timestamp.
+    """
+    cursor = await db.execute(
+        "SELECT url, user_id FROM requests GROUP BY url, user_id ORDER BY MIN(id)"
+    )
+    video_requesters: dict[str, list[str]] = {}
+    for url, user_id in await cursor.fetchall():
+        video_requesters.setdefault(url, []).append(user_id)
+    cursor = await db.execute(
+        "SELECT user_id, COUNT(*), MAX(requested_at) FROM requests GROUP BY user_id"
+    )
+    user_requests = {
+        user_id: {'count': count, 'last_at': last_at}
+        for user_id, count, last_at in await cursor.fetchall()
+    }
+    return video_requesters, user_requests

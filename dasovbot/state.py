@@ -14,6 +14,10 @@ logger = logging.getLogger(__name__)
 class BotState:
     videos: dict[str, VideoInfo] = field(default_factory=dict)
     users: dict[str, dict] = field(default_factory=dict)
+    # Aggregates of the persisted request log: url -> requester user ids, and
+    # user id -> {'count', 'last_at'}
+    video_requesters: dict[str, list[str]] = field(default_factory=dict)
+    user_requests: dict[str, dict] = field(default_factory=dict)
     subscriptions: dict[str, Subscription] = field(default_factory=dict)
     intents: dict[str, Intent] = field(default_factory=dict)
     temporary_inline_queries: dict[str, TemporaryInlineQuery] = field(default_factory=dict)
@@ -67,6 +71,7 @@ class BotState:
         from dasovbot.database import (
             migrate_from_json, warn_if_data_missing,
             load_videos, load_intents, load_users, load_subscriptions,
+            load_request_stats,
         )
 
         await migrate_from_json(self.db, self.config, self.migration_progress)
@@ -78,6 +83,7 @@ class BotState:
         self.users = await load_users(self.db)
         self.subscriptions = await load_subscriptions(self.db)
         self.intents = await load_intents(self.db)
+        self.video_requesters, self.user_requests = await load_request_stats(self.db)
 
     async def set_video(self, key: str, video: VideoInfo):
         from dasovbot.database import upsert_video
@@ -106,6 +112,19 @@ class BotState:
         from dasovbot.database import upsert_user
         self.users[chat_id] = data
         await upsert_user(self.db, chat_id, data)
+
+    async def record_request(self, user_id, url: str, source: str | None):
+        from dasovbot.database import insert_request
+        from dasovbot.helpers import now
+        user_id = str(user_id)
+        requested_at = now()
+        requesters = self.video_requesters.setdefault(url, [])
+        if user_id not in requesters:
+            requesters.append(user_id)
+        stats = self.user_requests.setdefault(user_id, {'count': 0, 'last_at': None})
+        stats['count'] += 1
+        stats['last_at'] = requested_at
+        await insert_request(self.db, user_id, url, source, requested_at)
 
     async def set_subscription(self, key: str, sub: Subscription):
         from dasovbot.database import upsert_subscription

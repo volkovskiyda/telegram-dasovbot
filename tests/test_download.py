@@ -108,6 +108,7 @@ class TestDownloadUrl(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(message.reply_video.call_args[1]['video'], 'anim123')
         mock_append.assert_awaited_once()
         self.assertEqual(state.users['123'], {'id': 123, 'username': 'testuser'})
+        self.assertEqual(state.video_requesters, {'https://example.com/v1': ['123']})
         self.assertEqual(result, ConversationHandler.END)
 
     @patch('dasovbot.handlers.download.append_intent', new_callable=AsyncMock)
