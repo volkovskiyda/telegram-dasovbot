@@ -31,9 +31,10 @@
 Password-protected web UI served on `DASHBOARD_PORT` (default 8080).
 
 - **Overview** (`/`) — stats cards, processing queue with remove buttons, populate subscriptions trigger
-- **Videos** (`/videos`) — downloaded videos with sorting and source filtering
+- **Videos** (`/videos`) — downloaded videos with sorting and source filtering, plus the users who requested each one with ban/unban buttons
 - **Ignored** (`/ignored`) — failed/skipped videos with retry and remove actions
 - **Subscriptions** (`/subscriptions`) — subscriptions with per-subscriber badges, remove a single subscriber or the whole subscription
+- **Users** (`/users`) — users ranked by logged requests, with ban/unban; a user links to the videos they requested. A banned user never gets a new video, but the bot looks like it still works: inline queries go unanswered (the client times out), `/download` shows the loading animation and then `❌ Video unavailable` after 10–60 s, and requests already queued fail the same way on delivery. Subscriptions stay fully usable and keep delivering; only the "show latest videos" shortcut after subscribing is skipped
 - **System** (`/system`) — background task status, state sizes, manual subscription polling trigger
 
 ### **JSON API**

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% set active = "users" %}
+{% from "_users.html" import ban_toggle %}
+
+{% block title %}Users - DasovBot{% endblock %}
+
+{% block content %}
+<h1>Users</h1>
+
+<table>
+    <thead>
+        <tr>
+            <th>User</th>
+            <th>Requests</th>
+            <th>Last Request</th>
+            <th>Status</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for user in users %}
+        <tr>
+            <td><a href="/videos?user={{ user.id | urlencode }}">{{ user.label }}</a></td>
+            <td>{{ user.count }}</td>
+            <td title="{{ user.last_at }}">{{ user.last_at_relative }}</td>
+            <td>
+                {% if user.banned %}
+                <span class="badge badge-banned" title="{{ user.banned_at }}">banned</span>
+                {% endif %}
+            </td>
+            <td>{{ ban_toggle(user, '/users') }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="text-muted" style="text-align: center;">No requests logged yet</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

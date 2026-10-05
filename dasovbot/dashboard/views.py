@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -67,6 +68,38 @@ async def health_alerts_processor(request: web.Request) -> dict:
     return {'health_alerts': alerts}
 
 
+def user_name(state: BotState, user_id: str) -> str:
+    data = state.users.get(user_id) or {}
+    name = ' '.join(p for p in [data.get('first_name'), data.get('last_name')] if p)
+    if data.get('username'):
+        name = f"{name} @{data['username']}".strip()
+    if not name:
+        # Name captured at ban time, for users never stored in state.users
+        name = (state.banned_users.get(user_id) or {}).get('name', '')
+    return name
+
+
+def user_label(state: BotState, user_id: str) -> str:
+    name = user_name(state, user_id)
+    return f'{name} ({user_id})' if name else user_id
+
+
+def user_item(state: BotState, user_id: str) -> dict:
+    return {'id': user_id, 'label': user_label(state, user_id), 'banned': state.is_banned(user_id)}
+
+
+# Browsers read a backslash as a slash and drop tabs and newlines, so a
+# backslash or a tab after the leading slash resolves like '//host'
+_UNSAFE_NEXT = re.compile(r'[\\\t\r\n]')
+
+
+def safe_next(target: str, default: str) -> str:
+    # Local paths only: '//host' would redirect off-site
+    if target.startswith('/') and not target.startswith('//') and not _UNSAFE_NEXT.search(target):
+        return target
+    return default
+
+
 async def index(request: web.Request) -> web.Response:
     state = get_state(request)
 
@@ -105,15 +138,28 @@ async def videos(request: web.Request) -> web.Response:
         page = 1
     per_page = 50
     search_query = request.query.get('q', '').strip()
+    # Exact requester id, unlike q which is a substring match on labels too
+    user_filter = request.query.get('user', '').strip()
 
     items = []
     q_lower = search_query.lower()
+    labels: dict[str, str] = {}
     for url, info in state.videos.items():
         if not info.file_id:
             continue
         if source_filter != 'all' and info.source != source_filter:
             continue
+        # Requests are logged under the URL the user sent, which may be the
+        # video's alternate key rather than this row's
+        requester_ids = list(dict.fromkeys(
+            state.video_requesters.get(url, []) + state.video_requesters.get(info.webpage_url, [])
+        ))
+        if user_filter and user_filter not in requester_ids:
+            continue
         if q_lower:
+            for user_id in requester_ids:
+                if user_id not in labels:
+                    labels[user_id] = user_label(state, user_id)
             searchable = '\n'.join(filter(None, [
                 info.title,
                 info.webpage_url or url,
@@ -123,6 +169,7 @@ async def videos(request: web.Request) -> web.Response:
                 info.caption,
                 info.description,
                 info.uploader_url,
+                *(labels[user_id] for user_id in requester_ids),
             ]))
             if q_lower not in searchable.lower():
                 continue
@@ -134,6 +181,7 @@ async def videos(request: web.Request) -> web.Response:
             'processed_at': info.processed_at or '',
             'source': info.source or '',
             'duration': info.duration,
+            'requester_ids': requester_ids,
         })
 
     if sort_by == 'upload_date':
@@ -145,6 +193,9 @@ async def videos(request: web.Request) -> web.Response:
     total_pages = max(1, (total_items + per_page - 1) // per_page)
     page = min(page, total_pages)
     items = items[(page - 1) * per_page : page * per_page]
+    # Requester rows (name lookups, ban state) only for the page shown
+    for item in items:
+        item['requesters'] = [user_item(state, user_id) for user_id in item.pop('requester_ids')]
 
     context = {
         'videos': items,
@@ -154,6 +205,8 @@ async def videos(request: web.Request) -> web.Response:
         'total_pages': total_pages,
         'total_items': total_items,
         'search_query': search_query,
+        'user_filter': user_filter,
+        'user_filter_label': user_label(state, user_filter) if user_filter else '',
     }
     return aiohttp_jinja2.render_template('videos.html', request, context)
 
@@ -296,6 +349,39 @@ async def remove_subscription(request: web.Request) -> web.Response:
         else:
             await state.pop_subscription(url)
     raise web.HTTPFound('/subscriptions')
+
+
+async def users(request: web.Request) -> web.Response:
+    state = get_state(request)
+    items = []
+    for user_id in set(state.user_requests) | set(state.banned_users):
+        stats = state.user_requests.get(user_id) or {}
+        item = user_item(state, user_id)
+        item['count'] = stats.get('count', 0)
+        item['last_at'] = stats.get('last_at') or ''
+        item['last_at_relative'] = relative_time(item['last_at'])
+        item['banned_at'] = (state.banned_users.get(user_id) or {}).get('banned_at', '')
+        items.append(item)
+    items.sort(key=lambda x: (x['count'], x['last_at']), reverse=True)
+    return aiohttp_jinja2.render_template('users.html', request, {'users': items})
+
+
+async def ban_user(request: web.Request) -> web.Response:
+    state = get_state(request)
+    data = await request.post()
+    user_id = data.get('user_id', '').strip()
+    if user_id.isdigit():
+        await state.ban_user(user_id, user_name(state, user_id))
+    raise web.HTTPFound(safe_next(data.get('next', ''), '/users'))
+
+
+async def unban_user(request: web.Request) -> web.Response:
+    state = get_state(request)
+    data = await request.post()
+    user_id = data.get('user_id', '').strip()
+    if user_id:
+        await state.unban_user(user_id)
+    raise web.HTTPFound(safe_next(data.get('next', ''), '/users'))
 
 
 async def system(request: web.Request) -> web.Response:

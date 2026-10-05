@@ -43,6 +43,13 @@
         .alert-icon { font-size: 16px; line-height: 1.5; }
         .alert-message { font-size: 14px; line-height: 1.5; word-break: break-word; }
         .alert-since { font-size: 12px; opacity: 0.7; margin-top: 4px; }
+        .user-row { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+        .user-row + .user-row { margin-top: 4px; }
+        .inline-form { margin: 0; }
+        .btn-small { border: none; padding: 2px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; color: #fff; }
+        .btn-ban { background: #e94560; }
+        .btn-unban { background: #475569; }
+        .badge-banned { background: #3a1420; color: #ffb3c1; }
     </style>
 </head>
 <body>
@@ -52,6 +59,7 @@
         <a href="/videos" class="{% if active == 'videos' %}active{% endif %}">Videos</a>
         <a href="/ignored" class="{% if active == 'ignored' %}active{% endif %}">Ignored</a>
         <a href="/subscriptions" class="{% if active == 'subscriptions' %}active{% endif %}">Subscriptions</a>
+        <a href="/users" class="{% if active == 'users' %}active{% endif %}">Users</a>
         <a href="/system" class="{% if active == 'system' %}active{% endif %}">System</a>
         <span class="spacer"></span>
         <a href="/logout">Logout</a>
@@ -72,5 +80,12 @@
         {% endif %}
         {% block content %}{% endblock %}
     </div>
+    <script>
+        // Forms with data-confirm ask before submitting
+        document.addEventListener('submit', function (event) {
+            var message = event.target.dataset.confirm;
+            if (message && !confirm(message)) event.preventDefault();
+        });
+    </script>
 </body>
 </html>

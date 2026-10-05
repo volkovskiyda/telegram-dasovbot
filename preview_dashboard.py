@@ -304,6 +304,23 @@ def mock_videos(state: BotState):
         )
 
 
+def mock_requests(state: BotState):
+    """Log requesters on non-subscription videos and ban one user."""
+    user_ids = ["111", "222", "333", "444"]
+    for i, (url, info) in enumerate(state.videos.items()):
+        if info.source == "subscription":
+            continue
+        requesters = [user_ids[i % len(user_ids)]]
+        if i % 5 == 0:
+            requesters.append(user_ids[(i + 1) % len(user_ids)])
+        for user_id in requesters:
+            state.video_requesters.setdefault(url, []).append(user_id)
+            stats = state.user_requests.setdefault(user_id, {"count": 0, "last_at": None})
+            stats["count"] += 1
+            stats["last_at"] = info.processed_at
+    state.banned_users["333"] = {"banned_at": "20260401_120000", "name": "Bob Smith"}
+
+
 async def main():
     with tempfile.TemporaryDirectory() as tmpdir:
         os.makedirs(f"{tmpdir}/data", exist_ok=True)
@@ -351,6 +368,7 @@ async def main():
 
         mock_ignored(state)
         mock_videos(state)
+        mock_requests(state)
 
         os.environ.setdefault("DASHBOARD_PASSWORD", "test")
         app = create_app(state)

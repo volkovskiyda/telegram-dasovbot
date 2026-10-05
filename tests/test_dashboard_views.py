@@ -152,6 +152,107 @@ class TestRemoveIntent(DashboardViewTestCase):
         self.assertNotIn('https://example.com/v', self.state.intents)
 
 
+class TestUsersAndBan(DashboardViewTestCase):
+    def _populate(self):
+        self.state.videos = {
+            'https://youtu.be/a': VideoInfo(title='Cat Video', file_id='f1', webpage_url='https://www.youtube.com/watch?v=a'),
+            'https://www.youtube.com/watch?v=b': VideoInfo(title='Dog Video', file_id='f2'),
+        }
+        self.state.users = {'7': {'first_name': 'Ann', 'username': 'ann7'}}
+        # Logged under the canonical URL, shown on the alternate-key row too
+        self.state.video_requesters = {'https://www.youtube.com/watch?v=a': ['7', '8']}
+        self.state.user_requests = {
+            '7': {'count': 5, 'last_at': '20260101_000000'},
+            '8': {'count': 1, 'last_at': '20260102_000000'},
+        }
+
+    async def test_videos_show_requesters_with_ban_buttons(self):
+        self._populate()
+        resp = await self.client.get('/videos')
+        text = await resp.text()
+        self.assertIn('Ann @ann7 (7)', text)
+        self.assertIn('action="/users/ban"', text)
+        self.assertIn('<th>User</th>', text)
+
+    async def test_videos_search_matches_requester(self):
+        self._populate()
+        resp = await self.client.get('/videos?q=ann7')
+        text = await resp.text()
+        self.assertIn('Cat Video', text)
+        self.assertNotIn('Dog Video', text)
+
+    async def test_videos_user_filter_matches_requester_id_exactly(self):
+        self._populate()
+        # '7' is a substring of '77', and of this video's id: neither may match
+        self.state.videos['https://www.youtube.com/watch?v=b77'] = VideoInfo(title='Bird 7 Video', file_id='f3')
+        self.state.video_requesters['https://www.youtube.com/watch?v=b77'] = ['77']
+        resp = await self.client.get('/videos?user=7')
+        text = await resp.text()
+        self.assertIn('Cat Video', text)
+        self.assertNotIn('Dog Video', text)
+        self.assertNotIn('Bird 7 Video', text)
+        self.assertIn('Requested by:', text)
+        self.assertIn('Ann @ann7 (7)', text)
+        # The filter survives the sort, source, pager and search links
+        self.assertIn('sort=upload_date&source=all&q=&user=7', text)
+        self.assertIn('name="user" value="7"', text)
+
+    async def test_user_links_filter_by_id(self):
+        self._populate()
+        for path in ['/videos', '/users']:
+            text = await (await self.client.get(path)).text()
+            self.assertIn('href="/videos?user=7"', text)
+            self.assertNotIn('href="/videos?q=7"', text)
+
+    async def test_users_page_sorted_by_request_count(self):
+        self._populate()
+        self.state.banned_users = {'9': {'banned_at': '20260103_000000', 'name': 'Zed'}}
+        resp = await self.client.get('/users')
+        self.assertEqual(resp.status, 200)
+        text = await resp.text()
+        self.assertLess(text.index('Ann @ann7 (7)'), text.index('>8<'))
+        self.assertIn('Zed (9)', text)
+        self.assertIn('action="/users/unban"', text)
+
+    @patch('dasovbot.database.upsert_banned_user', new_callable=AsyncMock)
+    async def test_ban_stores_name_and_redirects_back(self, mock_upsert):
+        self._populate()
+        resp = await self.client.post(
+            '/users/ban',
+            data={'user_id': '7', 'next': '/videos?page=2'},
+            allow_redirects=False,
+        )
+        self.assertEqual(resp.status, 302)
+        self.assertEqual(resp.headers['Location'], '/videos?page=2')
+        self.assertTrue(self.state.is_banned('7'))
+        self.assertEqual(self.state.banned_users['7']['name'], 'Ann @ann7')
+
+    def test_safe_next_rejects_everything_but_local_paths(self):
+        from dasovbot.dashboard.views import safe_next
+        for target in ['//evil.example', '/\\evil.example', '/\t/evil.example', '/\n/evil.example',
+                       'https://evil.example', 'videos', '']:
+            self.assertEqual(safe_next(target, '/users'), '/users', repr(target))
+        self.assertEqual(safe_next('/videos?page=2&q=a%20b', '/users'), '/videos?page=2&q=a%20b')
+
+    @patch('dasovbot.database.upsert_banned_user', new_callable=AsyncMock)
+    async def test_ban_rejects_offsite_redirect_and_bad_id(self, mock_upsert):
+        resp = await self.client.post(
+            '/users/ban',
+            data={'user_id': 'abc', 'next': '//evil.example'},
+            allow_redirects=False,
+        )
+        self.assertEqual(resp.headers['Location'], '/users')
+        self.assertEqual(self.state.banned_users, {})
+        mock_upsert.assert_not_awaited()
+
+    @patch('dasovbot.database.delete_banned_user', new_callable=AsyncMock)
+    async def test_unban(self, mock_delete):
+        self.state.banned_users = {'7': {'banned_at': '', 'name': ''}}
+        resp = await self.client.post('/users/unban', data={'user_id': '7'}, allow_redirects=False)
+        self.assertEqual(resp.headers['Location'], '/users')
+        self.assertFalse(self.state.is_banned('7'))
+
+
 class TestSubscriptions(DashboardViewTestCase):
     async def test_lists_subscriptions_with_user_labels(self):
         self.state.subscriptions = {

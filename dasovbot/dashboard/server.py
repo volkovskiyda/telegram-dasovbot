@@ -11,7 +11,7 @@ from aiohttp import web
 
 from dasovbot.dashboard.api import api_video, api_videos
 from dasovbot.dashboard.auth import auth_middleware, login_page, login_post, logout, get_password, get_api_token
-from dasovbot.dashboard.views import index, videos, ignored, retry_ignored, remove_ignored, remove_intent, force_populate, subscriptions, remove_subscription, system, health_alerts_processor, STATE_KEY
+from dasovbot.dashboard.views import index, videos, ignored, retry_ignored, remove_ignored, remove_intent, force_populate, subscriptions, remove_subscription, users, ban_user, unban_user, system, health_alerts_processor, STATE_KEY
 
 if TYPE_CHECKING:
     from dasovbot.state import BotState
@@ -64,6 +64,9 @@ def create_app(state: BotState) -> web.Application:
     app.router.add_post('/intent/remove', remove_intent)
     app.router.add_get('/subscriptions', subscriptions)
     app.router.add_post('/subscriptions/remove', remove_subscription)
+    app.router.add_get('/users', users)
+    app.router.add_post('/users/ban', ban_user)
+    app.router.add_post('/users/unban', unban_user)
     app.router.add_post('/system/populate', force_populate)
     app.router.add_get('/system', system)
     app.router.add_get('/api/videos', api_videos)

@@ -1,0 +1,15 @@
+{% macro ban_toggle(user, next) %}
+{% if user.banned %}
+<form method="post" action="/users/unban" class="inline-form" data-confirm="Unban {{ user.label }}?">
+    <input type="hidden" name="user_id" value="{{ user.id }}">
+    <input type="hidden" name="next" value="{{ next }}">
+    <button type="submit" class="btn-small btn-unban">Unban</button>
+</form>
+{% else %}
+<form method="post" action="/users/ban" class="inline-form" data-confirm="Ban {{ user.label }}? Their downloads will show loading, then fail as unavailable.">
+    <input type="hidden" name="user_id" value="{{ user.id }}">
+    <input type="hidden" name="next" value="{{ next }}">
+    <button type="submit" class="btn-small btn-ban">Ban</button>
+</form>
+{% endif %}
+{% endmacro %}

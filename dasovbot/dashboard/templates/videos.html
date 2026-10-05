@@ -3,42 +3,53 @@
 
 {% block title %}Videos - DasovBot{% endblock %}
 
+{% from "_users.html" import ban_toggle %}
+
 {% block content %}
 <h1>Videos</h1>
 
 <form method="get" action="/videos" class="filters">
     <input type="hidden" name="sort" value="{{ sort_by }}">
     <input type="hidden" name="source" value="{{ source_filter }}">
+    <input type="hidden" name="user" value="{{ user_filter }}">
     <input type="text" name="q" value="{{ search_query }}" placeholder="Search videos..." autocomplete="off"
            style="flex: 1; min-width: 200px; padding: 6px 14px; border-radius: 6px; font-size: 13px; background: #16213e; color: #e0e0e0; border: 1px solid #0f3460; outline: none;">
     <button type="submit" style="padding: 6px 14px; border-radius: 6px; font-size: 13px; background: #0f3460; color: #e0e0e0; border: none; cursor: pointer;">Search</button>
     {% if search_query %}
-    <a href="/videos?sort={{ sort_by }}&source={{ source_filter }}" style="padding: 6px 14px; border-radius: 6px; font-size: 13px; background: #16213e; color: #94a3b8;">Clear</a>
+    <a href="/videos?sort={{ sort_by }}&source={{ source_filter }}&user={{ user_filter | urlencode }}" style="padding: 6px 14px; border-radius: 6px; font-size: 13px; background: #16213e; color: #94a3b8;">Clear</a>
     {% endif %}
 </form>
 
+{% if user_filter %}
+<div class="filters">
+    <strong style="padding: 6px 0; font-size: 13px; color: #94a3b8;">Requested by:</strong>
+    <span style="padding: 6px 0; font-size: 13px;">{{ user_filter_label }}</span>
+    <a href="/videos?sort={{ sort_by }}&source={{ source_filter }}&q={{ search_query | urlencode }}">Clear</a>
+</div>
+{% endif %}
+
 <div class="filters">
     <strong style="padding: 6px 0; font-size: 13px; color: #94a3b8;">Sort:</strong>
-    <a href="/videos?sort=processed_at&source={{ source_filter }}&q={{ search_query }}" class="{% if sort_by == 'processed_at' %}active{% endif %}">Processed At</a>
-    <a href="/videos?sort=upload_date&source={{ source_filter }}&q={{ search_query }}" class="{% if sort_by == 'upload_date' %}active{% endif %}">Upload Date</a>
+    <a href="/videos?sort=processed_at&source={{ source_filter }}&q={{ search_query | urlencode }}&user={{ user_filter | urlencode }}" class="{% if sort_by == 'processed_at' %}active{% endif %}">Processed At</a>
+    <a href="/videos?sort=upload_date&source={{ source_filter }}&q={{ search_query | urlencode }}&user={{ user_filter | urlencode }}" class="{% if sort_by == 'upload_date' %}active{% endif %}">Upload Date</a>
 </div>
 
 <div class="filters">
     <strong style="padding: 6px 0; font-size: 13px; color: #94a3b8;">Source:</strong>
-    <a href="/videos?sort={{ sort_by }}&source=all&q={{ search_query }}" class="{% if source_filter == 'all' %}active{% endif %}">All</a>
-    <a href="/videos?sort={{ sort_by }}&source=subscription&q={{ search_query }}" class="{% if source_filter == 'subscription' %}active{% endif %}">Subscription</a>
-    <a href="/videos?sort={{ sort_by }}&source=download&q={{ search_query }}" class="{% if source_filter == 'download' %}active{% endif %}">Download</a>
-    <a href="/videos?sort={{ sort_by }}&source=inline&q={{ search_query }}" class="{% if source_filter == 'inline' %}active{% endif %}">Inline</a>
+    <a href="/videos?sort={{ sort_by }}&source=all&q={{ search_query | urlencode }}&user={{ user_filter | urlencode }}" class="{% if source_filter == 'all' %}active{% endif %}">All</a>
+    <a href="/videos?sort={{ sort_by }}&source=subscription&q={{ search_query | urlencode }}&user={{ user_filter | urlencode }}" class="{% if source_filter == 'subscription' %}active{% endif %}">Subscription</a>
+    <a href="/videos?sort={{ sort_by }}&source=download&q={{ search_query | urlencode }}&user={{ user_filter | urlencode }}" class="{% if source_filter == 'download' %}active{% endif %}">Download</a>
+    <a href="/videos?sort={{ sort_by }}&source=inline&q={{ search_query | urlencode }}&user={{ user_filter | urlencode }}" class="{% if source_filter == 'inline' %}active{% endif %}">Inline</a>
 </div>
 
 {% if total_pages > 1 %}
 <div class="filters" style="justify-content: center; align-items: center;">
     {% if page > 1 %}
-    <a href="/videos?sort={{ sort_by }}&source={{ source_filter }}&page={{ page - 1 }}&q={{ search_query }}">← Prev</a>
+    <a href="/videos?sort={{ sort_by }}&source={{ source_filter }}&page={{ page - 1 }}&q={{ search_query | urlencode }}&user={{ user_filter | urlencode }}">← Prev</a>
     {% endif %}
     <span style="padding: 6px 10px; font-size: 13px; color: #94a3b8;">Page {{ page }} of {{ total_pages }} ({{ total_items }} videos)</span>
     {% if page < total_pages %}
-    <a href="/videos?sort={{ sort_by }}&source={{ source_filter }}&page={{ page + 1 }}&q={{ search_query }}">Next →</a>
+    <a href="/videos?sort={{ sort_by }}&source={{ source_filter }}&page={{ page + 1 }}&q={{ search_query | urlencode }}&user={{ user_filter | urlencode }}">Next →</a>
     {% endif %}
 </div>
 {% endif %}
@@ -51,6 +62,7 @@
             <th>Processed At</th>
             <th>Source</th>
             <th>Duration</th>
+            <th>User</th>
         </tr>
     </thead>
     <tbody>
@@ -65,9 +77,18 @@
                 {% endif %}
             </td>
             <td>{{ v.duration|duration }}</td>
+            <td>
+                {% for user in v.requesters %}
+                <div class="user-row">
+                    <a href="/videos?user={{ user.id | urlencode }}">{{ user.label }}</a>
+                    {% if user.banned %}<span class="badge badge-banned">banned</span>{% endif %}
+                    {{ ban_toggle(user, request.path_qs) }}
+                </div>
+                {% endfor %}
+            </td>
         </tr>
         {% else %}
-        <tr><td colspan="5" class="text-muted" style="text-align: center;">No videos found</td></tr>
+        <tr><td colspan="6" class="text-muted" style="text-align: center;">No videos found</td></tr>
         {% endfor %}
     </tbody>
 </table>
