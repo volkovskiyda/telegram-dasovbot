@@ -153,6 +153,24 @@ class TestProcessIntent(unittest.IsolatedAsyncioTestCase):
         bot.edit_message_media.assert_awaited_once()
 
     @patch('dasovbot.database.delete_intent', new_callable=AsyncMock)
+    async def test_banned_requesters_get_a_failure_instead_of_the_video(self, mock_delete):
+        # Banned after requesting: their placeholder fails like a dead video,
+        # a bare chat id gets nothing, everyone else still gets the video
+        bot = AsyncMock()
+        intent = Intent(
+            chat_ids=['10', '20'],
+            inline_message_ids=['im1'],
+            messages=[IntentMessage(chat='10', message='m1'), IntentMessage(chat='30', message='m2')],
+        )
+        state = make_state(intents={'q': intent}, banned_users={'10': {}})
+        await process_intent(bot, 'q', 'file123', 'caption', state)
+        bot.send_video.assert_awaited_once_with(chat_id='20', video='file123', caption='caption', disable_notification=True)
+        bot.edit_message_caption.assert_awaited_once_with(chat_id='10', message_id='m1', caption='❌ Video unavailable\nq')
+        self.assertEqual(bot.edit_message_media.await_count, 2)
+        edited = [call.kwargs.get('message_id') for call in bot.edit_message_media.await_args_list]
+        self.assertNotIn('m1', edited)
+
+    @patch('dasovbot.database.delete_intent', new_callable=AsyncMock)
     async def test_returns_none_when_no_intent(self, mock_delete):
         bot = AsyncMock()
         state = make_state()

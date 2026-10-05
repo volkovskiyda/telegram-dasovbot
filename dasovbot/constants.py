@@ -42,6 +42,10 @@ MEDIA_MAX_AGE_SEC = 6 * 60 * 60
 # Retries when Telegram rate-limits a delivery (RetryAfter)
 MAX_SEND_RETRIES = 2
 
+# A banned user's request shows the loading animation, then fails after a
+# random delay in this range so it looks like an ordinary dead video
+BANNED_FAILURE_DELAY_SEC = (10, 60)
+
 # Upload size (MB) above which a failed send falls back to 360p
 LARGE_FILE_MB = 2000
 

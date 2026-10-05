@@ -300,6 +300,11 @@ async def subscribe_show(update: Update, context) -> int:
     message = callback_query.message
     chat_id = message.chat_id
     result = callback_query.data == 'True'
+    if state.is_banned(callback_query.from_user.id):
+        # The subscription itself stands (its hourly deliveries are not
+        # withheld), but this immediate delivery is a download request
+        logger.info("%s # subscribe_show banned: %s", extract_user(callback_query.from_user), context.user_data.get('subscription_url'))
+        result = False
     text = '\n'.join(message.text_markdown.split('\n')[:-1])
 
     await callback_query.answer()

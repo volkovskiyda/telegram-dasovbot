@@ -32,6 +32,24 @@ class TestRecordRequest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mock_insert.await_args.args[1:4], ('8', 'u1', 'download'))
 
 
+class TestBanUser(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.database.delete_banned_user', new_callable=AsyncMock)
+    @patch('dasovbot.database.upsert_banned_user', new_callable=AsyncMock)
+    async def test_ban_and_unban(self, mock_upsert, mock_delete):
+        state = make_state()
+        self.assertFalse(state.is_banned(9))
+
+        await state.ban_user(9, 'Eve')
+        self.assertTrue(state.is_banned(9))
+        self.assertTrue(state.is_banned('9'))
+        self.assertEqual(state.banned_users['9']['name'], 'Eve')
+        mock_upsert.assert_awaited_once_with(state.db, '9', state.banned_users['9'])
+
+        await state.unban_user('9')
+        self.assertFalse(state.is_banned(9))
+        mock_delete.assert_awaited_once_with(state.db, '9')
+
+
 class TestSetIntent(unittest.IsolatedAsyncioTestCase):
     @patch('dasovbot.database.upsert_intent', new_callable=AsyncMock)
     async def test_stores_in_memory_and_calls_db(self, mock_upsert):
@@ -224,6 +242,7 @@ class TestCreateAndLoad(unittest.IsolatedAsyncioTestCase):
         await state.set_subscription('u', Subscription(chat_ids=['1'], title='S'))
         await state.set_intent('q', Intent(chat_ids=['1']))
         await state.record_request(1, 'q', 'download')
+        await state.ban_user(2, 'Bob')
         await state.close()
 
         reloaded = await self._load()
@@ -234,6 +253,8 @@ class TestCreateAndLoad(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(reloaded.intents['q'].chat_ids, ['1'])
             self.assertEqual(reloaded.video_requesters, {'q': ['1']})
             self.assertEqual(reloaded.user_requests['1']['count'], 1)
+            self.assertTrue(reloaded.is_banned(2))
+            self.assertEqual(reloaded.banned_users['2']['name'], 'Bob')
             self.assertEqual(reloaded.migration_progress['status'], 'skipped')
         finally:
             await reloaded.close()

@@ -119,7 +119,7 @@ async def inline_query_handler(update: Update, context):
             await _populate_video(query, chat_ids=[str(user.id)], state=state)
 
 
-def _lookup_query_data(state: BotState, result_id: str):
+def lookup_query_data(state: BotState, result_id: str):
     # user_data['inline_queries'] holds only the most recent query, so a result
     # chosen from an earlier query is missing there. Each query also stores its
     # own id->query mapping, so recover it from state as a fallback.
@@ -139,7 +139,7 @@ async def chosen_query(update: Update, context):
         return
     query_data = inline_queries.get(inline_result.result_id) if inline_queries else None
     if not query_data:
-        query_data = _lookup_query_data(state, inline_result.result_id)
+        query_data = lookup_query_data(state, inline_result.result_id)
     if not query_data:
         return
     if isinstance(query_data, str):

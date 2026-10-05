@@ -13,6 +13,7 @@ from dasovbot.database import (
     upsert_user, load_users,
     upsert_subscription, delete_subscription, load_subscriptions,
     insert_request, load_request_stats,
+    upsert_banned_user, delete_banned_user, load_banned_users,
     SCHEMA,
 )
 from dasovbot.models import VideoInfo, Intent, IntentMessage, Subscription
@@ -29,6 +30,7 @@ class TestInitDb(unittest.IsolatedAsyncioTestCase):
         self.assertIn('users', tables)
         self.assertIn('subscriptions', tables)
         self.assertIn('requests', tables)
+        self.assertIn('banned_users', tables)
 
     async def test_idempotent_schema(self):
         db = await make_memory_db()
@@ -168,6 +170,20 @@ class TestUsersCrud(unittest.IsolatedAsyncioTestCase):
     async def test_load_empty(self):
         result = await load_users(self.db)
         self.assertEqual(result, {})
+
+
+class TestBannedUsersCrud(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.db = await make_memory_db()
+
+    async def asyncTearDown(self):
+        await self.db.close()
+
+    async def test_upsert_load_delete(self):
+        await upsert_banned_user(self.db, '5', {'banned_at': '20260101_000000', 'name': 'Bob'})
+        self.assertEqual(await load_banned_users(self.db), {'5': {'banned_at': '20260101_000000', 'name': 'Bob'}})
+        await delete_banned_user(self.db, '5')
+        self.assertEqual(await load_banned_users(self.db), {})
 
 
 class TestRequestsLog(unittest.IsolatedAsyncioTestCase):

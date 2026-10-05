@@ -12,7 +12,7 @@ from dasovbot.handlers.subscription import (
 )
 from dasovbot.models import Subscription, VideoInfo
 from tests.helpers import (
-    make_message, make_callback_query,
+    make_user, make_message, make_callback_query,
     make_update, make_context, make_state,
 )
 
@@ -123,6 +123,25 @@ class TestSubscribeShow(unittest.IsolatedAsyncioTestCase):
         # ...and the uncached one is enqueued rather than silently skipped.
         mock_append.assert_awaited_once()
         self.assertEqual(mock_append.call_args[0][0], 'https://example.com/v2')
+        self.assertNotIn('subscription_url', context.user_data)
+
+    @patch('dasovbot.handlers.subscription.append_intent', new_callable=AsyncMock)
+    @patch('dasovbot.handlers.subscription.get_ydl')
+    async def test_banned_user_gets_no_videos_but_keeps_the_subscription(self, mock_get_ydl, mock_append):
+        state = make_state(banned_users={'123': {}}, videos={'https://example.com/v1': VideoInfo(title='V1', file_id='fid1')})
+        update, message, cq = self._make_update('True')
+        cq.from_user = make_user(id=123)
+        context = make_context(state=state, user_data={'subscription_url': 'https://example.com/c/videos'})
+
+        from dasovbot.handlers.subscription import subscribe_show
+        result = await subscribe_show(update, context)
+
+        self.assertEqual(result, ConversationHandler.END)
+        cq.answer.assert_awaited_once()
+        message.edit_text.assert_awaited_once()
+        mock_get_ydl.assert_not_called()
+        context.bot.send_video.assert_not_awaited()
+        mock_append.assert_not_called()
         self.assertNotIn('subscription_url', context.user_data)
 
     @patch('dasovbot.handlers.subscription.get_ydl')

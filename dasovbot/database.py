@@ -30,6 +30,10 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     key TEXT PRIMARY KEY,
     data TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS banned_users (
+    user_id TEXT PRIMARY KEY,
+    data TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
@@ -248,6 +252,27 @@ async def load_subscriptions(db: aiosqlite.Connection) -> dict[str, Subscription
     cursor = await db.execute("SELECT key, data FROM subscriptions")
     rows = await cursor.fetchall()
     return {key: Subscription.from_dict(json.loads(data)) for key, data in rows}
+
+
+# --- Banned users ---
+
+async def upsert_banned_user(db: aiosqlite.Connection, user_id: str, data: dict):
+    await db.execute(
+        "INSERT OR REPLACE INTO banned_users (user_id, data) VALUES (?, ?)",
+        (user_id, json.dumps(data)),
+    )
+    await db.commit()
+
+
+async def delete_banned_user(db: aiosqlite.Connection, user_id: str):
+    await db.execute("DELETE FROM banned_users WHERE user_id = ?", (user_id,))
+    await db.commit()
+
+
+async def load_banned_users(db: aiosqlite.Connection) -> dict[str, dict]:
+    cursor = await db.execute("SELECT user_id, data FROM banned_users")
+    rows = await cursor.fetchall()
+    return {user_id: json.loads(data) for user_id, data in rows}
 
 
 # --- Requests ---

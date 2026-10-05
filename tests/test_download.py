@@ -178,5 +178,25 @@ class TestDownloadUrl(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(call_kwargs['upload_date'], '20240515')
 
 
+class TestDownloadUrlBanned(unittest.IsolatedAsyncioTestCase):
+
+    @patch('dasovbot.handlers.download.fake_download', new_callable=AsyncMock)
+    @patch('dasovbot.handlers.download.append_intent', new_callable=AsyncMock)
+    @patch('dasovbot.handlers.download.extract_info', new_callable=AsyncMock)
+    async def test_fakes_the_download(self, mock_extract, mock_append, mock_fake):
+        state = make_state(animation_file_id='anim123', banned_users={'123': {}})
+        message = make_message(chat_id=123, text='/download https://example.com/v1')
+        context = make_context(state=state)
+
+        from dasovbot.handlers.download import download_url
+        result = await download_url(make_update(message=message), context)
+
+        self.assertEqual(result, ConversationHandler.END)
+        mock_fake.assert_awaited_once_with(context.bot, state, message, 'https://example.com/v1')
+        mock_extract.assert_not_called()
+        mock_append.assert_not_called()
+        self.assertNotIn('123', state.users)
+
+
 if __name__ == '__main__':
     unittest.main()

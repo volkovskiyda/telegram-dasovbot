@@ -379,10 +379,20 @@ async def process_intent(bot: Bot, query: str, video: str, caption: str, state: 
         logger.warning("process_intent no intent found: %s", query)
         return None
     logger.info("process_intent: %s chat_ids=%s inline=%d messages=%d", query, intent.chat_ids, len(intent.inline_message_ids), len(intent.messages))
+    # A requester banned while the download was queued gets what a dead video
+    # gives: nothing for a bare chat id, a failed placeholder for a message.
+    # Private-chat ids equal user ids; inline placeholders carry no user
+    from dasovbot.services.ban import unavailable_caption
     for item in intent.chat_ids:
+        if state.is_banned(item):
+            logger.info("process_intent chat_ids banned, skipped: %s - %s", query, item)
+            continue
         await _deliver(lambda item=item: bot.send_video(chat_id=item, video=video, caption=caption, disable_notification=True), 'chat_ids', query, item)
     for item in intent.inline_message_ids:
         await _deliver(lambda item=item: bot.edit_message_media(inline_message_id=item, media=InputMediaVideo(media=video, caption=caption)), 'inline_message_ids', query, item)
     for item in intent.messages:
+        if state.is_banned(item.chat):
+            await _deliver(lambda item=item: bot.edit_message_caption(chat_id=item.chat, message_id=item.message, caption=unavailable_caption(query)), 'messages_banned', query, item)
+            continue
         await _deliver(lambda item=item: bot.edit_message_media(chat_id=item.chat, message_id=item.message, media=InputMediaVideo(media=video, caption=caption)), 'messages', query, item)
     return intent

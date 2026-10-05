@@ -1,13 +1,14 @@
 from telegram import Update
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, InlineQueryHandler,
-    ChosenInlineResultHandler, ConversationHandler, CallbackQueryHandler, filters,
+    ChosenInlineResultHandler, ConversationHandler, CallbackQueryHandler, TypeHandler, filters,
 )
 
 from dasovbot.constants import (
     CONVERSATION_TIMEOUT_SEC, DAS_URL, SUBSCRIBE_URL, SUBSCRIBE_PLAYLIST,
     SUBSCRIBE_SHOW, UNSUBSCRIBE_PLAYLIST, MULTIPLE_SUBSCRIBE_URLS,
 )
+from dasovbot.handlers.ban import guard_banned
 from dasovbot.handlers.common import start, help_command, unknown, cancel, error_handler
 from dasovbot.handlers.download import download, download_url
 from dasovbot.handlers.inline import inline_query_handler, chosen_query
@@ -19,6 +20,9 @@ from dasovbot.handlers.subscription import (
 
 
 def register_handlers(application: Application):
+    # Runs before every other group and stops a banned user's update there
+    application.add_handler(TypeHandler(Update, guard_banned), group=-1)
+
     application.add_handler(CommandHandler('start', start))
     application.add_handler(CommandHandler('help', help_command))
 

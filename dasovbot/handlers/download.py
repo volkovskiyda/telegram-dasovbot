@@ -7,6 +7,7 @@ from dasovbot.constants import DAS_URL, SOURCE_DOWNLOAD
 from dasovbot.downloader import extract_info
 from dasovbot.helpers import extract_user, remove_command_prefix
 from dasovbot.state import BotState
+from dasovbot.services.ban import fake_download
 from dasovbot.services.intent_processor import append_intent
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,12 @@ async def download_url(update: Update, context) -> int:
     logger.info("%s # download_url: %s", extract_user(user), query)
 
     if not query:
+        return ConversationHandler.END
+
+    if state.is_banned(user.id):
+        # Both /download <url> and the DAS_URL reply land here; inline paths
+        # are stopped earlier by guard_banned
+        await fake_download(context.bot, state, message, query)
         return ConversationHandler.END
 
     info = await extract_info(query, download=False, state=state)

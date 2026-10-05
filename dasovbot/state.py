@@ -18,6 +18,8 @@ class BotState:
     # user id -> {'count', 'last_at'}
     video_requesters: dict[str, list[str]] = field(default_factory=dict)
     user_requests: dict[str, dict] = field(default_factory=dict)
+    # user id -> {'banned_at', 'name'}
+    banned_users: dict[str, dict] = field(default_factory=dict)
     subscriptions: dict[str, Subscription] = field(default_factory=dict)
     intents: dict[str, Intent] = field(default_factory=dict)
     temporary_inline_queries: dict[str, TemporaryInlineQuery] = field(default_factory=dict)
@@ -71,7 +73,7 @@ class BotState:
         from dasovbot.database import (
             migrate_from_json, warn_if_data_missing,
             load_videos, load_intents, load_users, load_subscriptions,
-            load_request_stats,
+            load_request_stats, load_banned_users,
         )
 
         await migrate_from_json(self.db, self.config, self.migration_progress)
@@ -84,6 +86,7 @@ class BotState:
         self.subscriptions = await load_subscriptions(self.db)
         self.intents = await load_intents(self.db)
         self.video_requesters, self.user_requests = await load_request_stats(self.db)
+        self.banned_users = await load_banned_users(self.db)
 
     async def set_video(self, key: str, video: VideoInfo):
         from dasovbot.database import upsert_video
@@ -125,6 +128,23 @@ class BotState:
         stats['count'] += 1
         stats['last_at'] = requested_at
         await insert_request(self.db, user_id, url, source, requested_at)
+
+    def is_banned(self, user_id) -> bool:
+        return str(user_id) in self.banned_users
+
+    async def ban_user(self, user_id, name: str = ''):
+        from dasovbot.database import upsert_banned_user
+        from dasovbot.helpers import now
+        user_id = str(user_id)
+        data = {'banned_at': now(), 'name': name}
+        self.banned_users[user_id] = data
+        await upsert_banned_user(self.db, user_id, data)
+
+    async def unban_user(self, user_id):
+        from dasovbot.database import delete_banned_user
+        user_id = str(user_id)
+        self.banned_users.pop(user_id, None)
+        await delete_banned_user(self.db, user_id)
 
     async def set_subscription(self, key: str, sub: Subscription):
         from dasovbot.database import upsert_subscription
