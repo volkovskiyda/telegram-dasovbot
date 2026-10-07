@@ -424,3 +424,212 @@ async def load_request_stats(db: aiosqlite.Connection) -> tuple[dict[str, list[s
         for user_id, count, last_at in await cursor.fetchall()
     }
     return video_requesters, user_requests
+
+
+# --- HA change feed ---
+#
+# Every rev-carrying table takes part in one feed ordered by rev. The passive
+# node pulls pages of "everything with rev in (since, until]" and applies them
+# with the remote revs unchanged (Lamport clock: the local counter is only
+# raised to the page's `until`). Tombstones travel in the same pages.
+
+FEED_TABLES = [*REV_TABLES, 'tombstones']
+
+
+def last_applied_key(peer: str) -> str:
+    return f'last_applied_rev:{peer}'
+
+
+async def read_changes(db: aiosqlite.Connection, since: int, limit: int) -> dict:
+    """One page of the change feed: rows and tombstones with since < rev <= until.
+
+    `until` is chosen so a page never splits rows that share one rev (rows
+    applied from the peer may collide in number): it is the rev of the
+    `limit`-th candidate row, or the current counter when fewer remain. A
+    `since` at or beyond the counter yields an empty page with until == since.
+    """
+    since = int(since)
+    union = " UNION ALL ".join(f"SELECT rev FROM {t} WHERE rev > ?" for t in FEED_TABLES)
+    cursor = await db.execute(
+        f"SELECT rev FROM ({union}) ORDER BY rev LIMIT 1 OFFSET ?",
+        (*([since] * len(FEED_TABLES)), max(int(limit), 1) - 1),
+    )
+    row = await cursor.fetchone()
+    if row:
+        until, has_more = int(row[0]), True
+    else:
+        # Fewer than `limit` rows remain: the page ends at the highest rev in
+        # play. The counter normally is that maximum; the table scan guards
+        # against rows stamped past a counter that was not persisted yet
+        union_max = " UNION ALL ".join(f"SELECT MAX(rev) AS rev FROM {t}" for t in FEED_TABLES)
+        cursor = await db.execute(f"SELECT MAX(rev) FROM ({union_max})")
+        top = (await cursor.fetchone())[0] or 0
+        until, has_more = max(await load_rev(db), int(top), since), False
+
+    rows = {}
+    for table, column in KEYED_TABLES.items():
+        cursor = await db.execute(
+            f"SELECT {column}, data, rev FROM {table} WHERE rev > ? AND rev <= ? ORDER BY rev",
+            (since, until),
+        )
+        rows[table] = [list(r) for r in await cursor.fetchall()]
+    cursor = await db.execute(
+        "SELECT user_id, url, source, requested_at, rev FROM requests WHERE rev > ? AND rev <= ? ORDER BY rev",
+        (since, until),
+    )
+    rows['requests'] = [list(r) for r in await cursor.fetchall()]
+    cursor = await db.execute(
+        "SELECT tbl, key, rev, deleted_at FROM tombstones WHERE rev > ? AND rev <= ? ORDER BY rev",
+        (since, until),
+    )
+    tombstones = [list(r) for r in await cursor.fetchall()]
+    return {'since': since, 'until': until, 'has_more': has_more, 'rows': rows, 'tombstones': tombstones}
+
+
+async def apply_changes(db: aiosqlite.Connection, page: dict, peer: str) -> dict:
+    """Apply one feed page in a single transaction; the caller updates memory.
+
+    Rows overwrite the local copy with the remote rev and clear any tombstone
+    for their key. A tombstone deletes the local row only when the row is
+    absent or not newer than the tombstone ("tombstones win over older
+    rows"). `requests` rows are appended, duplicates ignored. Finally the
+    counter is raised to the page's `until` and the per-peer cursor stored.
+
+    Returns what changed so BotState can mirror it:
+    {'rows': {table: [[key, data, rev], ...]}, 'deleted': [[tbl, key], ...],
+     'requests': [[user_id, url, source, requested_at], ...] (newly inserted),
+     'skipped': n, 'until': until}
+    """
+    applied = {table: [] for table in KEYED_TABLES}
+    deleted, new_requests, skipped = [], [], 0
+
+    for table, column in KEYED_TABLES.items():
+        for key, data, rev in page['rows'].get(table, []):
+            await db.execute(
+                f"INSERT OR REPLACE INTO {table} ({column}, data, rev) VALUES (?, ?, ?)",
+                (key, data, rev),
+            )
+            await db.execute("DELETE FROM tombstones WHERE tbl = ? AND key = ?", (table, key))
+            applied[table].append([key, data, rev])
+
+    for user_id, url, source, requested_at, rev in page['rows'].get('requests', []):
+        cursor = await db.execute(
+            "INSERT OR IGNORE INTO requests (user_id, url, source, requested_at, rev) VALUES (?, ?, ?, ?, ?)",
+            (user_id, url, source, requested_at, rev),
+        )
+        if cursor.rowcount == 1:
+            new_requests.append([user_id, url, source, requested_at])
+
+    for tbl, key, rev, deleted_at in page.get('tombstones', []):
+        column = KEYED_TABLES.get(tbl)
+        if column is None:
+            skipped += 1
+            continue
+        cursor = await db.execute(f"SELECT rev FROM {tbl} WHERE {column} = ?", (key,))
+        row = await cursor.fetchone()
+        if row is not None and row[0] > rev:
+            skipped += 1  # local row is newer than the tombstone
+            continue
+        await db.execute(f"DELETE FROM {tbl} WHERE {column} = ?", (key,))
+        await db.execute(
+            "INSERT OR REPLACE INTO tombstones (tbl, key, rev, deleted_at) VALUES (?, ?, ?, ?)",
+            (tbl, key, rev, deleted_at),
+        )
+        deleted.append([tbl, key])
+
+    until = int(page['until'])
+    await persist_rev(db, until)
+    await set_meta(db, last_applied_key(peer), until)
+    await db.commit()
+    return {'rows': applied, 'deleted': deleted, 'requests': new_requests, 'skipped': skipped, 'until': until}
+
+
+async def write_snapshot(db: aiosqlite.Connection, path: str):
+    """Write a consistent copy of the live database to `path` (SQLite backup API)."""
+    # The backup runs on aiosqlite's worker thread, so the target must not
+    # be bound to the thread that opened it
+    target = sqlite3.connect(path, check_same_thread=False)
+    try:
+        await db.backup(target)
+    finally:
+        target.close()
+
+
+async def reconcile_from_snapshot(db: aiosqlite.Connection, snapshot_path: str, peer: str) -> dict:
+    """Make the keyed tables and tombstones equal to the peer's snapshot; union requests.
+
+    Self-healing floor for the passive node: anything the incremental feed
+    missed is corrected here. Rows identical in key, rev and data are left
+    untouched. Only the snapshot's counter is read from its sync_meta — every
+    other key there is the peer's own metadata.
+    """
+    await db.execute("ATTACH DATABASE ? AS snap", (snapshot_path,))
+    try:
+        changed = {}
+        for table, column in KEYED_TABLES.items():
+            cursor = await db.execute(
+                f"INSERT OR REPLACE INTO main.{table} ({column}, data, rev) "
+                f"SELECT s.{column}, s.data, s.rev FROM snap.{table} s WHERE NOT EXISTS "
+                f"(SELECT 1 FROM main.{table} l WHERE l.{column} = s.{column} AND l.rev = s.rev AND l.data = s.data)"
+            )
+            upserted = cursor.rowcount
+            cursor = await db.execute(
+                f"DELETE FROM main.{table} WHERE {column} NOT IN (SELECT {column} FROM snap.{table})"
+            )
+            changed[table] = {'upserted': upserted, 'deleted': cursor.rowcount}
+        cursor = await db.execute(
+            "INSERT OR REPLACE INTO main.tombstones (tbl, key, rev, deleted_at) "
+            "SELECT s.tbl, s.key, s.rev, s.deleted_at FROM snap.tombstones s WHERE NOT EXISTS "
+            "(SELECT 1 FROM main.tombstones l WHERE l.tbl = s.tbl AND l.key = s.key AND l.rev = s.rev)"
+        )
+        upserted = cursor.rowcount
+        cursor = await db.execute(
+            "DELETE FROM main.tombstones WHERE (tbl, key) NOT IN (SELECT tbl, key FROM snap.tombstones)"
+        )
+        changed['tombstones'] = {'upserted': upserted, 'deleted': cursor.rowcount}
+        cursor = await db.execute(
+            "INSERT OR IGNORE INTO main.requests (user_id, url, source, requested_at, rev) "
+            "SELECT user_id, url, source, requested_at, rev FROM snap.requests"
+        )
+        changed['requests'] = {'upserted': cursor.rowcount, 'deleted': 0}
+
+        cursor = await db.execute("SELECT value FROM snap.sync_meta WHERE key = ?", (REV_KEY,))
+        row = await cursor.fetchone()
+        snap_rev = int(row[0]) if row else 0
+        await persist_rev(db, snap_rev)
+        await set_meta(db, last_applied_key(peer), snap_rev)
+        await db.commit()
+    finally:
+        # DETACH is refused inside a transaction, so it follows the commit
+        # (or a rollback on the error path)
+        try:
+            await db.execute("DETACH DATABASE snap")
+        except sqlite3.OperationalError:
+            await db.rollback()
+            await db.execute("DETACH DATABASE snap")
+    return {'changed': changed, 'snapshot_rev': snap_rev}
+
+
+async def keys_above_rev(db: aiosqlite.Connection, rev: int) -> dict:
+    """Keys (per keyed table) and tombstone (tbl, key) pairs with rev > `rev`."""
+    result = {}
+    for table, column in KEYED_TABLES.items():
+        cursor = await db.execute(f"SELECT {column} FROM {table} WHERE rev > ?", (rev,))
+        result[table] = [r[0] for r in await cursor.fetchall()]
+    cursor = await db.execute("SELECT tbl, key FROM tombstones WHERE rev > ?", (rev,))
+    result['tombstones'] = [(r[0], r[1]) for r in await cursor.fetchall()]
+    return result
+
+
+async def restamp(db: aiosqlite.Connection, table: str, key: str, rev: int) -> bool:
+    """Give a surviving local row a fresh rev so it flows to the peer. No commit."""
+    column = KEYED_TABLES[table]
+    cursor = await db.execute(f"UPDATE {table} SET rev = ? WHERE {column} = ?", (rev, key))
+    await persist_rev(db, rev)
+    return cursor.rowcount == 1
+
+
+async def restamp_tombstone(db: aiosqlite.Connection, table: str, key: str, rev: int) -> bool:
+    cursor = await db.execute("UPDATE tombstones SET rev = ? WHERE tbl = ? AND key = ?", (rev, table, key))
+    await persist_rev(db, rev)
+    return cursor.rowcount == 1
