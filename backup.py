@@ -2,9 +2,12 @@
 """Create a timestamped backup of bot.db using SQLite's online backup API."""
 
 import glob
+import json
 import os
 import sqlite3
 import sys
+import urllib.error
+import urllib.request
 from contextlib import closing
 from datetime import datetime
 
@@ -47,10 +50,36 @@ def prune_backups(backup_dir: str, max_count: int):
         print(f"Removed old backup: {old_backup}")
 
 
+def node_is_active(port: str, timeout: float = 5) -> bool | None:
+    """Ask the bot's /health whether this node holds the HA lease.
+
+    True/False from `role == "active"`; None when the dashboard does not
+    answer (bot down or starting) — the caller treats that as "not active".
+    """
+    try:
+        with urllib.request.urlopen(f'http://127.0.0.1:{port}/health', timeout=timeout) as resp:
+            return json.loads(resp.read()).get('role') == 'active'
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+
+
 def main():
     db_path = os.environ.get('DB_PATH', '/data/bot.db')
     backup_dir = os.environ.get('BACKUP_DIR', os.path.dirname(db_path))
     max_count = int(os.environ.get('BACKUP_MAX_COUNT', '14'))
+
+    # /data is one Syncthing folder on both HA nodes: two cron jobs would both
+    # write there and prune each other's files, and the passive copy is a
+    # replica, not the source of truth. Only the ACTIVE node backs up.
+    if os.environ.get('BACKUP_SKIP_ROLE_CHECK', '').lower() != 'true':
+        port = os.environ.get('DASHBOARD_PORT', '8080')
+        active = node_is_active(port)
+        if active is None:
+            print(f"Backup skipped: /health unreachable on port {port}")
+            sys.exit(0)
+        if not active:
+            print("Backup skipped: node is passive")
+            sys.exit(0)
 
     if not os.path.exists(db_path):
         print(f"Database not found: {db_path}", file=sys.stderr)

@@ -4,7 +4,17 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-from backup import create_backup, main, prune_backups
+from backup import create_backup, main, prune_backups, node_is_active
+
+
+def active_health(role='active'):
+    """A fake urlopen context manager answering /health with the given role."""
+    import io
+    resp = MagicMock()
+    resp.read.return_value = ('{"role": "%s"}' % role).encode()
+    resp.__enter__.return_value = resp
+    resp.__exit__.return_value = False
+    return resp
 
 
 class TestCreateBackup(unittest.TestCase):
@@ -95,11 +105,57 @@ class TestMain(unittest.TestCase):
         self.db_path = os.path.join(self.tmp.name, 'bot.db')
         with sqlite3.connect(self.db_path) as conn:
             conn.execute('CREATE TABLE videos (url TEXT PRIMARY KEY, data TEXT)')
+        # Default: this node is ACTIVE (the pre-HA behaviour)
+        patcher = patch('backup.urllib.request.urlopen', return_value=active_health('active'))
+        self.urlopen = patcher.start()
+        self.addCleanup(patcher.stop)
 
     def _env(self, **overrides):
-        env = {'DB_PATH': self.db_path, 'BACKUP_DIR': self.tmp.name, 'BACKUP_MAX_COUNT': '14'}
+        env = {'DB_PATH': self.db_path, 'BACKUP_DIR': self.tmp.name, 'BACKUP_MAX_COUNT': '14',
+               'DASHBOARD_PORT': '8099'}
         env.update(overrides)
         return env
+
+    def _backups(self):
+        return [name for name in os.listdir(self.tmp.name) if name.startswith('bot.db.backup_')]
+
+    def test_active_node_checks_health_on_dashboard_port(self):
+        with patch.dict(os.environ, self._env()):
+            main()
+        self.assertEqual(len(self._backups()), 1)
+        self.assertEqual(self.urlopen.call_args.args[0], 'http://127.0.0.1:8099/health')
+
+    def test_passive_node_skips_with_exit_0(self):
+        self.urlopen.return_value = active_health('passive')
+        with patch.dict(os.environ, self._env()):
+            with self.assertRaises(SystemExit) as ctx:
+                main()
+        self.assertEqual(ctx.exception.code, 0)
+        self.assertEqual(self._backups(), [])
+
+    def test_unreachable_health_skips_with_exit_0(self):
+        import urllib.error
+        self.urlopen.side_effect = urllib.error.URLError('refused')
+        with patch.dict(os.environ, self._env()):
+            with self.assertRaises(SystemExit) as ctx:
+                main()
+        self.assertEqual(ctx.exception.code, 0)
+        self.assertEqual(self._backups(), [])
+
+    def test_skip_role_check_env_bypasses_health(self):
+        self.urlopen.return_value = active_health('passive')
+        with patch.dict(os.environ, self._env(BACKUP_SKIP_ROLE_CHECK='true')):
+            main()
+        self.assertEqual(len(self._backups()), 1)
+        self.urlopen.assert_not_called()
+
+    def test_node_is_active_parses_role(self):
+        with patch('backup.urllib.request.urlopen', return_value=active_health('active')):
+            self.assertTrue(node_is_active('8080'))
+        with patch('backup.urllib.request.urlopen', return_value=active_health('draining')):
+            self.assertFalse(node_is_active('8080'))
+        with patch('backup.urllib.request.urlopen', side_effect=OSError('down')):
+            self.assertIsNone(node_is_active('8080'))
 
     def test_missing_database_exits(self):
         with patch.dict(os.environ, self._env(DB_PATH=os.path.join(self.tmp.name, 'missing.db'))):
