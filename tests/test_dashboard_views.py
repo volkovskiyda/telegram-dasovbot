@@ -382,3 +382,169 @@ class TestHealthAlertsProcessor(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+def make_ha(role='passive'):
+    from unittest.mock import MagicMock
+    from dasovbot.services.ha import HaError
+    ha = MagicMock()
+    ha.config.ha_enabled = True
+    ha.readiness_reason.return_value = 'last sync 95s behind the last heartbeat'
+    ha.request_takeover = AsyncMock()
+    ha.request_handback = AsyncMock()
+    ha.HaError = HaError
+    ha.status.return_value = {
+        'enabled': True, 'role': role, 'node': 'rpi', 'node_role': 'standby', 'peer': 'dasovbot',
+        'peer_url': 'http://192.168.11.150:8080', 'peer_role': 'active', 'lease_holder': 'dasovbot',
+        'lease_until': None, 'rev': 10, 'drained': False, 'manual_hold': False, 'handback_requested': False,
+        'handoff_rev': None, 'handoff_pending': False, 'peer_seen_at': None, 'ready': True,
+        'last_sync_at': '20260101_000000', 'last_sync_rev': 39071, 'last_heartbeat_at': '20260101_000100',
+        'last_snapshot_at': None,
+    }
+    return ha
+
+
+class HaDashboardTestCase(DashboardViewTestCase):
+    role = 'passive'
+
+    async def get_application(self):
+        self.state = make_state(
+            config=make_config(),
+            migration_progress={'status': 'skipped', 'tables': {}, 'elapsed': 0.0},
+        )
+        self.ha = make_ha(self.role)
+        return create_app(self.state, self.ha)
+
+    def set_role(self, role):
+        self.ha.status.return_value['role'] = role
+
+
+class TestPassiveDashboard(HaDashboardTestCase):
+    async def test_post_actions_are_409_with_the_active_node(self):
+        for path, data in (('/users/ban', {'user_id': '7'}), ('/intent/remove', {'url': 'x'}),
+                           ('/system/populate', {}), ('/subscriptions/remove', {'url': 'x'})):
+            resp = await self.client.post(path, data=data, allow_redirects=False)
+            self.assertEqual(resp.status, 409, path)
+            text = await resp.text()
+            self.assertIn('PASSIVE', text)
+            self.assertIn('http://192.168.11.150:8080', text)
+        self.assertEqual(self.state.banned_users, {})
+
+    async def test_get_pages_still_work_read_only(self):
+        for path in ('/', '/videos', '/users', '/system'):
+            resp = await self.client.get(path)
+            self.assertEqual(resp.status, 200, path)
+
+    async def test_banner_on_every_page(self):
+        for path in ('/', '/videos', '/subscriptions', '/system'):
+            text = await (await self.client.get(path)).text()
+            self.assertIn('data-ha-banner="passive"', text, path)
+            self.assertIn('active node is <a href="http://192.168.11.150:8080">dasovbot</a>', text)
+            self.assertIn('role-chip role-passive', text)
+            self.assertIn('>PASSIVE<', text)
+
+    async def test_login_post_works_while_passive(self):
+        with patch('dasovbot.dashboard.auth.get_password', return_value='pw'):
+            resp = await self.client.post('/login', data={'password': 'pw'}, allow_redirects=False)
+        self.assertEqual(resp.status, 302)
+        self.assertEqual(resp.headers['Location'], '/')
+
+    async def test_system_card_and_take_over_button(self):
+        text = await (await self.client.get('/system')).text()
+        self.assertIn('data-ha-card', text)
+        self.assertIn('rpi is the standby', text)
+        self.assertIn('rev 39071', text)
+        self.assertIn('action="/system/takeover"', text)
+        self.assertNotIn('action="/system/handback"', text)
+        self.assertNotIn('disabled', text.split('data-ha-card')[1].split('</form>')[0])
+
+    async def test_take_over_disabled_when_not_ready(self):
+        self.ha.status.return_value['ready'] = False
+        text = await (await self.client.get('/system')).text()
+        self.assertIn('✗', text)
+        self.assertIn('last sync 95s behind', text)
+        self.assertIn('disabled', text.split('action="/system/takeover"')[1].split('</form>')[0])
+
+    async def test_takeover_calls_controller_and_redirects(self):
+        resp = await self.client.post('/system/takeover', allow_redirects=False)
+        self.assertEqual(resp.status, 302)
+        self.assertEqual(resp.headers['Location'], '/system')
+        self.ha.request_takeover.assert_awaited_once()
+
+    async def test_takeover_error_is_shown_on_system_page(self):
+        from dasovbot.services.ha import HaError
+        self.ha.request_takeover.side_effect = HaError('not ready: never synced from the peer')
+        resp = await self.client.post('/system/takeover', allow_redirects=False)
+        self.assertEqual(resp.status, 302)
+        location = resp.headers['Location']
+        self.assertTrue(location.startswith('/system?ha_error='))
+        text = await (await self.client.get(location)).text()
+        self.assertIn('data-ha-error', text)
+        self.assertIn('never synced from the peer', text)
+
+    async def test_ha_error_is_escaped(self):
+        text = await (await self.client.get('/system?ha_error=%3Cscript%3Ex%3C/script%3E')).text()
+        self.assertNotIn('<script>x</script>', text)
+        self.assertIn('&lt;script&gt;', text)
+
+    async def test_handback_on_passive_surfaces_controller_error(self):
+        from dasovbot.services.ha import HaError
+        self.ha.request_handback.side_effect = HaError('not active')
+        resp = await self.client.post('/system/handback', allow_redirects=False)
+        self.assertEqual(resp.headers['Location'], '/system?ha_error=not%20active')
+
+
+class TestActiveDashboard(HaDashboardTestCase):
+    role = 'active'
+
+    @patch('dasovbot.database.upsert_banned_user', new_callable=AsyncMock)
+    async def test_post_actions_unchanged(self, mock_upsert):
+        resp = await self.client.post('/users/ban', data={'user_id': '7'}, allow_redirects=False)
+        self.assertEqual(resp.status, 302)
+        self.assertTrue(self.state.is_banned('7'))
+
+    async def test_no_banner_but_chip_and_handback_button(self):
+        text = await (await self.client.get('/system')).text()
+        self.assertNotIn('data-ha-banner', text)
+        self.assertIn('>ACTIVE<', text)
+        self.assertIn('action="/system/handback"', text)
+        self.assertIn('>Hand back<', text)
+        self.assertNotIn('action="/system/takeover"', text)
+
+    async def test_primary_label_reads_hand_over(self):
+        self.ha.status.return_value['node_role'] = 'primary'
+        text = await (await self.client.get('/system')).text()
+        self.assertIn('Hand over to standby', text)
+
+    async def test_handback_calls_controller(self):
+        resp = await self.client.post('/system/handback', allow_redirects=False)
+        self.assertEqual(resp.headers['Location'], '/system')
+        self.ha.request_handback.assert_awaited_once()
+
+    async def test_draining_shows_banner_and_no_buttons(self):
+        self.set_role('draining')
+        resp = await self.client.post('/users/ban', data={'user_id': '7'}, allow_redirects=False)
+        self.assertEqual(resp.status, 409)
+        self.assertIn('DRAINING', await resp.text())
+        text = await (await self.client.get('/system')).text()
+        self.assertIn('data-ha-banner="draining"', text)
+        self.assertIn('draining…', text)
+        self.assertNotIn('action="/system/takeover"', text)
+        self.assertNotIn('action="/system/handback"', text)
+
+
+class TestStandaloneDashboard(DashboardViewTestCase):
+    async def test_no_ha_markup_without_controller(self):
+        for path in ('/', '/system'):
+            text = await (await self.client.get(path)).text()
+            self.assertNotIn('data-ha', text, path)
+            self.assertNotIn('class="role-chip', text, path)
+
+    async def test_takeover_and_handback_are_404(self):
+        self.assertEqual((await self.client.post('/system/takeover', allow_redirects=False)).status, 404)
+        self.assertEqual((await self.client.post('/system/handback', allow_redirects=False)).status, 404)
+
+    @patch('dasovbot.database.upsert_banned_user', new_callable=AsyncMock)
+    async def test_posts_pass_without_controller(self, mock_upsert):
+        resp = await self.client.post('/users/ban', data={'user_id': '7'}, allow_redirects=False)
+        self.assertEqual(resp.status, 302)

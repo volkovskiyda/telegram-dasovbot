@@ -50,11 +50,17 @@
         .btn-ban { background: #e94560; }
         .btn-unban { background: #475569; }
         .badge-banned { background: #3a1420; color: #ffb3c1; }
+        .role-chip { font-size: 11px; font-weight: 700; letter-spacing: 0.5px; padding: 3px 8px; border-radius: 10px; margin-left: -6px; }
+        .role-active { background: #1b4332; color: #95d5b2; }
+        .role-passive { background: #3a3216; color: #ffe29a; }
+        .role-draining { background: #4a1942; color: #d4a5d0; }
+        .alert-info { background: #1a3a5c; border-color: #53a8e2; color: #cfe8ff; }
     </style>
 </head>
 <body>
     <nav>
         <a href="/" class="brand">DasovBot</a>
+        {% if ha.enabled %}<span class="role-chip role-{{ ha.role }}" title="{{ ha.node }} ({{ ha.node_role }})">{{ ha.role|upper }}</span>{% endif %}
         <a href="/" class="{% if active == 'index' %}active{% endif %}">Overview</a>
         <a href="/videos" class="{% if active == 'videos' %}active{% endif %}">Videos</a>
         <a href="/ignored" class="{% if active == 'ignored' %}active{% endif %}">Ignored</a>
@@ -65,6 +71,24 @@
         <a href="/logout">Logout</a>
     </nav>
     <div class="container">
+        {% if ha.enabled and ha.role == 'passive' %}
+        <div class="alerts">
+            <div class="alert alert-warning" data-ha-banner="passive">
+                <span class="alert-icon">⏸</span>
+                <div>
+                    <div class="alert-message">PASSIVE — active node is <a href="{{ ha.peer_url | safe_url }}">{{ ha.peer_name }}</a>, last sync {{ ha.last_sync_relative }}. This dashboard is read-only.</div>
+                    <div class="alert-since">heartbeat {{ ha.last_heartbeat_relative }} · <a href="/system">take over</a></div>
+                </div>
+            </div>
+        </div>
+        {% elif ha.enabled and ha.role == 'draining' %}
+        <div class="alerts">
+            <div class="alert alert-info" data-ha-banner="draining">
+                <span class="alert-icon">🟡</span>
+                <div class="alert-message">DRAINING — handing over to <a href="{{ ha.peer_url | safe_url }}">{{ ha.peer_name }}</a>{% if ha.drained %}, waiting for it to become active{% else %}, finishing the download in progress{% endif %}.</div>
+            </div>
+        </div>
+        {% endif %}
         {% if health_alerts %}
         <div class="alerts">
             {% for alert in health_alerts %}

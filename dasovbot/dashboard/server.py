@@ -12,7 +12,7 @@ from aiohttp import web
 from dasovbot.dashboard.api import api_video, api_videos
 from dasovbot.dashboard.auth import auth_middleware, login_page, login_post, logout, get_password, get_api_token
 from dasovbot.dashboard.sync import health, sync_heartbeat, sync_changes, sync_snapshot, sync_handoff
-from dasovbot.dashboard.views import index, videos, ignored, retry_ignored, remove_ignored, remove_intent, force_populate, subscriptions, remove_subscription, users, ban_user, unban_user, system, health_alerts_processor, STATE_KEY, HA_KEY
+from dasovbot.dashboard.views import index, videos, ignored, retry_ignored, remove_ignored, remove_intent, force_populate, subscriptions, remove_subscription, users, ban_user, unban_user, system, takeover, handback, health_alerts_processor, ha_processor, role_guard_middleware, STATE_KEY, HA_KEY
 
 if TYPE_CHECKING:
     from dasovbot.state import BotState
@@ -43,7 +43,8 @@ def safe_url(url: str | None) -> str:
 
 def create_app(state: BotState, ha=None) -> web.Application:
     """`ha` is the RoleController; without it the node reports itself standalone/active."""
-    app = web.Application(middlewares=[auth_middleware])
+    # Auth first, then the HA write guard (a passive node answers POSTs with 409)
+    app = web.Application(middlewares=[auth_middleware, role_guard_middleware])
     app[STATE_KEY] = state
     if ha is not None:
         app[HA_KEY] = ha
@@ -51,7 +52,7 @@ def create_app(state: BotState, ha=None) -> web.Application:
     env = aiohttp_jinja2.setup(
         app,
         loader=jinja2.FileSystemLoader(str(TEMPLATES_DIR)),
-        context_processors=[health_alerts_processor, aiohttp_jinja2.request_processor],
+        context_processors=[health_alerts_processor, ha_processor, aiohttp_jinja2.request_processor],
     )
     env.filters['duration'] = format_duration
     env.filters['safe_url'] = safe_url
@@ -73,6 +74,8 @@ def create_app(state: BotState, ha=None) -> web.Application:
     app.router.add_post('/users/unban', unban_user)
     app.router.add_post('/system/populate', force_populate)
     app.router.add_get('/system', system)
+    app.router.add_post('/system/takeover', takeover)
+    app.router.add_post('/system/handback', handback)
     app.router.add_get('/api/videos', api_videos)
     app.router.add_get('/api/videos/{video_id}', api_video)
     app.router.add_get('/health', health)

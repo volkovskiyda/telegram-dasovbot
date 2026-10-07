@@ -4,6 +4,7 @@ import asyncio
 import re
 from datetime import datetime
 from typing import TYPE_CHECKING
+from urllib.parse import quote
 
 import aiohttp_jinja2
 from aiohttp import web
@@ -72,6 +73,55 @@ async def health_alerts_processor(request: web.Request) -> dict:
         for alert_id, info in state.health_alerts.items()
     ]
     return {'health_alerts': alerts}
+
+
+ROLE_GUARD_EXEMPT = {'/login', '/system/takeover', '/system/handback'}
+
+
+@web.middleware
+async def role_guard_middleware(request: web.Request, handler):
+    """Only the ACTIVE node originates writes: dashboard POSTs on a passive node get a 409."""
+    if request.method == 'POST' and request.path not in ROLE_GUARD_EXEMPT \
+            and not request.path.startswith('/sync/'):
+        ha = get_ha(request)
+        if ha is not None and ha.status().get('role') != 'active':
+            status = ha.status()
+            where = status.get('peer_url') or status.get('peer') or 'the active node'
+            return web.Response(
+                status=409, content_type='text/plain',
+                text=f"This node is {status.get('role', 'passive').upper()}; use the active node at {where}",
+            )
+    return await handler(request)
+
+
+async def ha_processor(request: web.Request) -> dict:
+    """Expose the role controller to every template (banner, nav chip, system card)."""
+    ha = get_ha(request)
+    if ha is None:
+        return {'ha': {'enabled': False, 'role': 'active'}}
+    status = ha.status()
+    role = status.get('role', 'active')
+    return {'ha': {
+        'enabled': bool(status.get('enabled')),
+        'role': role,
+        'node': status.get('node'),
+        'node_role': status.get('node_role'),
+        'peer_url': status.get('peer_url') or '',
+        'peer_name': status.get('peer') or status.get('peer_url') or '',
+        'peer_role': status.get('peer_role'),
+        'lease_holder': status.get('lease_holder'),
+        'ready': bool(status.get('ready')),
+        'ready_reason': '' if status.get('ready') else ha.readiness_reason(),
+        'last_sync_rev': status.get('last_sync_rev'),
+        'last_sync_relative': relative_time(status.get('last_sync_at')),
+        'last_heartbeat_relative': relative_time(status.get('last_heartbeat_at')),
+        'last_snapshot_relative': relative_time(status.get('last_snapshot_at')),
+        'manual_hold': bool(status.get('manual_hold')),
+        'handback_requested': bool(status.get('handback_requested')),
+        'handoff_pending': bool(status.get('handoff_pending')),
+        'draining': role == 'draining',
+        'drained': bool(status.get('drained')),
+    }}
 
 
 def user_name(state: BotState, user_id: str) -> str:
@@ -390,6 +440,28 @@ async def unban_user(request: web.Request) -> web.Response:
     raise web.HTTPFound(safe_next(data.get('next', ''), '/users'))
 
 
+async def _ha_action(request: web.Request, action: str) -> web.Response:
+    from dasovbot.services.ha import HaError
+    ha = get_ha(request)
+    if ha is None or not ha.config.ha_enabled:
+        raise web.HTTPNotFound(text='High availability is not enabled on this node')
+    try:
+        await getattr(ha, action)()
+    except HaError as e:
+        raise web.HTTPFound(f'/system?ha_error={quote(str(e))}')
+    raise web.HTTPFound('/system')
+
+
+async def takeover(request: web.Request) -> web.Response:
+    """Force this PASSIVE node to take over (readiness still enforced by the controller)."""
+    return await _ha_action(request, 'request_takeover')
+
+
+async def handback(request: web.Request) -> web.Response:
+    """Invite the peer to take over from this ACTIVE node."""
+    return await _ha_action(request, 'request_handback')
+
+
 async def system(request: web.Request) -> web.Response:
     state = get_state(request)
 
@@ -413,5 +485,6 @@ async def system(request: web.Request) -> web.Response:
         'tiq_count': len(state.temporary_inline_queries),
         'queue_size': state.download_queue.qsize(),
         'migration': state.migration_progress,
+        'ha_error': request.query.get('ha_error', '')[:300],
     }
     return aiohttp_jinja2.render_template('system.html', request, context)

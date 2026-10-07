@@ -371,7 +371,20 @@ async def main():
         mock_requests(state)
 
         os.environ.setdefault("DASHBOARD_PASSWORD", "test")
-        app = create_app(state)
+        # PREVIEW_HA_ROLE=passive|active|draining shows the HA banner/card
+        ha = None
+        if os.environ.get("PREVIEW_HA_ROLE"):
+            from unittest.mock import MagicMock
+            ha = MagicMock()
+            ha.config.ha_enabled = True
+            ha.readiness_reason.return_value = "last sync 95s behind the last heartbeat"
+            ha.status.return_value = {
+                "enabled": True, "role": os.environ["PREVIEW_HA_ROLE"], "node": "rpi", "node_role": "standby",
+                "peer": "dasovbot", "peer_url": "http://192.168.11.150:8080", "peer_role": "active",
+                "lease_holder": "dasovbot", "ready": False, "last_sync_at": "20260101_000000",
+                "last_sync_rev": 39071, "last_heartbeat_at": "20260101_000100", "manual_hold": False,
+            }
+        app = create_app(state, ha)
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, "0.0.0.0", 8080)
