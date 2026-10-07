@@ -43,6 +43,9 @@ class FakePeer:
     async def pull_snapshot(self):
         self.snapshots += 1
 
+    async def maybe_snapshot(self):
+        self.maybe_snapshots = getattr(self, 'maybe_snapshots', 0) + 1
+
     async def on_handed_back(self):
         self.handed_back += 1
 
@@ -179,6 +182,7 @@ class TestPassiveFollowing(ControllerTestCase):
             await self.tick(ctl)
         self.assertEqual(ctl.role, HA_ROLE_PASSIVE)
         self.assertEqual(self.peer.pull_calls, [None, None, None])
+        self.assertEqual(self.peer.maybe_snapshots, 3, 'snapshot timer consulted after every pull')
         self.assertEqual(self.peer.handoff_calls, [])
         status = ctl.status()
         self.assertEqual((status['lease_holder'], status['peer_role']), ('other', 'active'))

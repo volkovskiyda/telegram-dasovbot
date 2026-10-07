@@ -5,7 +5,7 @@ import asyncio
 import logging
 import os
 import socket
-import tempfile
+from tempfile import mkstemp
 from datetime import datetime, timedelta
 
 from aiohttp import web
@@ -73,7 +73,7 @@ async def sync_snapshot(request: web.Request) -> web.StreamResponse:
     """Stream a consistent SQLite copy of the live database (backup API into a temp file)."""
     state = get_state(request)
     # System temp dir, never under /data: Syncthing would ship the file
-    fd, path = tempfile.mkstemp(prefix='dasovbot-snapshot-', suffix='.db')
+    fd, path = mkstemp(prefix='dasovbot-snapshot-', suffix='.db')
     os.close(fd)
     try:
         await write_snapshot(state.db, path)

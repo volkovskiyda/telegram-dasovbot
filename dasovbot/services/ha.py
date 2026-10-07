@@ -54,6 +54,9 @@ class PeerClient(Protocol):
 
     async def pull_snapshot(self) -> None: ...
 
+    async def maybe_snapshot(self) -> None:
+        """Called after each passive pull: the hourly snapshot reconcile, when due. Raises SyncError."""
+
     async def on_handed_back(self) -> None:
         """This node just left ACTIVE: its data is current, move the cursors accordingly."""
 
@@ -314,6 +317,7 @@ class RoleController:
         if peer_active:
             try:
                 await self._pull(reply)
+                await self.peer.maybe_snapshot()
             except SyncError as e:
                 await self.notifier.error(f"⚠️ {self.node} sync error: {e}")
             if self.handoff_pending and reply.get('drained'):

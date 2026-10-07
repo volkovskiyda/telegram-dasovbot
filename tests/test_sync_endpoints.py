@@ -126,7 +126,7 @@ class TestSnapshot(SyncEndpointTestCase):
         tmp = tempfile.mkdtemp()
         known = os.path.join(tmp, 'snap.db')
         fd = os.open(known, os.O_CREAT | os.O_WRONLY)
-        with patch('dasovbot.dashboard.sync.tempfile.mkstemp', return_value=(fd, known)):
+        with patch('dasovbot.dashboard.sync.mkstemp', return_value=(fd, known)):
             resp = await self.client.get('/sync/snapshot', headers=AUTH)
             self.assertEqual(resp.status, 200)
             self.assertEqual(resp.headers['Content-Type'], 'application/x-sqlite3')
