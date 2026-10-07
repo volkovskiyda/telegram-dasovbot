@@ -35,7 +35,7 @@ Password-protected web UI served on `DASHBOARD_PORT` (default 8080).
 - **Ignored** (`/ignored`) — failed/skipped videos with retry and remove actions
 - **Subscriptions** (`/subscriptions`) — subscriptions with per-subscriber badges, remove a single subscriber or the whole subscription
 - **Users** (`/users`) — users ranked by logged requests, with ban/unban; a user links to the videos they requested. A banned user never gets a new video, but the bot looks like it still works: inline queries go unanswered (the client times out), `/download` shows the loading animation and then `❌ Video unavailable` after 10–60 s, and requests already queued fail the same way on delivery. Subscriptions stay fully usable and keep delivering; only the "show latest videos" shortcut after subscribing is skipped
-- **System** (`/system`) — background task status, state sizes, manual subscription polling trigger
+- **System** (`/system`) — background task status, state sizes, manual subscription polling trigger, and on an HA pair the role card with **Take over** / **Hand back** (see [High availability](#high-availability))
 
 ### **JSON API**
 Machine-readable video metadata served on the same port under `/api/`, authorized per-request with `Authorization: Bearer <API_TOKEN>` (never the dashboard session cookie). Entry key names mirror a sidecar-built library index (`id`, `title`, `channel`, `channelId`, `duration`, `uploadDate`, `tags`, `categories`, `description`, `thumbnail`, `chapters` as `[{start, title}]` with `start` in seconds, `fetchedAt` in epoch seconds), so index consumers can parse them unchanged; `webpageUrl` and `exported` (file moved to the export folder / media library) are added.
@@ -75,10 +75,10 @@ curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8080/api/videos?expo
 | `ANIMATION_FILE_ID` | No | | Pre-cached animation file ID (skips loading upload) |
 | `CONFIG_FOLDER` | No | `./config` | Root folder for data/media/export directories. Docker deployments must set `/` so data lands on the mounted `/data`, `/media`, `/export` volumes (docker-compose.yml does) |
 | `EMPTY_MEDIA_FOLDER` | No | `false` | Clear the media folder when the intent worker crashes and restarts |
-| `DASHBOARD_PASSWORD` | No | | Password for web dashboard access (auto-generated if not set; written to `data/dashboard_password.txt`) |
+| `DASHBOARD_PASSWORD` | No | | Password for web dashboard access (auto-generated if not set; written to `data/dashboard_password.txt`). Required, with the same value, on both nodes of an HA pair |
 | `DASHBOARD_PORT` | No | `8080` | Port for web dashboard server |
 | `DASHBOARD_BEHIND_PROXY` | No | `false` | Set `true` when the dashboard sits behind a reverse proxy (Traefik, nginx, …): login rate limiting uses the client IP from `X-Forwarded-For`, and the session cookie is marked `Secure` when the proxy reports HTTPS via `X-Forwarded-Proto` |
-| `API_TOKEN` | No | | Bearer token for the JSON API under `/api/` (auto-generated if not set; written to `data/api_token.txt`) |
+| `API_TOKEN` | No | | Bearer token for the JSON API under `/api/` (auto-generated if not set; written to `data/api_token.txt`). Required, with the same value, on both nodes of an HA pair |
 | `COOKIES_FILE` | No | | Path to cookies file for yt-dlp |
 | `BACKUP_CRON` | Docker | | Cron schedule for automatic SQLite backups (`entrypoint.sh` installs it into cron; empty disables). docker-compose defaults it to `0 */12 * * *` |
 | `BACKUP_MAX_COUNT` | Docker | `14` | Backups kept by `backup.py`; older ones are pruned |
@@ -86,6 +86,14 @@ curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8080/api/videos?expo
 | `BACKUP_DIR` | Docker | folder of `DB_PATH` | Folder `backup.py` writes backups to |
 | `TELEGRAM_API_ID` | Docker | | Telegram API ID (for local Bot API server) |
 | `TELEGRAM_API_HASH` | Docker | | Telegram API hash (for local Bot API server) |
+| `NODE_ROLE` | HA | `primary` | `primary` (reclaims the lease after `FAILBACK_STABLE_SEC`) or `standby` |
+| `NODE_NAME` | HA | hostname | Name shown in `/health`, heartbeats and notifications |
+| `PEER_URL` | HA | | Dashboard URL of the *other* node by static LAN IP, e.g. `http://192.168.11.150:8080`. Blank = single node (HA off). Never a hostname (does not resolve inside gluetun) or a floating IP |
+| `SYNC_SECRET` | HA | | Shared bearer secret for `/sync/*`; identical on both nodes, separate from `API_TOKEN`. Blank = HA off |
+| `HEARTBEAT_INTERVAL_SEC` | HA | `10` | Passive node's heartbeat and feed-pull period |
+| `LEASE_TTL_SEC` | HA | `30` | No successful heartbeat for this long = lease lost, the standby takes over. Must be ≥ `HEARTBEAT_INTERVAL_SEC` |
+| `FAILBACK_STABLE_SEC` | HA | `180` | Continuous healthy heartbeats the returning primary needs before it asks for the lease back |
+| `BACKUP_SKIP_ROLE_CHECK` | Docker | `false` | `true` makes `backup.py` back up even on a passive node (manual replica snapshot) |
 
 ### **Project structure:**
 ```
@@ -101,7 +109,10 @@ dasovbot/              # Main package
   helpers.py           # Shared utilities
   handlers/            # Telegram handler modules
   services/            # Background tasks and intent processing
+    ha.py              # Role controller (active/standby state machine) and PtbRunner
+    sync.py            # Sync client: heartbeat, change-feed pull, snapshot; developer notifier
   dashboard/           # Web dashboard (aiohttp, jinja2, session auth)
+    sync.py            # /health and the peer-facing /sync/* endpoints
 main.py                # Thin wrapper entry point
 info.py                # CLI: video info lookup
 subscriptions.py       # CLI: bulk subscription management
@@ -115,9 +126,9 @@ entrypoint.sh          # Docker entrypoint (cron + bot; backup schedule from BAC
 
 ### **Architecture**
 
-**Entry flow:** `main.py` → `dasovbot/__main__.py` → loads config from env vars → initializes yt-dlp → opens SQLite database and loads persisted state → builds Telegram Application → registers handlers → starts background tasks → runs polling loop.
+**Entry flow:** `main.py` → `dasovbot/__main__.py` → loads config from env vars → initializes yt-dlp → opens SQLite database → starts the dashboard → loads persisted state → builds Telegram Application → registers handlers → starts the role controller, which starts polling and the background tasks only while the node is ACTIVE (a single node is ACTIVE at once; see [High availability](#high-availability)).
 
-**State management:** Central `BotState` dataclass (`state.py`) holds all mutable state: video cache, intents, subscriptions, users, download queue (`asyncio.Queue`). State is accessed via `context.bot_data['state']` in handlers. Changes are persisted immediately (write-through) to a SQLite database (`{CONFIG_FOLDER}/data/bot.db`) via `database.py`. On first run, existing JSON files are automatically migrated to SQLite.
+**State management:** Central `BotState` dataclass (`state.py`) holds all mutable state: video cache, intents, subscriptions, users, download queue (`asyncio.Queue`). State is accessed via `context.bot_data['state']` in handlers. Changes are persisted immediately (write-through) to a SQLite database (`{CONFIG_FOLDER}/data/bot.db`) via `database.py`; every write stamps a per-node revision (`rev`) and every delete leaves a tombstone, which is what the HA change feed replicates. On first run, existing JSON files are automatically migrated to SQLite.
 
 **Intent system:** Video download requests are modeled as `Intent` objects (not processed immediately). Intents accumulate `chat_ids` and `inline_message_ids` from multiple requesters, with priority based on requester count. A background worker (`intent_processor.py`) processes the queue in priority order — this deduplicates downloads when multiple users request the same video.
 
@@ -274,3 +285,95 @@ docker compose up -d
 ```bash
 docker exec dasovbot python backup.py
 ```
+
+### **High availability**
+
+Two nodes run the same image — a `primary` (the Proxmox LXC) and a `standby` (the Raspberry Pi) — and the bot survives the primary host going down. Both processes stay up all the time; a **role controller** (`services/ha.py`) decides which one talks to Telegram. HA is off unless both `PEER_URL` and `SYNC_SECRET` are set; without them a node is standalone and behaves exactly as a single deployment.
+
+#### Roles and lease
+
+```
+            lease lost / cold start /                 handoff requested          peer reports
+            handoff drained                           by the peer                ACTIVE
+  PASSIVE ─────────────────────────────▶ ACTIVE ─────────────────────▶ DRAINING ─────────────▶ PASSIVE
+     ▲                                     │
+     └──── 409 Conflict (standby only) ────┘
+```
+
+- **ACTIVE** polls Telegram and runs every background task (subscriptions, intent worker, inline cache cleanup, media sweep, backup monitoring). **PASSIVE** runs only the dashboard (read-only), `/health` and the sync client. **DRAINING** has stopped polling and is finishing the download and upload in progress.
+- The passive node calls the active node's `/sync/heartbeat` every `HEARTBEAT_INTERVAL_SEC` and pulls the change feed after each reply. No successful heartbeat for `LEASE_TTL_SEC` = lease lost → the standby becomes ACTIVE, if it is **ready** (its last sync is within 3 × `LEASE_TTL_SEC` of the last heartbeat it saw; otherwise it stays passive, alerts the developer and keeps trying).
+- **Cold start** with no peer in sight: the primary claims after one `HEARTBEAT_INTERVAL_SEC`, the standby after `LEASE_TTL_SEC + HEARTBEAT_INTERVAL_SEC`.
+- **Failback:** the returning primary starts PASSIVE, syncs, and after `FAILBACK_STABLE_SEC` of continuous healthy heartbeats requests the lease back (`POST /sync/handoff`). The standby stops polling at once, finishes only the in-progress download and in-flight upload, answers `drained: true`, the primary pulls the final changes and becomes ACTIVE; the standby goes PASSIVE when it sees that. A drained node whose peer never activates within `LEASE_TTL_SEC` re-activates itself: nothing is ever left with nobody polling.
+- **Split-brain breakers:** a standby that is ACTIVE and sees the primary ACTIVE in a heartbeat steps down; a standby that gets Telegram's `409 Conflict` steps down at once (the primary logs it and keeps polling). Telegram's 409 only fires between pollers of the *same* Bot API server, so the heartbeat is the real guard: if the LAN between the hosts fails while both are up, both will poll until it heals (accepted).
+- **Backlog on activation:** every local Bot API server receives every update and buffers it while nobody polls it, so the first poll after activation returns everything the other node already handled. The activating node drains that backlog first and keeps only messages dated after the peer was last seen ACTIVE (minus one heartbeat interval); inline and callback queries in the backlog are stale and dropped. Duplicates are bounded to about one heartbeat interval; nothing is silently lost.
+- **Manual override:** `/system` shows a role card with **Take over** (passive node; readiness still enforced) and **Hand back** (active node; on the primary the button reads *Hand over to standby*). A manual takeover of the standby sets a persisted **hold**: automatic failback is suspended until Hand back is clicked on either node.
+- **Notifications:** the developer chat gets every transition (🟢 active, ⏳ handoff requested, 🟡 drained, ⚪ handed over, 🔴 stepped down, ⚠️ cannot take over) and sync errors at most once per 10 minutes.
+
+#### Data sync
+
+The database is replicated by the app, **not** by Syncthing. Every write on the active node stamps the row with a revision from a per-node Lamport-style counter (`sync_meta`); deletes write a `tombstones` row. The passive node pulls `GET /sync/changes?since=<rev>` in pages of 500 ordered by revision and applies rows and tombstones into SQLite and memory through `apply_remote_*` paths that never trigger side effects (no downloads, no messages). Once an hour it pulls `GET /sync/snapshot` (a SQLite backup file) and reconciles against it as a self-healing floor; a fresh standby bootstraps from the snapshot.
+
+When the primary returns after a takeover, the standby wins on every key it touched since the handoff point (its revisions replace the primary's, its tombstones delete), `requests` rows merge by append (unique on user, url, time), and the primary's surviving unseen rows are re-stamped with fresh revisions so they flow back to the standby. Up to `HEARTBEAT_INTERVAL_SEC` of the primary's last writes may be invisible to the standby at takeover; they come back when the primary returns.
+
+**Not synced:** the in-memory inline-query cache (users simply re-query), `animation_file_id` (set `ANIMATION_FILE_ID` on both nodes or each activation re-uploads the animation once), dashboard sessions (log in again on the other node), health alerts, the `/media` working folder. `/export` is replicated by Syncthing; its lag never blocks a takeover.
+
+#### Endpoints
+
+`/health` is public; `/sync/*` require `Authorization: Bearer <SYNC_SECRET>` (never the API token or a session).
+
+| Endpoint | Role | Request | Response |
+|---|---|---|---|
+| `GET /health` | any | — | `200 {role, node, lease_holder, last_sync_rev, last_sync_at, ready, peer, peer_url, node_role, enabled, rev, manual_hold, handback_requested, drained}`; a node without HA reports `role: active`, `ready: true` |
+| `GET /sync/heartbeat` | any | — | `200 {node, role, lease_until, rev, drained, manual_hold, handback_requested, handoff_rev}`; `503` when HA is off |
+| `GET /sync/changes` | any | `?since=<rev>&limit=<n≤500>` | `200 {since, until, has_more, rows: {videos, intents, users, subscriptions, banned_users, requests}, tombstones}`; `400` on bad params |
+| `GET /sync/snapshot` | any | — | `200` SQLite file (`application/x-sqlite3`, header `X-Dasovbot-Rev`) |
+| `POST /sync/handoff` | active | `{"manual": bool, "node": name}` | `202 {accepted, role: draining, drained: false}` on ACTIVE, `200` with the current `drained` when already draining, `409 {error}` when passive or when the primary is asked for an automatic handoff |
+
+Force a takeover from a shell (run against the **active** node, then watch `/health` on the other):
+
+```bash
+curl -X POST -H "Authorization: Bearer $SYNC_SECRET" -H "Content-Type: application/json" \
+     -d '{"manual": true}' http://192.168.11.150:8080/sync/handoff
+curl http://192.168.11.7:8080/health
+```
+
+#### Syncthing
+
+The app never syncs files. `/data` (folder `dasovbot`) and `/export` (folder `Telegram`) are shared between the hosts by Syncthing, so the hot database must be excluded or the passive replica can overwrite the live file:
+
+```
+# .stignore for the dasovbot folder (/data) — bot.db.backup_* stays synced
+bot.db
+bot.db-wal
+bot.db-shm
+*.db-journal*
+dashboard_password.txt
+api_token.txt
+```
+```
+# .stignore for the Telegram folder (/export): exported videos land as <name>.partial
+# and are renamed into place atomically
+**/*.partial
+```
+
+**Both `.stignore` files must be in place on both Syncthing instances before the standby bot is started for the first time.**
+
+#### Backups
+
+Only the active node's cron runs `backup.py`: it asks `http://127.0.0.1:$DASHBOARD_PORT/health` and exits 0 (skipped) when the node is passive or the bot is not answering, so two cron jobs never prune each other's files in the shared `/data`. `BACKUP_SKIP_ROLE_CHECK=true` (env, or `docker exec dasovbot env BACKUP_SKIP_ROLE_CHECK=true python backup.py`) forces a backup of a passive replica. `monitor_backups` alerts only on the active node.
+
+#### Addressing
+
+Each node keeps its own dashboard address; the passive dashboard shows a banner linking to the active node, and `/health` tells you who is active. There is no floating IP. `PEER_URL` is the peer's **static LAN IP** (`http://192.168.11.150:8080` on the standby, `http://192.168.11.7:8080` on the primary; the Pi has a reserved DHCP lease): both bots run inside gluetun, whose built-in DNS-over-TLS resolver ignores Pi-hole and the router, so LAN hostnames never resolve inside the container. gluetun on both hosts needs `FIREWALL_OUTBOUND_SUBNETS=192.168.11.0/24` so the bot can reach the peer, and each host its own WireGuard key (most providers allow one session per key).
+
+#### Rollout
+
+1. Put the `.stignore` files above on both Syncthing instances.
+2. On the standby, delete the stale replica (`bot.db`, `bot.db-wal`, `bot.db-shm` under `/data`); the standby bootstraps from the primary's snapshot.
+3. Primary: set `NODE_ROLE=primary`, `NODE_NAME`, `PEER_URL=http://192.168.11.7:<port>`, `SYNC_SECRET`, plus explicit `DASHBOARD_PASSWORD` and `API_TOKEN`; `docker compose up -d` (`vpn → api → bot`); `curl /health` → `role: active`.
+4. Standby: the same with `NODE_ROLE=standby`, `NODE_NAME=rpi`, `PEER_URL=http://192.168.11.150:<port>`, the same `SYNC_SECRET`/`DASHBOARD_PASSWORD`/`API_TOKEN`; `docker compose up -d`; watch `/health` go `role: passive`, `ready: true` after the bootstrap snapshot.
+5. Rehearse once: Take over on the standby's `/system`, send the bot a link, Hand back, confirm the primary is ACTIVE again and the video shows on both dashboards.
+
+**Rollback:** blank `PEER_URL` on both nodes and restart — each node is standalone again (stop the standby's bot, or both will poll).
+
+**Reading the state:** `curl http://<node>:8080/health` (`role`, `lease_holder`, `ready`, `last_sync_at`); the `/system` card shows the same plus the peer's role, heartbeat age and sync revision; the developer chat messages above mark every transition.
