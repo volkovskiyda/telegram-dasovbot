@@ -16,32 +16,63 @@ logger = logging.getLogger(__name__)
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS videos (
     key TEXT PRIMARY KEY,
-    data TEXT NOT NULL
+    data TEXT NOT NULL,
+    rev INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS intents (
     key TEXT PRIMARY KEY,
-    data TEXT NOT NULL
+    data TEXT NOT NULL,
+    rev INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS users (
     chat_id TEXT PRIMARY KEY,
-    data TEXT NOT NULL
+    data TEXT NOT NULL,
+    rev INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS subscriptions (
     key TEXT PRIMARY KEY,
-    data TEXT NOT NULL
+    data TEXT NOT NULL,
+    rev INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS banned_users (
     user_id TEXT PRIMARY KEY,
-    data TEXT NOT NULL
+    data TEXT NOT NULL,
+    rev INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
     url TEXT NOT NULL,
     source TEXT,
-    requested_at TEXT NOT NULL
+    requested_at TEXT NOT NULL,
+    rev INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS sync_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS tombstones (
+    tbl TEXT NOT NULL,
+    key TEXT NOT NULL,
+    rev INTEGER NOT NULL,
+    deleted_at TEXT NOT NULL,
+    PRIMARY KEY (tbl, key)
 );
 """
+
+# Tables that carry a per-row rev and take part in the HA change feed, with
+# the name of their primary-key column (``requests`` is append-only and keyed
+# by its autoincrement id instead)
+KEYED_TABLES = {
+    'videos': 'key',
+    'intents': 'key',
+    'users': 'chat_id',
+    'subscriptions': 'key',
+    'banned_users': 'user_id',
+}
+REV_TABLES = [*KEYED_TABLES, 'requests']
+
+REV_KEY = 'rev'  # sync_meta key holding this node's revision counter
 
 
 async def init_db(db_path: str) -> aiosqlite.Connection:
@@ -59,8 +90,116 @@ async def init_db(db_path: str) -> aiosqlite.Connection:
     await db.execute("PRAGMA busy_timeout=30000")
     await db.execute("PRAGMA journal_mode=WAL")
     await db.executescript(SCHEMA)
+    await migrate_schema_ha(db)
     await db.commit()
     return db
+
+
+async def migrate_schema_ha(db: aiosqlite.Connection):
+    """Bring a pre-HA database up to the rev/tombstone schema. Idempotent.
+
+    Adds the ``rev`` column where it is missing, backfills every rev-0 row with
+    a globally unique revision (rowid + a per-table offset, in table order, so
+    the change-feed cursor can page across tables), seeds the node counter in
+    ``sync_meta``, and purges exact duplicates from ``requests`` before its
+    dedupe index is created. Runs inside the caller's transaction; does not
+    commit.
+    """
+    started = time.monotonic()
+    for table in REV_TABLES:
+        cursor = await db.execute(f"PRAGMA table_info({table})")
+        columns = {row[1] for row in await cursor.fetchall()}
+        if 'rev' not in columns:
+            await db.execute(f"ALTER TABLE {table} ADD COLUMN rev INTEGER NOT NULL DEFAULT 0")
+            logger.info("Schema: added rev column to %s", table)
+        await db.execute(f"CREATE INDEX IF NOT EXISTS idx_{table}_rev ON {table}(rev)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_tombstones_rev ON tombstones(rev)")
+
+    # Backfill: revs must be unique across tables, so each table starts where
+    # the previous one ended. Rows written by the rev-aware code already carry
+    # a rev > 0 and are left alone.
+    offset = await load_rev(db)
+    backfilled = 0
+    for table in REV_TABLES:
+        cursor = await db.execute(f"UPDATE {table} SET rev = rowid + ? WHERE rev = 0", (offset,))
+        backfilled += cursor.rowcount
+        cursor = await db.execute(f"SELECT COALESCE(MAX(rev), 0) FROM {table}")
+        offset = max(offset, (await cursor.fetchone())[0])
+    await persist_rev(db, offset)
+
+    cursor = await db.execute(
+        "DELETE FROM requests WHERE id NOT IN "
+        "(SELECT MIN(id) FROM requests GROUP BY user_id, url, requested_at)"
+    )
+    purged = cursor.rowcount
+    await db.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_requests_dedupe ON requests(user_id, url, requested_at)"
+    )
+    if backfilled or purged:
+        logger.info(
+            "Schema: HA migration backfilled %d revs (counter %d), purged %d duplicate requests in %.2fs",
+            backfilled, offset, purged, time.monotonic() - started,
+        )
+
+
+# --- sync_meta ---
+
+async def get_meta(db: aiosqlite.Connection, key: str, default=None):
+    cursor = await db.execute("SELECT value FROM sync_meta WHERE key = ?", (key,))
+    row = await cursor.fetchone()
+    return json.loads(row[0]) if row else default
+
+
+async def set_meta(db: aiosqlite.Connection, key: str, value):
+    """Upsert a JSON-encoded sync_meta value. Does not commit."""
+    await db.execute(
+        "INSERT INTO sync_meta (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        (key, json.dumps(value)),
+    )
+
+
+async def load_rev(db: aiosqlite.Connection) -> int:
+    return int(await get_meta(db, REV_KEY, 0))
+
+
+async def persist_rev(db: aiosqlite.Connection, rev: int):
+    """Raise the stored counter to ``rev``; never lowers it. Does not commit.
+
+    Writers interleave on one connection, so a slower coroutine persisting an
+    older rev must not undo a newer one that is already in a row.
+    """
+    await db.execute(
+        "INSERT INTO sync_meta (key, value) VALUES (?, ?) "
+        "ON CONFLICT(key) DO UPDATE SET value = MAX(CAST(value AS INTEGER), CAST(excluded.value AS INTEGER))",
+        (REV_KEY, str(int(rev))),
+    )
+
+
+async def _upsert(db: aiosqlite.Connection, table: str, key: str, data: str, rev: int):
+    column = KEYED_TABLES[table]
+    await db.execute(
+        f"INSERT OR REPLACE INTO {table} ({column}, data, rev) VALUES (?, ?, ?)",
+        (key, data, rev),
+    )
+    # A key written again after a delete is alive: its tombstone must not
+    # keep deleting it on the peer
+    await db.execute("DELETE FROM tombstones WHERE tbl = ? AND key = ?", (table, key))
+    await persist_rev(db, rev)
+    await db.commit()
+
+
+async def _delete(db: aiosqlite.Connection, table: str, key: str, rev: int, deleted_at: str):
+    column = KEYED_TABLES[table]
+    cursor = await db.execute(f"DELETE FROM {table} WHERE {column} = ?", (key,))
+    if cursor.rowcount > 0:
+        # Only a key that existed gets a tombstone; deleting a missing key
+        # (e.g. pop_intent on an unknown query) must not invent one
+        await db.execute(
+            "INSERT OR REPLACE INTO tombstones (tbl, key, rev, deleted_at) VALUES (?, ?, ?, ?)",
+            (table, key, rev, deleted_at),
+        )
+    await persist_rev(db, rev)
+    await db.commit()
 
 
 async def migrate_from_json(db: aiosqlite.Connection, config: Config, progress: dict | None = None):
@@ -177,17 +316,12 @@ async def warn_if_data_missing(db: aiosqlite.Connection, db_path: str) -> str | 
 
 # --- Videos ---
 
-async def upsert_video(db: aiosqlite.Connection, key: str, video: VideoInfo):
-    await db.execute(
-        "INSERT OR REPLACE INTO videos (key, data) VALUES (?, ?)",
-        (key, json.dumps(video.to_dict())),
-    )
-    await db.commit()
+async def upsert_video(db: aiosqlite.Connection, key: str, video: VideoInfo, rev: int):
+    await _upsert(db, 'videos', key, json.dumps(video.to_dict()), rev)
 
 
-async def delete_video(db: aiosqlite.Connection, key: str):
-    await db.execute("DELETE FROM videos WHERE key = ?", (key,))
-    await db.commit()
+async def delete_video(db: aiosqlite.Connection, key: str, rev: int, deleted_at: str):
+    await _delete(db, 'videos', key, rev, deleted_at)
 
 
 async def load_videos(db: aiosqlite.Connection) -> dict[str, VideoInfo]:
@@ -198,17 +332,12 @@ async def load_videos(db: aiosqlite.Connection) -> dict[str, VideoInfo]:
 
 # --- Intents ---
 
-async def upsert_intent(db: aiosqlite.Connection, key: str, intent: Intent):
-    await db.execute(
-        "INSERT OR REPLACE INTO intents (key, data) VALUES (?, ?)",
-        (key, json.dumps(intent.to_dict())),
-    )
-    await db.commit()
+async def upsert_intent(db: aiosqlite.Connection, key: str, intent: Intent, rev: int):
+    await _upsert(db, 'intents', key, json.dumps(intent.to_dict()), rev)
 
 
-async def delete_intent(db: aiosqlite.Connection, key: str):
-    await db.execute("DELETE FROM intents WHERE key = ?", (key,))
-    await db.commit()
+async def delete_intent(db: aiosqlite.Connection, key: str, rev: int, deleted_at: str):
+    await _delete(db, 'intents', key, rev, deleted_at)
 
 
 async def load_intents(db: aiosqlite.Connection) -> dict[str, Intent]:
@@ -219,12 +348,8 @@ async def load_intents(db: aiosqlite.Connection) -> dict[str, Intent]:
 
 # --- Users ---
 
-async def upsert_user(db: aiosqlite.Connection, chat_id: str, data: dict):
-    await db.execute(
-        "INSERT OR REPLACE INTO users (chat_id, data) VALUES (?, ?)",
-        (chat_id, json.dumps(data)),
-    )
-    await db.commit()
+async def upsert_user(db: aiosqlite.Connection, chat_id: str, data: dict, rev: int):
+    await _upsert(db, 'users', chat_id, json.dumps(data), rev)
 
 
 async def load_users(db: aiosqlite.Connection) -> dict[str, dict]:
@@ -235,17 +360,12 @@ async def load_users(db: aiosqlite.Connection) -> dict[str, dict]:
 
 # --- Subscriptions ---
 
-async def upsert_subscription(db: aiosqlite.Connection, key: str, sub: Subscription):
-    await db.execute(
-        "INSERT OR REPLACE INTO subscriptions (key, data) VALUES (?, ?)",
-        (key, json.dumps(sub.to_dict())),
-    )
-    await db.commit()
+async def upsert_subscription(db: aiosqlite.Connection, key: str, sub: Subscription, rev: int):
+    await _upsert(db, 'subscriptions', key, json.dumps(sub.to_dict()), rev)
 
 
-async def delete_subscription(db: aiosqlite.Connection, key: str):
-    await db.execute("DELETE FROM subscriptions WHERE key = ?", (key,))
-    await db.commit()
+async def delete_subscription(db: aiosqlite.Connection, key: str, rev: int, deleted_at: str):
+    await _delete(db, 'subscriptions', key, rev, deleted_at)
 
 
 async def load_subscriptions(db: aiosqlite.Connection) -> dict[str, Subscription]:
@@ -256,17 +376,12 @@ async def load_subscriptions(db: aiosqlite.Connection) -> dict[str, Subscription
 
 # --- Banned users ---
 
-async def upsert_banned_user(db: aiosqlite.Connection, user_id: str, data: dict):
-    await db.execute(
-        "INSERT OR REPLACE INTO banned_users (user_id, data) VALUES (?, ?)",
-        (user_id, json.dumps(data)),
-    )
-    await db.commit()
+async def upsert_banned_user(db: aiosqlite.Connection, user_id: str, data: dict, rev: int):
+    await _upsert(db, 'banned_users', user_id, json.dumps(data), rev)
 
 
-async def delete_banned_user(db: aiosqlite.Connection, user_id: str):
-    await db.execute("DELETE FROM banned_users WHERE user_id = ?", (user_id,))
-    await db.commit()
+async def delete_banned_user(db: aiosqlite.Connection, user_id: str, rev: int, deleted_at: str):
+    await _delete(db, 'banned_users', user_id, rev, deleted_at)
 
 
 async def load_banned_users(db: aiosqlite.Connection) -> dict[str, dict]:
@@ -277,11 +392,15 @@ async def load_banned_users(db: aiosqlite.Connection) -> dict[str, dict]:
 
 # --- Requests ---
 
-async def insert_request(db: aiosqlite.Connection, user_id: str, url: str, source: str | None, requested_at: str):
+async def insert_request(db: aiosqlite.Connection, user_id: str, url: str, source: str | None,
+                         requested_at: str, rev: int):
+    # OR IGNORE: (user_id, url, requested_at) is unique so the same row
+    # arriving twice through the HA feed is a no-op
     await db.execute(
-        "INSERT INTO requests (user_id, url, source, requested_at) VALUES (?, ?, ?, ?)",
-        (user_id, url, source, requested_at),
+        "INSERT OR IGNORE INTO requests (user_id, url, source, requested_at, rev) VALUES (?, ?, ?, ?, ?)",
+        (user_id, url, source, requested_at, rev),
     )
+    await persist_rev(db, rev)
     await db.commit()
 
 

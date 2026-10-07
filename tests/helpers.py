@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 import aiosqlite
 
 from dasovbot.config import Config
-from dasovbot.database import SCHEMA
+from dasovbot.database import SCHEMA, migrate_schema_ha
 from dasovbot.state import BotState
 
 
@@ -65,7 +65,11 @@ def make_context(state=None, user_data=None, bot=None):
 
 
 def make_state(**overrides):
-    state = BotState(db=AsyncMock())
+    db = AsyncMock()
+    # The delete path reads cursor.rowcount to decide whether to tombstone;
+    # a mocked connection must hand back an int there
+    db.execute.return_value.rowcount = 1
+    state = BotState(db=db)
     for key, value in overrides.items():
         setattr(state, key, value)
     return state
@@ -74,6 +78,7 @@ def make_state(**overrides):
 async def make_memory_db():
     db = await aiosqlite.connect(':memory:')
     await db.executescript(SCHEMA)
+    await migrate_schema_ha(db)
     await db.commit()
     return db
 

@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-from subscriptions import add_subscription, check_subscription, main
+from subscriptions import add_subscription, check_subscription, main, next_rev
 from dasovbot.database import SCHEMA
 
 
@@ -26,6 +26,14 @@ class SubscriptionsScriptTestCase(unittest.TestCase):
         row = self.db.execute("SELECT data FROM subscriptions WHERE key = ?", (key,)).fetchone()
         return json.loads(row[0]) if row else None
 
+    def _rev(self, key):
+        row = self.db.execute("SELECT rev FROM subscriptions WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else None
+
+    def _counter(self):
+        row = self.db.execute("SELECT value FROM sync_meta WHERE key = 'rev'").fetchone()
+        return int(row[0]) if row else 0
+
 
 class TestCheckSubscription(SubscriptionsScriptTestCase):
     def test_missing_returns_false(self):
@@ -40,6 +48,22 @@ class TestCheckSubscription(SubscriptionsScriptTestCase):
         self._insert('https://example.com/c/videos', {'chat_ids': ['1'], 'title': 'T'})
         self.assertTrue(check_subscription(self.db, '2', 'https://example.com/c/videos'))
         self.assertEqual(self._load('https://example.com/c/videos')['chat_ids'], ['1', '2'])
+
+
+class TestNextRev(SubscriptionsScriptTestCase):
+    def test_counter_advances_and_never_lowers(self):
+        self.assertEqual(next_rev(self.db), 1)
+        self.assertEqual(next_rev(self.db), 2)
+        self.db.execute("UPDATE sync_meta SET value = '50' WHERE key = 'rev'")
+        self.assertEqual(next_rev(self.db), 51)
+        self.assertEqual(self._counter(), 51)
+
+    def test_append_chat_id_stamps_rev(self):
+        self._insert('https://example.com/c/videos', {'chat_ids': ['1'], 'title': 'T'})
+        self.assertEqual(self._rev('https://example.com/c/videos'), 0)
+        check_subscription(self.db, '2', 'https://example.com/c/videos')
+        self.assertEqual(self._rev('https://example.com/c/videos'), 1)
+        self.assertEqual(self._counter(), 1)
 
 
 class TestAddSubscription(SubscriptionsScriptTestCase):
@@ -57,6 +81,8 @@ class TestAddSubscription(SubscriptionsScriptTestCase):
         data = self._load('https://example.com/c/videos')
         self.assertEqual(data['chat_ids'], ['1'])
         self.assertEqual(data['title'], 'T')
+        self.assertEqual(self._rev('https://example.com/c/videos'), 1)
+        self.assertEqual(self._counter(), 1)
 
     def test_existing_videos_subscription_skips_extract(self):
         self._insert('https://example.com/c/videos', {'chat_ids': [], 'title': 'T'})

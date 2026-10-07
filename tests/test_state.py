@@ -1,10 +1,31 @@
 import tempfile
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, patch
 
 from tests.helpers import make_config, make_state
 from dasovbot.models import VideoInfo, Intent, IntentMessage, Subscription
 from dasovbot.state import BotState
+
+
+class TestNextRev(unittest.IsolatedAsyncioTestCase):
+    def test_monotonic_from_loaded_counter(self):
+        state = make_state(rev=41)
+        self.assertEqual(state.next_rev(), 42)
+        self.assertEqual(state.next_rev(), 43)
+        self.assertEqual(state.rev, 43)
+
+    @patch('dasovbot.database.delete_subscription', new_callable=AsyncMock)
+    @patch('dasovbot.database.upsert_subscription', new_callable=AsyncMock)
+    @patch('dasovbot.database.upsert_user', new_callable=AsyncMock)
+    async def test_each_write_gets_an_increasing_rev(self, mock_user, mock_sub, mock_del):
+        state = make_state(subscriptions={'s': Subscription(chat_ids=['1'])})
+        await state.set_user('1', {})
+        await state.set_subscription('t', Subscription())
+        await state.remove_subscriber('s', '1')
+        self.assertEqual(mock_user.await_args.args[-1], 1)
+        self.assertEqual(mock_sub.await_args.args[-1], 2)
+        self.assertEqual(mock_del.await_args.args[2], 3)
+        self.assertEqual(state.rev, 3)
 
 
 class TestSetVideo(unittest.IsolatedAsyncioTestCase):
@@ -14,7 +35,8 @@ class TestSetVideo(unittest.IsolatedAsyncioTestCase):
         video = VideoInfo(title='Test')
         await state.set_video('k1', video)
         self.assertIs(state.videos['k1'], video)
-        mock_upsert.assert_awaited_once_with(state.db, 'k1', video)
+        mock_upsert.assert_awaited_once_with(state.db, 'k1', video, 1)
+        self.assertEqual(state.rev, 1)
 
 
 class TestRecordRequest(unittest.IsolatedAsyncioTestCase):
@@ -43,11 +65,11 @@ class TestBanUser(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(state.is_banned(9))
         self.assertTrue(state.is_banned('9'))
         self.assertEqual(state.banned_users['9']['name'], 'Eve')
-        mock_upsert.assert_awaited_once_with(state.db, '9', state.banned_users['9'])
+        mock_upsert.assert_awaited_once_with(state.db, '9', state.banned_users['9'], 1)
 
         await state.unban_user('9')
         self.assertFalse(state.is_banned(9))
-        mock_delete.assert_awaited_once_with(state.db, '9')
+        mock_delete.assert_awaited_once_with(state.db, '9', 2, ANY)
 
 
 class TestSetIntent(unittest.IsolatedAsyncioTestCase):
@@ -57,7 +79,7 @@ class TestSetIntent(unittest.IsolatedAsyncioTestCase):
         intent = Intent(chat_ids=['1'])
         await state.set_intent('q', intent)
         self.assertIs(state.intents['q'], intent)
-        mock_upsert.assert_awaited_once_with(state.db, 'q', intent)
+        mock_upsert.assert_awaited_once_with(state.db, 'q', intent, 1)
 
 
 class TestSaveIntent(unittest.IsolatedAsyncioTestCase):
@@ -66,7 +88,7 @@ class TestSaveIntent(unittest.IsolatedAsyncioTestCase):
         intent = Intent(priority=5)
         state = make_state(intents={'q': intent})
         await state.save_intent('q')
-        mock_upsert.assert_awaited_once_with(state.db, 'q', intent)
+        mock_upsert.assert_awaited_once_with(state.db, 'q', intent, 1)
 
     @patch('dasovbot.database.upsert_intent', new_callable=AsyncMock)
     async def test_noop_for_missing(self, mock_upsert):
@@ -83,14 +105,14 @@ class TestPopIntent(unittest.IsolatedAsyncioTestCase):
         result = await state.pop_intent('q')
         self.assertIs(result, intent)
         self.assertNotIn('q', state.intents)
-        mock_delete.assert_awaited_once_with(state.db, 'q')
+        mock_delete.assert_awaited_once_with(state.db, 'q', 1, ANY)
 
     @patch('dasovbot.database.delete_intent', new_callable=AsyncMock)
     async def test_returns_none_for_missing(self, mock_delete):
         state = make_state()
         result = await state.pop_intent('nope')
         self.assertIsNone(result)
-        mock_delete.assert_awaited_once_with(state.db, 'nope')
+        mock_delete.assert_awaited_once_with(state.db, 'nope', 1, ANY)
 
 
 class TestSetUser(unittest.IsolatedAsyncioTestCase):
@@ -100,7 +122,7 @@ class TestSetUser(unittest.IsolatedAsyncioTestCase):
         data = {'name': 'Bob'}
         await state.set_user('42', data)
         self.assertEqual(state.users['42'], data)
-        mock_upsert.assert_awaited_once_with(state.db, '42', data)
+        mock_upsert.assert_awaited_once_with(state.db, '42', data, 1)
 
 
 class TestSetSubscription(unittest.IsolatedAsyncioTestCase):
@@ -110,7 +132,7 @@ class TestSetSubscription(unittest.IsolatedAsyncioTestCase):
         sub = Subscription(title='Ch')
         await state.set_subscription('url', sub)
         self.assertIs(state.subscriptions['url'], sub)
-        mock_upsert.assert_awaited_once_with(state.db, 'url', sub)
+        mock_upsert.assert_awaited_once_with(state.db, 'url', sub, 1)
 
 
 class TestPopSubscription(unittest.IsolatedAsyncioTestCase):
@@ -121,7 +143,7 @@ class TestPopSubscription(unittest.IsolatedAsyncioTestCase):
         result = await state.pop_subscription('url')
         self.assertIs(result, sub)
         self.assertNotIn('url', state.subscriptions)
-        mock_delete.assert_awaited_once_with(state.db, 'url')
+        mock_delete.assert_awaited_once_with(state.db, 'url', 1, ANY)
 
     @patch('dasovbot.database.delete_subscription', new_callable=AsyncMock)
     async def test_returns_none_for_missing(self, mock_delete):
@@ -172,7 +194,7 @@ class TestRemoveSubscriber(unittest.IsolatedAsyncioTestCase):
         state = make_state(subscriptions={'url': sub})
         await state.remove_subscriber('url', '1')
         self.assertNotIn('url', state.subscriptions)
-        mock_delete.assert_awaited_once_with(state.db, 'url')
+        mock_delete.assert_awaited_once_with(state.db, 'url', 1, ANY)
         mock_upsert.assert_not_awaited()
 
     @patch('dasovbot.database.delete_subscription', new_callable=AsyncMock)
@@ -256,6 +278,9 @@ class TestCreateAndLoad(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(reloaded.is_banned(2))
             self.assertEqual(reloaded.banned_users['2']['name'], 'Bob')
             self.assertEqual(reloaded.migration_progress['status'], 'skipped')
+            # six writes above -> counter 6, reloaded from sync_meta
+            self.assertEqual(reloaded.rev, 6)
+            self.assertEqual(reloaded.next_rev(), 7)
         finally:
             await reloaded.close()
 
