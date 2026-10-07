@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import shutil
 import time
 from typing import TYPE_CHECKING
 
@@ -17,7 +16,7 @@ from dasovbot.downloader import (
 )
 from dasovbot.helpers import send_message_developer, now
 from dasovbot.models import VideoInfo, VideoOrigin, Intent, IntentMessage
-from dasovbot.persistence import remove
+from dasovbot.persistence import remove, move_atomic
 
 if TYPE_CHECKING:
     from dasovbot.state import BotState
@@ -167,7 +166,8 @@ async def post_process(query: str, info: VideoInfo, message: Message, state: Bot
             moved = False
             try:
                 loop = asyncio.get_running_loop()
-                await loop.run_in_executor(None, shutil.move, filepath, export_path)
+                # Atomic for Syncthing: lands as <name>.partial, renamed into place
+                await loop.run_in_executor(None, move_atomic, filepath, export_path)
                 moved = True
             except Exception:
                 logger.error("move_file error: %s", query, exc_info=True)

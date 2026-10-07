@@ -285,7 +285,7 @@ class TestPostProcess(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(info.origin.height, 1080)
 
     @patch('dasovbot.services.intent_processor.remove')
-    @patch('dasovbot.services.intent_processor.shutil.move')
+    @patch('dasovbot.services.intent_processor.move_atomic')
     @patch('dasovbot.database.upsert_intent', new_callable=AsyncMock)
     @patch('dasovbot.database.upsert_video', new_callable=AsyncMock)
     async def test_developer_export_moves_file(self, mock_upsert_video, mock_upsert_intent, mock_move, mock_remove):
@@ -310,7 +310,7 @@ class TestPostProcess(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(info.exported)
 
     @patch('dasovbot.services.intent_processor.remove')
-    @patch('dasovbot.services.intent_processor.shutil.move', side_effect=OSError('boom'))
+    @patch('dasovbot.services.intent_processor.move_atomic', side_effect=OSError('boom'))
     @patch('dasovbot.database.upsert_intent', new_callable=AsyncMock)
     @patch('dasovbot.database.upsert_video', new_callable=AsyncMock)
     async def test_developer_export_move_error_removes_file(self, mock_upsert_video, mock_upsert_intent, mock_move, mock_remove):
@@ -323,7 +323,7 @@ class TestPostProcess(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(info.exported)
 
     @patch('dasovbot.services.intent_processor.remove')
-    @patch('dasovbot.services.intent_processor.shutil.move')
+    @patch('dasovbot.services.intent_processor.move_atomic')
     @patch('dasovbot.database.upsert_intent', new_callable=AsyncMock)
     @patch('dasovbot.database.upsert_video', new_callable=AsyncMock)
     async def test_developer_export_skips_path_outside_media(self, mock_upsert_video, mock_upsert_intent, mock_move, mock_remove):

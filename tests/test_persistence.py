@@ -4,7 +4,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from dasovbot.persistence import remove, empty_media_folder_files, remove_stale_media_files
+from dasovbot.persistence import remove, empty_media_folder_files, remove_stale_media_files, move_atomic
 
 
 class TestRemove(unittest.TestCase):
@@ -72,3 +72,53 @@ class TestRemoveStaleMediaFiles(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestMoveAtomic(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.src = os.path.join(self.tmp.name, 'media', 'v.mp4')
+        self.dst = os.path.join(self.tmp.name, 'export', 'v.mp4')
+        os.makedirs(os.path.dirname(self.src))
+        with open(self.src, 'wb') as f:
+            f.write(b'video')
+
+    def test_same_filesystem_renames_without_leftover_partial(self):
+        move_atomic(self.src, self.dst)
+        self.assertFalse(os.path.exists(self.src))
+        with open(self.dst, 'rb') as f:
+            self.assertEqual(f.read(), b'video')
+        self.assertEqual(os.listdir(os.path.dirname(self.dst)), ['v.mp4'])
+
+    def test_cross_device_copies_then_removes_source(self):
+        import errno
+        real_rename = os.rename
+
+        def rename(src, dst):
+            if src == self.src:
+                raise OSError(errno.EXDEV, 'Invalid cross-device link')
+            return real_rename(src, dst)
+
+        with patch('dasovbot.persistence.os.rename', side_effect=rename), \
+                patch('dasovbot.persistence.shutil.copy2', wraps=__import__('shutil').copy2) as mock_copy:
+            move_atomic(self.src, self.dst)
+        mock_copy.assert_called_once_with(self.src, self.dst + '.partial')
+        self.assertFalse(os.path.exists(self.src))
+        with open(self.dst, 'rb') as f:
+            self.assertEqual(f.read(), b'video')
+        self.assertFalse(os.path.exists(self.dst + '.partial'))
+
+    def test_failed_replace_removes_partial_and_reraises(self):
+        with patch('dasovbot.persistence.os.replace', side_effect=OSError('disk full')):
+            with self.assertRaises(OSError):
+                move_atomic(self.src, self.dst)
+        self.assertFalse(os.path.exists(self.dst))
+        self.assertFalse(os.path.exists(self.dst + '.partial'))
+
+    def test_missing_source_raises_and_leaves_nothing(self):
+        os.remove(self.src)
+        with self.assertRaises(FileNotFoundError):
+            move_atomic(self.src, self.dst)
+        self.assertFalse(os.path.exists(self.dst + '.partial'))
+        self.assertFalse(os.path.exists(self.dst))

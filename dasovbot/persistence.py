@@ -1,5 +1,6 @@
 import logging
 import os
+import shutil
 import time
 
 logger = logging.getLogger(__name__)
@@ -10,6 +11,38 @@ def remove(filepath: str):
         os.remove(filepath)
     except Exception:
         pass
+
+
+def move_atomic(src: str, dst: str) -> None:
+    """Move src to dst so that dst never exists half-written.
+
+    The export folder is a Syncthing share: a file that appears there is
+    shipped to every peer at once, so a cross-filesystem copy-then-delete
+    (what shutil.move does when /media and /export are different mounts)
+    would sync a truncated video. The data lands in '<dst>.partial' first
+    (same directory, so the final step is a rename on every filesystem) and
+    is renamed into place in one atomic os.replace. Syncthing ignores
+    '**/*.partial' (see README "High availability").
+
+    Runs blocking I/O; call it through run_in_executor. A failure after the
+    partial was created removes it and re-raises, so nothing is left behind
+    for Syncthing to ignore forever.
+    """
+    partial = dst + '.partial'
+    os.makedirs(os.path.dirname(dst) or '.', exist_ok=True)
+    try:
+        try:
+            os.rename(src, partial)
+        except OSError:
+            # Different filesystem (EXDEV) or a rename the mount does not
+            # allow — same fallback as shutil.move: copy into the partial
+            # file, then drop the source
+            shutil.copy2(src, partial)
+            os.remove(src)
+        os.replace(partial, dst)
+    except Exception:
+        remove(partial)
+        raise
 
 
 def empty_media_folder_files(media_folder: str):
