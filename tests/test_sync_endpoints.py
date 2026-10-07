@@ -88,7 +88,13 @@ class TestHealthWithController(SyncEndpointTestCase):
         self.assertEqual(set(body), {'node', 'role', 'lease_until', 'rev', 'drained', 'manual_hold',
                                      'handback_requested', 'handoff_rev'})
         self.assertEqual((body['node'], body['rev'], body['handoff_rev']), ('me', 42, 40))
-        self.assertRegex(body['lease_until'], r'^\d{8}_\d{6}$')
+        self.assertIsNone(body['lease_until'], 'a passive node holds no lease')
+        self.controller.status.return_value['role'] = 'active'
+        try:
+            body = await (await self.client.get('/sync/heartbeat', headers=AUTH)).json()
+            self.assertRegex(body['lease_until'], r'^\d{8}_\d{6}$')
+        finally:
+            self.controller.status.return_value['role'] = 'passive'
 
     async def test_heartbeat_requires_secret(self):
         self.assertEqual((await self.client.get('/sync/heartbeat')).status, 401)

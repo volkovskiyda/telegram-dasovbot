@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 
 from aiohttp import web
 
-from dasovbot.constants import DATETIME_FORMAT, HA_ROLE_ACTIVE, SYNC_PAGE_SIZE
+from dasovbot.constants import DATETIME_FORMAT, HA_ROLE_ACTIVE, HA_ROLE_DRAINING, SYNC_PAGE_SIZE
 from dasovbot.dashboard.views import get_ha, get_state
 from dasovbot.database import read_changes, write_snapshot
 
@@ -51,8 +51,11 @@ async def sync_heartbeat(request: web.Request) -> web.Response:
         return web.json_response({'error': 'sync disabled'}, status=503)
     status = ha.status()
     reply = {key: status.get(key) for key in HEARTBEAT_KEYS}
-    # Informational: the puller judges the lease on its own clock
-    reply['lease_until'] = (datetime.now() + timedelta(seconds=ha.config.lease_ttl_sec)).strftime(DATETIME_FORMAT)
+    # Informational (the puller judges the lease on its own clock), and only
+    # a node that holds the lease reports when it would lapse
+    reply['lease_until'] = None
+    if status.get('role') in (HA_ROLE_ACTIVE, HA_ROLE_DRAINING):
+        reply['lease_until'] = (datetime.now() + timedelta(seconds=ha.config.lease_ttl_sec)).strftime(DATETIME_FORMAT)
     return web.json_response(reply)
 
 
