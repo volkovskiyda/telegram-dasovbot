@@ -37,12 +37,31 @@ def get_api_token() -> str:
     return _generated_api_token
 
 
-def check_api_token(request: web.Request) -> bool:
+def _bearer(request: web.Request) -> str:
     header = request.headers.get('Authorization', '')
     scheme, _, token = header.partition(' ')
-    if scheme.lower() != 'bearer' or not token.strip():
+    return token.strip() if scheme.lower() == 'bearer' else ''
+
+
+def check_api_token(request: web.Request) -> bool:
+    token = _bearer(request)
+    if not token:
         return False
-    return hmac.compare_digest(token.strip().encode(), get_api_token().encode())
+    return hmac.compare_digest(token.encode(), get_api_token().encode())
+
+
+def get_sync_secret() -> str:
+    # No auto-generation: both HA nodes must share the value, so it can only
+    # come from the environment. Empty means the /sync/ endpoints are off
+    return os.getenv('SYNC_SECRET') or ''
+
+
+def check_sync_token(request: web.Request) -> bool:
+    secret = get_sync_secret()
+    token = _bearer(request)
+    if not secret or not token:
+        return False
+    return hmac.compare_digest(token.encode(), secret.encode())
 
 
 def behind_proxy() -> bool:
@@ -117,8 +136,16 @@ def _rate_limited(remote: str) -> bool:
 
 @web.middleware
 async def auth_middleware(request: web.Request, handler):
-    # Static assets stay public so the login page can load its favicon
-    if request.path == '/login' or request.path.startswith('/static/'):
+    # Static assets stay public so the login page can load its favicon;
+    # /health is the Docker healthcheck and the peer's liveness probe
+    if request.path in ('/login', '/health') or request.path.startswith('/static/'):
+        return await handler(request)
+    if request.path.startswith('/sync/'):
+        # Peer-to-peer endpoints: a separate shared secret, never the API
+        # token or a session. Nothing about the failure is logged beyond the
+        # path (the access log is WARNING-only)
+        if not check_sync_token(request):
+            return web.json_response({'error': 'unauthorized'}, status=401)
         return await handler(request)
     if request.path.startswith('/api/'):
         # Machine clients authenticate per-request with a bearer token and

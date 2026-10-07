@@ -17,10 +17,16 @@ if TYPE_CHECKING:
 
 
 STATE_KEY = web.AppKey('state')
+HA_KEY = web.AppKey('ha')
 
 
 def get_state(request: web.Request) -> BotState:
     return request.app[STATE_KEY]
+
+
+def get_ha(request: web.Request):
+    """The RoleController, or None (tests, preview_dashboard.py, pre-HA callers)."""
+    return request.app.get(HA_KEY)
 
 
 def parse_timestamp(ts: str | None) -> datetime | None:

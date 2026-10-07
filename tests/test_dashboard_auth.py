@@ -6,6 +6,7 @@ from aiohttp import web
 
 import dasovbot.dashboard.auth as auth_module
 from dasovbot.dashboard.auth import (
+    check_sync_token, get_sync_secret,
     auth_middleware, login_page, login_post, logout,
     create_session, check_token, client_ip, secure_cookie,
     COOKIE_NAME, MAX_LOGIN_ATTEMPTS,
@@ -277,3 +278,64 @@ class TestFailedLoginSweep(AuthTestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestSyncAuth(AuthTestCase):
+    def _request(self, path, bearer=None):
+        request = MagicMock()
+        request.path = path
+        request.cookies = {}
+        request.headers = {'Authorization': f'Bearer {bearer}'} if bearer else {}
+        return request
+
+    async def test_health_passes_without_any_auth(self):
+        handler = AsyncMock(return_value=web.Response(text='ok'))
+        with patch.dict('os.environ', {}, clear=True):
+            result = await auth_middleware(self._request('/health'), handler)
+        handler.assert_awaited_once()
+        self.assertEqual(result.text, 'ok')
+
+    @patch.dict('os.environ', {'SYNC_SECRET': 'shared'})
+    async def test_sync_without_bearer_is_401_json(self):
+        handler = AsyncMock()
+        result = await auth_middleware(self._request('/sync/changes'), handler)
+        self.assertEqual(result.status, 401)
+        self.assertEqual(result.content_type, 'application/json')
+        handler.assert_not_awaited()
+
+    @patch.dict('os.environ', {'SYNC_SECRET': 'shared'})
+    async def test_sync_with_wrong_bearer_is_401(self):
+        handler = AsyncMock()
+        result = await auth_middleware(self._request('/sync/heartbeat', 'nope'), handler)
+        self.assertEqual(result.status, 401)
+        handler.assert_not_awaited()
+
+    @patch.dict('os.environ', {'SYNC_SECRET': 'shared'})
+    async def test_sync_with_right_bearer_passes(self):
+        handler = AsyncMock(return_value=web.Response(text='ok'))
+        await auth_middleware(self._request('/sync/heartbeat', 'shared'), handler)
+        handler.assert_awaited_once()
+
+    @patch.dict('os.environ', {'SYNC_SECRET': 'shared', 'API_TOKEN': 'shared'})
+    async def test_api_token_does_not_open_sync_and_vice_versa(self):
+        # Same literal value, but each path checks only its own secret
+        with patch.dict('os.environ', {'API_TOKEN': 'api-only', 'SYNC_SECRET': 'sync-only'}):
+            handler = AsyncMock()
+            self.assertEqual((await auth_middleware(self._request('/sync/x', 'api-only'), handler)).status, 401)
+            self.assertEqual((await auth_middleware(self._request('/api/x', 'sync-only'), handler)).status, 401)
+            handler.assert_not_awaited()
+
+    @patch.dict('os.environ', {}, clear=True)
+    async def test_sync_closed_when_secret_unset(self):
+        self.assertEqual(get_sync_secret(), '')
+        handler = AsyncMock()
+        result = await auth_middleware(self._request('/sync/heartbeat', 'anything'), handler)
+        self.assertEqual(result.status, 401)
+        handler.assert_not_awaited()
+        self.assertFalse(check_sync_token(self._request('/sync/heartbeat', '')))
+
+    @patch.dict('os.environ', {'SYNC_SECRET': 'shared'})
+    async def test_cookie_paths_unchanged(self):
+        handler = AsyncMock()
+        with self.assertRaises(web.HTTPFound):
+            await auth_middleware(self._request('/system'), handler)

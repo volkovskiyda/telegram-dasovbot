@@ -11,7 +11,8 @@ from aiohttp import web
 
 from dasovbot.dashboard.api import api_video, api_videos
 from dasovbot.dashboard.auth import auth_middleware, login_page, login_post, logout, get_password, get_api_token
-from dasovbot.dashboard.views import index, videos, ignored, retry_ignored, remove_ignored, remove_intent, force_populate, subscriptions, remove_subscription, users, ban_user, unban_user, system, health_alerts_processor, STATE_KEY
+from dasovbot.dashboard.sync import health, sync_heartbeat, sync_changes, sync_snapshot, sync_handoff
+from dasovbot.dashboard.views import index, videos, ignored, retry_ignored, remove_ignored, remove_intent, force_populate, subscriptions, remove_subscription, users, ban_user, unban_user, system, health_alerts_processor, STATE_KEY, HA_KEY
 
 if TYPE_CHECKING:
     from dasovbot.state import BotState
@@ -40,9 +41,12 @@ def safe_url(url: str | None) -> str:
     return '#'
 
 
-def create_app(state: BotState) -> web.Application:
+def create_app(state: BotState, ha=None) -> web.Application:
+    """`ha` is the RoleController; without it the node reports itself standalone/active."""
     app = web.Application(middlewares=[auth_middleware])
     app[STATE_KEY] = state
+    if ha is not None:
+        app[HA_KEY] = ha
 
     env = aiohttp_jinja2.setup(
         app,
@@ -71,6 +75,11 @@ def create_app(state: BotState) -> web.Application:
     app.router.add_get('/system', system)
     app.router.add_get('/api/videos', api_videos)
     app.router.add_get('/api/videos/{video_id}', api_video)
+    app.router.add_get('/health', health)
+    app.router.add_get('/sync/heartbeat', sync_heartbeat)
+    app.router.add_get('/sync/changes', sync_changes)
+    app.router.add_get('/sync/snapshot', sync_snapshot)
+    app.router.add_post('/sync/handoff', sync_handoff)
 
     return app
 
@@ -89,7 +98,7 @@ def _persist_generated_secret(state: BotState, secret: str, filename: str, env_v
         )
 
 
-async def start_dashboard(state: BotState):
+async def start_dashboard(state: BotState, ha=None):
     if not os.getenv('DASHBOARD_PASSWORD'):
         _persist_generated_secret(state, get_password(), 'dashboard_password.txt',
                                   'DASHBOARD_PASSWORD', 'log in to the dashboard')
@@ -98,7 +107,7 @@ async def start_dashboard(state: BotState):
                                   'API_TOKEN', 'authorize /api/ requests')
 
     port = int(os.getenv('DASHBOARD_PORT', '8080'))
-    app = create_app(state)
+    app = create_app(state, ha)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', port)
