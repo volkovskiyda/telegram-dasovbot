@@ -99,6 +99,27 @@ class TestErrorHandler(unittest.IsolatedAsyncioTestCase):
         with self.assertLogs('dasovbot.handlers.common', level='ERROR'):
             await error_handler(None, context)
 
+    async def test_conflict_routes_to_role_controller(self):
+        from telegram.error import Conflict
+        from dasovbot.handlers.common import error_handler
+        context = make_context()
+        context.error = Conflict('terminated by other getUpdates request')
+        ha = MagicMock()
+        context.bot_data['ha'] = ha
+        with self.assertLogs('dasovbot.handlers.common', level='WARNING') as cm:
+            await error_handler(None, context)
+        ha.on_conflict.assert_called_once_with()
+        self.assertIn('409', '\n'.join(cm.output))
+        self.assertFalse(any('Unhandled' in line for line in cm.output))
+
+    async def test_conflict_without_controller_only_logs(self):
+        from telegram.error import Conflict
+        from dasovbot.handlers.common import error_handler
+        context = make_context()
+        context.error = Conflict('conflict')
+        with self.assertLogs('dasovbot.handlers.common', level='WARNING'):
+            await error_handler(None, context)
+
 
 class TestCancel(unittest.IsolatedAsyncioTestCase):
 

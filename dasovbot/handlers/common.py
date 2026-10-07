@@ -42,7 +42,18 @@ async def unknown(update: Update, _):
 
 
 async def error_handler(update, context):
-    logger.error("Unhandled handler error", exc_info=context.error)
+    from telegram.error import Conflict
+    error = getattr(context, 'error', None)
+    if isinstance(error, Conflict):
+        # Another poller on the same Bot API server: the role controller
+        # decides whether this node steps down (standby) or keeps going (primary)
+        logger.warning("Telegram 409 Conflict on getUpdates: %s", error)
+        bot_data = getattr(context, 'bot_data', None) or {}
+        ha = bot_data.get('ha')
+        if ha is not None:
+            ha.on_conflict()
+        return
+    logger.error("Unhandled handler error", exc_info=error)
 
 
 async def cancel(update: Update, _) -> int:

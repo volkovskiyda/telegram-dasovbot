@@ -263,6 +263,54 @@ class TestRetryLowerQualityPostProcess(unittest.IsolatedAsyncioTestCase):
         mock_remove.assert_called_once_with('/media/video.scaled.mp4')
 
 
+class TestProcessIntentsDrain(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.services.intent_processor.process_query', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.asyncio.sleep', new_callable=AsyncMock)
+    async def test_draining_skips_eligible_intents_and_reports_idle(self, mock_sleep, mock_process_query):
+        mock_sleep.side_effect = asyncio.CancelledError()
+        state = make_state(config=make_config(), intents={'q': Intent(priority=5)}, draining=True)
+        state.worker_idle.clear()
+        with self.assertRaises(asyncio.CancelledError):
+            await process_intents(AsyncMock(), state)
+        mock_process_query.assert_not_awaited()
+        self.assertTrue(state.worker_idle.is_set())
+
+    @patch('dasovbot.services.intent_processor.asyncio.sleep', new_callable=AsyncMock)
+    async def test_worker_idle_cleared_during_process_query_and_set_after(self, mock_sleep):
+        mock_sleep.side_effect = asyncio.CancelledError()
+        state = make_state(config=make_config(), intents={'q': Intent(priority=5)})
+        seen = []
+
+        async def fake_process_query(bot, query, st):
+            seen.append(st.worker_idle.is_set())
+
+        with patch('dasovbot.services.intent_processor.process_query', side_effect=fake_process_query):
+            with self.assertRaises(asyncio.CancelledError):
+                await process_intents(AsyncMock(), state)
+        self.assertEqual(seen, [False])
+        self.assertTrue(state.worker_idle.is_set())
+
+    @patch('dasovbot.services.intent_processor.process_query', new_callable=AsyncMock)
+    @patch('dasovbot.services.intent_processor.asyncio.sleep', new_callable=AsyncMock)
+    async def test_worker_idle_set_again_after_a_crash(self, mock_sleep, mock_process_query):
+        mock_sleep.side_effect = asyncio.CancelledError()
+        mock_process_query.side_effect = TypeError('boom')
+        state = make_state(config=make_config(), intents={'q': Intent(priority=5)})
+        with self.assertRaises(asyncio.CancelledError):
+            await process_intents(AsyncMock(), state)
+        self.assertTrue(state.worker_idle.is_set())
+
+    async def test_idle_wait_marks_worker_idle(self):
+        state = make_state(config=make_config())
+        state.worker_idle.clear()
+        task = asyncio.create_task(process_intents(AsyncMock(), state))
+        await asyncio.sleep(0.01)
+        self.assertTrue(state.worker_idle.is_set(), 'blocked on the queue = idle')
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+
+
 class TestProcessIntents(unittest.IsolatedAsyncioTestCase):
     @patch('dasovbot.services.intent_processor.process_query', new_callable=AsyncMock)
     @patch('dasovbot.services.intent_processor.asyncio.sleep', new_callable=AsyncMock)

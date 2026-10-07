@@ -12,6 +12,12 @@ from dasovbot.models import VideoInfo, Intent, Subscription, TemporaryInlineQuer
 logger = logging.getLogger(__name__)
 
 
+def _set_event() -> asyncio.Event:
+    event = asyncio.Event()
+    event.set()
+    return event
+
+
 @dataclass
 class BotState:
     videos: dict[str, VideoInfo] = field(default_factory=dict)
@@ -43,6 +49,11 @@ class BotState:
     # Deliberately not persisted: after a process restart no abandoned
     # download thread can exist, so an immediate retry is safe.
     intent_retry_after: dict[str, float] = field(default_factory=dict)
+    # HA drain: while True the intent worker starts nothing new. worker_idle is
+    # set whenever the worker is waiting and cleared for the duration of one
+    # process_query, so a drain can wait for the in-progress download to end
+    draining: bool = False
+    worker_idle: asyncio.Event = field(default_factory=lambda: _set_event())
     # This node's revision counter (Lamport-style): every local write stamps
     # ++rev on its row; rows applied from the HA peer keep the peer's rev and
     # only raise the counter. Loaded from sync_meta in migrate_and_load()

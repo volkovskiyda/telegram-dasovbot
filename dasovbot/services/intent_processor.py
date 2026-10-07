@@ -192,11 +192,17 @@ async def process_intents(bot: Bot, state: BotState):
         # The queue is only a wake-up signal: drain accumulated puts so it stays bounded
         while not state.download_queue.empty():
             state.download_queue.get_nowait()
+        if state.draining:
+            # Handing over to the HA peer: finish nothing new, report idle
+            state.worker_idle.set()
+            await asyncio.sleep(PROCESS_INTERVAL_SEC)
+            continue
         filtered_intents = filter_intents(state.intents)
         now_mono = time.monotonic()
         eligible = {query: intent for query, intent in filtered_intents.items()
                     if state.intent_retry_after.get(query, 0) <= now_mono}
         if not eligible:
+            state.worker_idle.set()
             if filtered_intents:
                 # Everything is backing off after failures: wait for the
                 # earliest deadline or a new request, whichever comes first.
@@ -211,6 +217,7 @@ async def process_intents(bot: Bot, state: BotState):
                 await state.download_queue.get()
             continue
         max_priority = max(eligible, key=lambda key: eligible[key].priority)
+        state.worker_idle.clear()
         try:
             await process_query(bot, max_priority, state)
         except Exception as e:
@@ -219,6 +226,8 @@ async def process_intents(bot: Bot, state: BotState):
             # intent, which crash-loops forever and starves every other intent.
             logger.error("process_query crashed: %s %s: %s", max_priority, type(e).__name__, e, exc_info=e)
             await drop_or_retry_intent(bot, max_priority, state)
+        finally:
+            state.worker_idle.set()
         await asyncio.sleep(PROCESS_INTERVAL_SEC)
 
 

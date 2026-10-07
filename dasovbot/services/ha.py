@@ -19,11 +19,14 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable, Protocol
 
+from telegram import Update
+
 from dasovbot.config import Config
 from dasovbot.constants import (
     DATETIME_FORMAT, HA_ROLE_ACTIVE, HA_ROLE_DRAINING, HA_ROLE_PASSIVE, READINESS_LEASE_FACTOR,
 )
 from dasovbot.database import get_meta, set_meta
+from dasovbot.services.background import start_background_tasks, stop_background_tasks
 from dasovbot.state import BotState
 
 logger = logging.getLogger(__name__)
@@ -474,3 +477,93 @@ class RoleController:
     async def _persist(self, key: str, value):
         await set_meta(self.state.db, key, value)
         await self.state.db.commit()
+
+
+WORKER_TASK_NAME = 'monitor_process_intents'
+
+
+class PtbRunner:
+    """ActiveRunner over a python-telegram-bot Application: polling + background tasks."""
+
+    def __init__(self, app, state: BotState):
+        self.app = app
+        self.state = state
+
+    async def start(self, backlog_since: datetime | None):
+        try:
+            await self._drain_backlog(backlog_since)
+        except Exception:  # noqa: BLE001 — an unreachable API server is the updater's problem to retry
+            logger.error("backlog drain failed; starting polling anyway", exc_info=True)
+        await self.app.updater.start_polling(allowed_updates=Update.ALL_TYPES, error_callback=self._error_callback)
+        self.state.draining = False
+        start_background_tasks(self.app.bot, self.state)
+        # Wake the worker so intents that arrived through the feed are picked up
+        self.state.download_queue.put_nowait('')
+
+    def _error_callback(self, exc):
+        # Same routing run_polling uses: polling errors reach the error handlers
+        self.app.create_task(self.app.process_error(error=exc, update=None))
+
+    async def _drain_backlog(self, backlog_since: datetime | None):
+        """Decision 18: swallow the updates the peer already handled, keep the rest.
+
+        Every Bot API server receives every update and buffers it while nobody
+        polls, so the first getUpdates after activation returns everything
+        since this server was last polled. Messages dated at or after
+        `backlog_since` are queued for processing; older ones and update types
+        without a usable date (inline/callback queries — stale by definition)
+        are discarded. None keeps everything (standalone / never-seen peer).
+        """
+        if backlog_since is not None and backlog_since.tzinfo is None:
+            backlog_since = backlog_since.replace(tzinfo=timezone.utc)
+        offset, last_id, kept, dropped = None, None, 0, 0
+        while True:
+            updates = await self.app.bot.get_updates(offset=offset, timeout=0, allowed_updates=Update.ALL_TYPES)
+            if not updates:
+                break
+            for update in updates:
+                last_id = update.update_id
+                offset = last_id + 1
+                message = update.message or update.edited_message or update.channel_post
+                stamp = getattr(message, 'date', None) if message is not None else None
+                if stamp is not None and stamp.tzinfo is None:
+                    stamp = stamp.replace(tzinfo=timezone.utc)
+                if backlog_since is None or (stamp is not None and stamp >= backlog_since):
+                    await self.app.update_queue.put(update)
+                    kept += 1
+                else:
+                    dropped += 1
+        if last_id is not None:
+            # Confirm the last id so the updater starts with a clean queue
+            await self.app.bot.get_updates(offset=last_id + 1, timeout=0, allowed_updates=Update.ALL_TYPES)
+        if kept or dropped:
+            logger.info("backlog on activation: kept %d, dropped %d (since %s)", kept, dropped, backlog_since)
+
+    async def stop_polling(self):
+        if self.app.updater.running:
+            await self.app.updater.stop()
+
+    async def drain(self):
+        """Stop new work, let the in-progress download and in-flight uploads finish, stop the worker."""
+        self.state.draining = True
+        others = [t for t in self.state.background_tasks if t.get_name() != WORKER_TASK_NAME]
+        for task in others:
+            task.cancel()
+        await asyncio.gather(*others, return_exceptions=True)
+        await self.state.worker_idle.wait()
+        permits = max(1, getattr(getattr(self.state, 'config', None), 'upload_concurrency', 1) or 1)
+        semaphore = self.state.upload_semaphore
+        for _ in range(permits):
+            await semaphore.acquire()
+        for _ in range(permits):
+            semaphore.release()
+        workers = [t for t in self.state.background_tasks if t.get_name() == WORKER_TASK_NAME]
+        for task in workers:
+            task.cancel()
+        await asyncio.gather(*workers, return_exceptions=True)
+        self.state.draining = False
+
+    async def stop_all(self):
+        await self.stop_polling()
+        await stop_background_tasks(self.state)
+        self.state.draining = False

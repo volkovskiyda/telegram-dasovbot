@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from dasovbot.constants import HA_ROLE_ACTIVE, HA_ROLE_DRAINING, HA_ROLE_PASSIVE
 from dasovbot.database import get_meta
 from dasovbot.services.ha import (
-    RoleController, HaError, SyncError, META_HANDOFF_REV, META_MANUAL_HOLD,
+    RoleController, HaError, SyncError, META_HANDOFF_REV, META_MANUAL_HOLD, PtbRunner,
 )
 from tests.helpers import make_config, make_memory_db, make_state
 
@@ -552,3 +552,143 @@ class TestStop(ControllerTestCase):
         await asyncio.sleep(0.05)
         self.assertFalse(ctl._task.done())
         self.assertTrue(any('tick exploded' in e for e in self.notifier.errors))
+
+
+def make_update(update_id, date=None, kind='message'):
+    from unittest.mock import MagicMock
+    update = MagicMock()
+    update.update_id = update_id
+    update.message = update.edited_message = update.channel_post = None
+    if kind in ('message', 'edited_message', 'channel_post'):
+        msg = MagicMock()
+        msg.date = date
+        setattr(update, kind, msg)
+    return update
+
+
+class TestPtbRunner(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        from unittest.mock import AsyncMock, MagicMock
+        self.app = MagicMock()
+        self.app.update_queue = asyncio.Queue()
+        self.app.bot.get_updates = AsyncMock(return_value=[])
+        self.app.updater.start_polling = AsyncMock()
+        self.app.updater.stop = AsyncMock()
+        self.app.updater.running = True
+        self.app.process_error = AsyncMock()
+        self.state = make_state(config=make_config(upload_concurrency=2))
+        self.state.upload_semaphore = asyncio.Semaphore(2)
+        self.runner = PtbRunner(self.app, self.state)
+
+    async def _queued(self):
+        items = []
+        while not self.app.update_queue.empty():
+            items.append(self.app.update_queue.get_nowait())
+        return items
+
+    async def test_backlog_filtered_by_date_then_confirmed(self):
+        from unittest.mock import patch
+        since = T0
+        old = make_update(1, since - timedelta(seconds=5))
+        new = make_update(2, since + timedelta(seconds=5))
+        inline = make_update(3, kind='inline_query')
+        self.app.bot.get_updates.side_effect = [[old, new, inline], [], []]
+        with patch('dasovbot.services.ha.start_background_tasks') as mock_start:
+            await self.runner.start(backlog_since=since)
+        self.assertEqual([u.update_id for u in await self._queued()], [2])
+        calls = self.app.bot.get_updates.await_args_list
+        self.assertEqual(calls[0].kwargs['offset'], None)
+        self.assertEqual(calls[1].kwargs['offset'], 4)
+        self.assertEqual(calls[2].kwargs['offset'], 4, 'last id confirmed before polling starts')
+        self.app.updater.start_polling.assert_awaited_once()
+        self.assertEqual(self.app.updater.start_polling.await_args.kwargs['error_callback'], self.runner._error_callback)
+        mock_start.assert_called_once_with(self.app.bot, self.state)
+        self.assertFalse(self.state.download_queue.empty(), 'worker woken for synced intents')
+        self.assertFalse(self.state.draining)
+
+    async def test_backlog_since_none_keeps_everything(self):
+        from unittest.mock import patch
+        self.app.bot.get_updates.side_effect = [[make_update(1, T0), make_update(2, kind='callback_query')], [], []]
+        with patch('dasovbot.services.ha.start_background_tasks'):
+            await self.runner.start(backlog_since=None)
+        self.assertEqual([u.update_id for u in await self._queued()], [1, 2])
+
+    async def test_naive_dates_are_treated_as_utc(self):
+        from unittest.mock import patch
+        naive_since = T0.replace(tzinfo=None)
+        self.app.bot.get_updates.side_effect = [[make_update(1, T0 + timedelta(seconds=1))], [], []]
+        with patch('dasovbot.services.ha.start_background_tasks'):
+            await self.runner.start(backlog_since=naive_since)
+        self.assertEqual([u.update_id for u in await self._queued()], [1])
+
+    async def test_get_updates_error_still_starts_polling(self):
+        from unittest.mock import patch
+        self.app.bot.get_updates.side_effect = RuntimeError('api down')
+        with patch('dasovbot.services.ha.start_background_tasks'):
+            await self.runner.start(backlog_since=T0)
+        self.app.updater.start_polling.assert_awaited_once()
+
+    async def test_error_callback_routes_to_process_error(self):
+        exc = RuntimeError('poll failed')
+        self.runner._error_callback(exc)
+        self.app.create_task.assert_called_once()
+        coro = self.app.create_task.call_args.args[0]
+        await coro
+        self.app.process_error.assert_awaited_once_with(error=exc, update=None)
+
+    async def test_stop_polling_tolerates_stopped_updater(self):
+        self.app.updater.running = False
+        await self.runner.stop_polling()
+        self.app.updater.stop.assert_not_awaited()
+        self.app.updater.running = True
+        await self.runner.stop_polling()
+        self.app.updater.stop.assert_awaited_once()
+
+    async def test_drain_waits_for_worker_and_uploads_then_stops_worker(self):
+        events = []
+        worker_gate = asyncio.Event()
+
+        async def worker():
+            try:
+                self.state.worker_idle.clear()
+                await worker_gate.wait()
+                self.state.worker_idle.set()
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                events.append('worker cancelled')
+                raise
+
+        async def other():
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                events.append('other cancelled')
+                raise
+
+        self.state.background_tasks = {
+            asyncio.create_task(worker(), name='monitor_process_intents'),
+            asyncio.create_task(other(), name='populate_subscriptions'),
+        }
+        await asyncio.sleep(0)
+        await self.state.upload_semaphore.acquire()  # one in-flight upload
+        drain = asyncio.create_task(self.runner.drain())
+        await asyncio.sleep(0.01)
+        self.assertTrue(self.state.draining)
+        self.assertEqual(events, ['other cancelled'], 'other tasks cancelled at once, the worker is not')
+        worker_gate.set()
+        await asyncio.sleep(0.01)
+        self.assertFalse(drain.done(), 'still waiting for the in-flight upload')
+        self.state.upload_semaphore.release()
+        await asyncio.wait_for(drain, 1)
+        self.assertEqual(events, ['other cancelled', 'worker cancelled'])
+        self.assertFalse(self.state.draining)
+        self.assertEqual(self.state.upload_semaphore._value, 2, 'permits returned')
+
+    async def test_stop_all_stops_polling_and_tasks(self):
+        from unittest.mock import AsyncMock, patch
+        with patch('dasovbot.services.ha.stop_background_tasks', new_callable=AsyncMock) as mock_stop:
+            self.state.draining = True
+            await self.runner.stop_all()
+        self.app.updater.stop.assert_awaited_once()
+        mock_stop.assert_awaited_once_with(self.state)
+        self.assertFalse(self.state.draining)

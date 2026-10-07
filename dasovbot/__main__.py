@@ -1,8 +1,8 @@
 import asyncio
 import logging
+import signal
 from warnings import filterwarnings
 
-from telegram import Update
 from telegram.ext import Application
 from telegram.warnings import PTBUserWarning
 
@@ -11,8 +11,12 @@ from dasovbot.downloader import init_downloader
 from dasovbot.handlers import register_handlers
 from dasovbot.state import BotState
 
+logger = logging.getLogger(__name__)
 
-def build_application(config: Config, post_init, post_shutdown) -> Application:
+STOP_SIGNALS = (signal.SIGINT, signal.SIGTERM, signal.SIGABRT)
+
+
+def build_application(config: Config) -> Application:
     # local_mode hands uploads to the Bot API server as file:// paths it reads
     # straight from disk — a multi-GB video must never be loaded into this
     # process. Requires a server started with --local (see docker-compose.yml)
@@ -23,12 +27,48 @@ def build_application(config: Config, post_init, post_shutdown) -> Application:
         .base_url(config.base_url)
         .read_timeout(config.read_timeout)
         .local_mode(config.local_mode)
-        .post_init(post_init)
-        .post_shutdown(post_shutdown)
     )
     if config.base_file_url:
         builder = builder.base_file_url(config.base_file_url)
     return builder.build()
+
+
+async def run_application(application: Application, controller, state: BotState, sync_client=None,
+                          stop: asyncio.Event | None = None, install_signal_handlers: bool = True):
+    """Drive the PTB lifecycle by hand so the role controller owns polling.
+
+    run_polling() always starts the updater right after post_init, which a
+    node that must start PASSIVE cannot accept. Order: initialize → start
+    (update processing) → controller (polls only once ACTIVE) → wait for a
+    stop signal → controller.stop → updater/application/shutdown → cleanup.
+    """
+    from dasovbot.services.background import stop_background_tasks
+
+    stop = stop or asyncio.Event()
+    if install_signal_handlers:
+        loop = asyncio.get_running_loop()
+        for sig in STOP_SIGNALS:
+            try:
+                loop.add_signal_handler(sig, stop.set)
+            except (NotImplementedError, RuntimeError, ValueError) as exc:
+                logger.warning("Could not add a signal handler for %s: %r", sig, exc)
+    try:
+        await application.initialize()
+        await application.start()
+        await controller.start()
+        await stop.wait()
+        logger.info("Stop signal received, shutting down")
+    finally:
+        await controller.stop()
+        if application.updater.running:
+            await application.updater.stop()
+        if application.running:
+            await application.stop()
+        await application.shutdown()
+        await stop_background_tasks(state)
+        if sync_client is not None:
+            await sync_client.aclose()
+        await state.close()
 
 
 def main():
@@ -60,10 +100,21 @@ def main():
         return
 
     from dasovbot.dashboard.server import start_dashboard
-    loop.run_until_complete(start_dashboard(state))
+    from dasovbot.services.ha import RoleController, PtbRunner
+    from dasovbot.services.sync import SyncClient, DeveloperNotifier
+
+    # The controller is built before the dashboard so the app can carry it
+    # (aiohttp freezes the app once the runner is set up); its runner and the
+    # notifier's bot are attached once the PTB application exists
+    notifier = DeveloperNotifier(config)
+    sync_client = SyncClient(config, state, notifier) if config.ha_enabled else None
+    controller = RoleController(config, state, peer=sync_client, runner=None, notifier=notifier)
+    loop.run_until_complete(start_dashboard(state, controller))
 
     try:
         loop.run_until_complete(state.migrate_and_load())
+        if sync_client is not None:
+            loop.run_until_complete(sync_client.load())
     except Exception as e:
         logging.error(f"Failed to migrate/load database: {e}")
         # Close the DB so aiosqlite's non-daemon worker thread exits; otherwise
@@ -72,23 +123,17 @@ def main():
         loop.run_until_complete(state.close())
         return
 
-    async def post_init(app: Application):
-        from dasovbot.services.background import start_background_tasks
-        start_background_tasks(app.bot, app.bot_data['state'])
-
-    async def post_shutdown(app: Application):
-        from dasovbot.services.background import stop_background_tasks
-        shutdown_state = app.bot_data['state']
-        await stop_background_tasks(shutdown_state)
-        await shutdown_state.close()
-
-    application = build_application(config, post_init, post_shutdown)
+    application = build_application(config)
 
     application.bot_data['state'] = state
+    application.bot_data['ha'] = controller
 
     register_handlers(application)
 
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    controller.attach_runner(PtbRunner(application, state))
+    notifier.attach_bot(application.bot)
+
+    loop.run_until_complete(run_application(application, controller, state, sync_client))
 
 
 if __name__ == "__main__":
