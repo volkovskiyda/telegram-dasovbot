@@ -347,7 +347,11 @@ class RoleController:
             reason = 'lease lost'
         if not lost:
             return
-        if self.is_ready():
+        # Readiness gates a node that may hold stale data: the standby always,
+        # the primary only once it has seen the standby hold the lease (its own
+        # copy is the best there is on a cold start — nothing newer exists)
+        primary_cold_start = self.config.is_primary and self.last_active_seen is None
+        if primary_cold_start or self.is_ready():
             await self._activate(reason)
         else:
             await self.notifier.error(

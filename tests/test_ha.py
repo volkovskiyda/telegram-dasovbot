@@ -152,6 +152,27 @@ class TestColdStart(ControllerTestCase):
         self.assertIn('cold start', self.notifier.transitions[-1])
         self.assertEqual(await get_meta(self.state.db, META_HANDOFF_REV), 100)
 
+    async def test_primary_alone_activates_even_when_never_synced(self):
+        # A freshly deployed (or upgraded) primary has no sync history and no
+        # peer that ever held the lease: its data is the newest there is
+        self.peer.reply = None
+        self.peer.status['last_sync_at'] = None
+        ctl = await self.started('primary')
+        await self.tick(ctl, 10)
+        self.assertEqual(ctl.role, HA_ROLE_ACTIVE)
+        self.assertEqual(self.notifier.errors, [])
+
+    async def test_primary_that_saw_the_standby_active_needs_readiness(self):
+        self.peer.reply = self.active_reply()
+        self.peer.status['last_sync_at'] = None
+        ctl = await self.started('primary')
+        await self.tick(ctl)                         # standby ACTIVE seen
+        self.peer.reply = None
+        for _ in range(4):
+            await self.tick(ctl)                     # lease lost at t=40, but never synced
+        self.assertEqual(ctl.role, HA_ROLE_PASSIVE)
+        self.assertTrue(any('cannot take over' in e for e in self.notifier.errors))
+
     async def test_standby_alone_waits_ttl_plus_probe(self):
         self.peer.reply = None
         ctl = await self.started('standby')
