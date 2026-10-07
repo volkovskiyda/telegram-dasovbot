@@ -184,6 +184,94 @@ class TestLoadConfig(unittest.TestCase):
         self.assertEqual(config.upload_concurrency, 1)
 
 
+
+BASE_ENV = {
+    'BOT_TOKEN': 'tok',
+    'BASE_URL': 'https://api.telegram.org',
+    'DEVELOPER_CHAT_ID': '123',
+}
+
+
+@patch('dasovbot.config.dotenv.load_dotenv')
+class TestLoadConfigHa(unittest.TestCase):
+    @patch.dict('os.environ', BASE_ENV, clear=True)
+    def test_defaults_are_standalone(self, mock_dotenv):
+        config = load_config()
+        self.assertFalse(config.ha_enabled)
+        self.assertTrue(config.is_primary)
+        self.assertEqual(config.node_role, 'primary')
+        self.assertEqual(config.peer_url, '')
+        self.assertEqual(config.sync_secret, '')
+        self.assertNotEqual(config.node_name, '')  # hostname fallback
+        self.assertEqual(config.heartbeat_interval_sec, 10.0)
+        self.assertEqual(config.lease_ttl_sec, 30.0)
+        self.assertEqual(config.failback_stable_sec, 180.0)
+
+    @patch.dict('os.environ', {**BASE_ENV, 'NODE_ROLE': 'standby', 'NODE_NAME': 'rpi',
+                               'PEER_URL': 'http://192.168.11.150:8080/', 'SYNC_SECRET': 's3cret',
+                               'HEARTBEAT_INTERVAL_SEC': '5', 'LEASE_TTL_SEC': '20',
+                               'FAILBACK_STABLE_SEC': '60'}, clear=True)
+    def test_ha_pair_settings(self, mock_dotenv):
+        config = load_config()
+        self.assertTrue(config.ha_enabled)
+        self.assertFalse(config.is_primary)
+        self.assertEqual(config.node_name, 'rpi')
+        # trailing slash stripped so '/sync/...' can be appended
+        self.assertEqual(config.peer_url, 'http://192.168.11.150:8080')
+        self.assertEqual(config.sync_secret, 's3cret')
+        self.assertEqual((config.heartbeat_interval_sec, config.lease_ttl_sec, config.failback_stable_sec),
+                         (5.0, 20.0, 60.0))
+
+    @patch.dict('os.environ', {**BASE_ENV, 'PEER_URL': 'http://peer:8080'}, clear=True)
+    def test_peer_without_secret_stays_standalone(self, mock_dotenv):
+        self.assertFalse(load_config().ha_enabled)
+
+    @patch.dict('os.environ', {**BASE_ENV, 'NODE_ROLE': 'standby'}, clear=True)
+    def test_standby_without_peer_raises(self, mock_dotenv):
+        with self.assertRaises(ValueError) as ctx:
+            load_config()
+        self.assertIn('NODE_ROLE=standby', str(ctx.exception))
+
+    @patch.dict('os.environ', {**BASE_ENV, 'NODE_ROLE': 'witness'}, clear=True)
+    def test_bad_role_raises(self, mock_dotenv):
+        with self.assertRaises(ValueError) as ctx:
+            load_config()
+        self.assertIn('NODE_ROLE', str(ctx.exception))
+
+    @patch.dict('os.environ', {**BASE_ENV, 'PEER_URL': '192.168.11.150:8080', 'SYNC_SECRET': 'top-secret-value'},
+                clear=True)
+    def test_peer_url_without_scheme_raises_without_echoing_secret(self, mock_dotenv):
+        with self.assertRaises(ValueError) as ctx:
+            load_config()
+        self.assertIn('PEER_URL', str(ctx.exception))
+        self.assertNotIn('top-secret-value', str(ctx.exception))
+
+    @patch.dict('os.environ', {**BASE_ENV, 'HEARTBEAT_INTERVAL_SEC': '30', 'LEASE_TTL_SEC': '10'}, clear=True)
+    def test_lease_shorter_than_heartbeat_raises(self, mock_dotenv):
+        with self.assertRaises(ValueError) as ctx:
+            load_config()
+        self.assertIn('LEASE_TTL_SEC', str(ctx.exception))
+
+    @patch.dict('os.environ', {**BASE_ENV, 'FAILBACK_STABLE_SEC': '0'}, clear=True)
+    def test_non_positive_timer_raises(self, mock_dotenv):
+        with self.assertRaises(ValueError) as ctx:
+            load_config()
+        self.assertIn('FAILBACK_STABLE_SEC', str(ctx.exception))
+
+    @patch.dict('os.environ', {**BASE_ENV, 'LEASE_TTL_SEC': 'soon'}, clear=True)
+    def test_non_numeric_timer_raises(self, mock_dotenv):
+        with self.assertRaises(ValueError) as ctx:
+            load_config()
+        self.assertIn('LEASE_TTL_SEC', str(ctx.exception))
+
+    def test_make_config_defaults_standalone(self, mock_dotenv):
+        config = make_config()
+        self.assertFalse(config.ha_enabled)
+        self.assertTrue(config.is_primary)
+        config = make_config(peer_url='http://peer:8080', sync_secret='x', node_role='standby')
+        self.assertTrue(config.ha_enabled)
+        self.assertFalse(config.is_primary)
+
 class TestMatchFilter(unittest.TestCase):
     def test_normal_video(self):
         info = {'duration': 120, 'is_live': False, 'url': 'https://example.com'}

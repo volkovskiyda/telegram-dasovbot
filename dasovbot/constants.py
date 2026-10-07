@@ -42,6 +42,14 @@ MEDIA_MAX_AGE_SEC = 6 * 60 * 60
 # Retries when Telegram rate-limits a delivery (RetryAfter)
 MAX_SEND_RETRIES = 2
 
+# HA / sync (timers live in Config: HEARTBEAT_INTERVAL_SEC, LEASE_TTL_SEC,
+# FAILBACK_STABLE_SEC are env-tunable per node)
+SYNC_PAGE_SIZE = 500  # rows per /sync/changes page
+SNAPSHOT_INTERVAL_SEC = 60 * 60  # passive node pulls a full snapshot hourly (self-healing floor)
+SYNC_ERROR_NOTIFY_INTERVAL_SEC = 10 * 60  # developer hears about sync errors at most this often
+READINESS_LEASE_FACTOR = 3  # ready if the last sync is within this many lease TTLs of the last heartbeat
+HA_ROLE_ACTIVE, HA_ROLE_PASSIVE, HA_ROLE_DRAINING = 'active', 'passive', 'draining'
+
 # A banned user's request shows the loading animation, then fails after a
 # random delay in this range so it looks like an ordinary dead video
 BANNED_FAILURE_DELAY_SEC = (10, 60)

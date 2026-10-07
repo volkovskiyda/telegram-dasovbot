@@ -1,4 +1,5 @@
 import os
+import socket
 from dataclasses import dataclass
 
 import dotenv
@@ -23,6 +24,24 @@ class Config:
     local_mode: bool = False
     base_file_url: str = ""
     upload_concurrency: int = 1
+    # High availability (see README "High availability"). HA is enabled only
+    # when peer_url and sync_secret are both set; otherwise the node is
+    # standalone and behaves exactly as a single deployment
+    node_role: str = 'primary'          # 'primary' | 'standby'
+    node_name: str = ''                 # defaults to the hostname in load_config
+    peer_url: str = ''                  # '' = HA disabled
+    sync_secret: str = ''
+    heartbeat_interval_sec: float = 10.0
+    lease_ttl_sec: float = 30.0
+    failback_stable_sec: float = 180.0
+
+    @property
+    def ha_enabled(self) -> bool:
+        return bool(self.peer_url and self.sync_secret)
+
+    @property
+    def is_primary(self) -> bool:
+        return self.node_role == 'primary'
 
     @property
     def video_info_file(self) -> str:
@@ -62,6 +81,46 @@ def derive_base_file_url(base_url: str) -> str:
     return ''
 
 
+def load_ha_settings() -> dict:
+    """Read and validate the HA env vars; returns Config kwargs.
+
+    Never echoes SYNC_SECRET: errors name the variable only.
+    """
+    node_role = (os.getenv('NODE_ROLE') or 'primary').strip().lower()
+    if node_role not in ('primary', 'standby'):
+        raise ValueError("NODE_ROLE must be 'primary' or 'standby'")
+    peer_url = (os.getenv('PEER_URL') or '').strip().rstrip('/')
+    if peer_url and not peer_url.startswith(('http://', 'https://')):
+        raise ValueError("PEER_URL must start with http:// or https://")
+    sync_secret = os.getenv('SYNC_SECRET') or ''
+    ha_enabled = bool(peer_url and sync_secret)
+    if node_role == 'standby' and not ha_enabled:
+        raise ValueError("NODE_ROLE=standby requires PEER_URL and SYNC_SECRET")
+
+    timers = {}
+    for var, default in (('HEARTBEAT_INTERVAL_SEC', 10.0), ('LEASE_TTL_SEC', 30.0), ('FAILBACK_STABLE_SEC', 180.0)):
+        raw = os.getenv(var)
+        try:
+            value = float(raw) if raw else default
+        except ValueError:
+            raise ValueError(f"{var} must be a number of seconds") from None
+        if value <= 0:
+            raise ValueError(f"{var} must be greater than 0")
+        timers[var] = value
+    if timers['LEASE_TTL_SEC'] < timers['HEARTBEAT_INTERVAL_SEC']:
+        raise ValueError("LEASE_TTL_SEC must be at least HEARTBEAT_INTERVAL_SEC")
+
+    return dict(
+        node_role=node_role,
+        node_name=(os.getenv('NODE_NAME') or '').strip() or socket.gethostname(),
+        peer_url=peer_url,
+        sync_secret=sync_secret,
+        heartbeat_interval_sec=timers['HEARTBEAT_INTERVAL_SEC'],
+        lease_ttl_sec=timers['LEASE_TTL_SEC'],
+        failback_stable_sec=timers['FAILBACK_STABLE_SEC'],
+    )
+
+
 def load_config() -> Config:
     dotenv.load_dotenv()
 
@@ -89,6 +148,7 @@ def load_config() -> Config:
         base_file_url=os.getenv('BASE_FILE_URL') or derive_base_file_url(base_url),
         # Floor of 1: a value of 0 would make the upload semaphore block forever
         upload_concurrency=max(1, int(os.getenv('UPLOAD_CONCURRENCY') or 1)),
+        **load_ha_settings(),
     )
 
 
