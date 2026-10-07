@@ -118,6 +118,19 @@ class TestPullChanges(SyncClientTestCase):
             await self.client.pull_changes()
         spy.assert_not_awaited()
 
+    async def test_explicit_since_on_an_empty_node_still_bootstraps(self):
+        # The controller asks a never-synced node to reconcile from the peer's
+        # handoff_rev: it must snapshot first, not take a partial feed
+        for i in range(30):
+            await self.peer_state.set_video(f'v{i}', VideoInfo(title=str(i)))
+        await self.client.heartbeat()
+        with patch.object(self.client, 'pull_snapshot', wraps=self.client.pull_snapshot) as spy:
+            result = await self.client.pull_changes(since=28)
+        spy.assert_awaited_once()
+        self.assertEqual(len(self.local.videos), 30)
+        self.assertEqual(result['touched'], set(), 'everything came via the snapshot, nothing after it')
+        self.assertEqual(self.client.last_sync_rev, 30)
+
     async def test_upgraded_node_with_data_starts_incrementally(self):
         await self.local.set_video('old', VideoInfo(title='pre-HA'))
         await self.peer_state.set_video('v', VideoInfo(title='T'))

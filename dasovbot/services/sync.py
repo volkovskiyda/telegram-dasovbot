@@ -151,11 +151,17 @@ class SyncClient:
         MAX_PAGES_PER_TICK pages; with it the pull runs to the end (reconcile).
         """
         explicit = since is not None
-        if not explicit:
-            since = int(await get_meta(self.state.db, last_applied_key(self.peer_name), 0) or 0)
-            if since == 0 and await self._tables_empty():
-                await self.pull_snapshot()
-                since = int(await get_meta(self.state.db, last_applied_key(self.peer_name), 0) or 0)
+        cursor_key = last_applied_key(self.peer_name)
+        if await self._tables_empty():
+            # Nothing local to protect: always bootstrap from a snapshot, even
+            # when the controller asked for a reconcile pull from a given rev
+            # (a fresh node has no survivors, but a partial feed would leave
+            # it "ready" with a near-empty database)
+            await self.pull_snapshot()
+            cursor = int(await get_meta(self.state.db, cursor_key, 0) or 0)
+            since = cursor if since is None else max(int(since), cursor)
+        elif not explicit:
+            since = int(await get_meta(self.state.db, cursor_key, 0) or 0)
         cap = MAX_PAGES_PER_RECONCILE if explicit else MAX_PAGES_PER_TICK
         applied, touched, pages = 0, set(), 0
         timeout = aiohttp.ClientTimeout(total=60)
