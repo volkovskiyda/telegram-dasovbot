@@ -95,6 +95,7 @@ class TestPullChanges(SyncClientTestCase):
         self.assertEqual((await self.client.pull_changes())['applied'], 0)
 
     async def test_explicit_since_pulls_to_the_end_and_returns_touched(self):
+        await self.local.set_video('seed', VideoInfo(title='not empty: no bootstrap'))
         for i in range(1100):
             await self.peer_state.set_video(f'v{i}', VideoInfo(title=str(i)))
         await self.client.heartbeat()
