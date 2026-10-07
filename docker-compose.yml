@@ -56,6 +56,17 @@ services:
       API_TOKEN: $API_TOKEN
       BACKUP_CRON: ${BACKUP_CRON:-0 */12 * * *}
       BACKUP_MAX_COUNT: ${BACKUP_MAX_COUNT:-14}
+      # High availability (README "High availability"); blank PEER_URL and
+      # SYNC_SECRET = single node, exactly the behaviour without these lines.
+      # PEER_URL is the peer's static LAN IP: hostnames do not resolve inside
+      # gluetun, and a floating IP must never be used here
+      NODE_ROLE: ${NODE_ROLE:-primary}
+      NODE_NAME: ${NODE_NAME:-dasovbot}
+      PEER_URL: $PEER_URL
+      SYNC_SECRET: $SYNC_SECRET
+      HEARTBEAT_INTERVAL_SEC: ${HEARTBEAT_INTERVAL_SEC:-10}
+      LEASE_TTL_SEC: ${LEASE_TTL_SEC:-30}
+      FAILBACK_STABLE_SEC: ${FAILBACK_STABLE_SEC:-180}
       # Without a cap, glibc creates a malloc arena per executor thread and
       # freed upload buffers never return to the OS, so RSS only ratchets up
       MALLOC_ARENA_MAX: "2"
@@ -68,3 +79,12 @@ services:
     memswap_limit: 4g
     ports:
       - "${DASHBOARD_PORT:-8080}:${DASHBOARD_PORT:-8080}"
+
+# --- HA hosts behind a VPN (not part of this file; the live hosts run it) ---
+# Both nodes run api and bot inside gluetun (`network_mode: service:vpn`, the
+# dashboard port published on the vpn service). The bot must still reach the
+# LAN peer, so the vpn service needs:
+#     FIREWALL_OUTBOUND_SUBNETS: 192.168.11.0/24
+# and each host its own WireGuard key (one session per key at most providers).
+# Name resolution inside gluetun ignores the LAN DNS, hence the static-IP
+# PEER_URL above.

@@ -30,8 +30,9 @@ VOLUME ["/data", "/media", "/export"]
 ARG DASHBOARD_PORT=8080
 EXPOSE ${DASHBOARD_PORT}
 
-# The dashboard runs inside the bot process, so it doubles as a liveness probe
+# The dashboard runs inside the bot process, so it doubles as a liveness
+# probe; /health answers 200 in every HA role (active, passive, draining)
 HEALTHCHECK --interval=60s --timeout=10s --start-period=60s --retries=3 \
-  CMD python -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.getenv('DASHBOARD_PORT', '8080') + '/login', timeout=5)"
+  CMD python -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.getenv('DASHBOARD_PORT', '8080') + '/health', timeout=5)"
 
 CMD ["./entrypoint.sh"]
