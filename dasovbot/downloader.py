@@ -335,7 +335,7 @@ async def extract_info(query: str, download: bool, state: BotState) -> VideoInfo
                     if tiq:
                         tiq.ignored = True
                 return None
-            logger.error("extract_info error: %s", query)
+            logger.error("extract_info error: %s: %s", query, str(e).replace("\n", " "))
             return None
 
     needs_download = download and (not info or not info.file_id)
