@@ -70,9 +70,16 @@ class TestMain(unittest.TestCase):
         import logging
         httpx_logger = logging.getLogger('httpx')
         self.addCleanup(httpx_logger.filters.clear)
-        make_record = lambda msg: logging.LogRecord('httpx', logging.INFO, __file__, 1, msg, None, None)
+        make_record = lambda msg, args=None: logging.LogRecord('httpx', logging.INFO, __file__, 1, msg, args, None)
         self.assertFalse(httpx_logger.filter(make_record('HTTP Request: POST /bot/getUpdates')))
         self.assertTrue(httpx_logger.filter(make_record('HTTP Request: POST /bot/sendMessage')))
+        # The token in a Bot API URL is redacted before any handler formats the record
+        record = make_record('HTTP Request: %s %s "%s"',
+                             ('POST', 'http://localhost:8081/bot123456:AAEsecret-token_x/sendMessage', 'HTTP/1.1 200 OK'))
+        self.assertTrue(httpx_logger.filter(record))
+        self.assertEqual(record.getMessage(),
+                         'HTTP Request: POST http://localhost:8081/bot<redacted>/sendMessage "HTTP/1.1 200 OK"')
+        self.assertNotIn('AAEsecret', record.getMessage())
 
     def test_ha_pair_gets_a_sync_client(self, mock_load, mock_init, mock_state_cls,
                                         mock_app_cls, mock_register, mock_dashboard, mock_run):

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 import signal
 from warnings import filterwarnings
 
@@ -71,6 +72,25 @@ async def run_application(application: Application, controller, state: BotState,
         await state.close()
 
 
+class _HttpxFilter(logging.Filter):
+    """Drop the getUpdates poll noise and never let the bot token reach the log.
+
+    httpx logs every request URL and Bot API URLs embed the token
+    (``/bot<token>/sendMessage``); the record is rewritten in place so that
+    every handler sees the redacted text.
+    """
+
+    TOKEN_RE = re.compile(r'/bot[^/\s"]+/')
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        if "getUpdates" in message:
+            return False
+        record.msg = self.TOKEN_RE.sub('/bot<redacted>/', message)
+        record.args = ()
+        return True
+
+
 def main():
     logging.basicConfig(
         format='%(asctime)s %(name)s %(levelname)s %(message)s',
@@ -80,11 +100,7 @@ def main():
     # Suppress noisy logs
     logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
 
-    class _IgnoreGetUpdates(logging.Filter):
-        def filter(self, record: logging.LogRecord) -> bool:
-            return "getUpdates" not in record.getMessage()
-
-    logging.getLogger("httpx").addFilter(_IgnoreGetUpdates())
+    logging.getLogger("httpx").addFilter(_HttpxFilter())
 
     filterwarnings(action="ignore", message=r".*CallbackQueryHandler", category=PTBUserWarning)
 
