@@ -48,6 +48,13 @@ SYNC_PAGE_SIZE = 500  # rows per /sync/changes page
 SNAPSHOT_INTERVAL_SEC = 60 * 60  # passive node pulls a full snapshot hourly (self-healing floor)
 SYNC_ERROR_NOTIFY_INTERVAL_SEC = 10 * 60  # developer hears about sync errors at most this often
 READINESS_LEASE_FACTOR = 3  # ready if the last sync is within this many lease TTLs of the last heartbeat
+# After a step-down (the peer turned out to be alive) a node refuses the next
+# automatic "lease lost" takeover for STEP_DOWN_HOLD_FACTOR lease TTLs, doubling
+# per consecutive step-down up to STEP_DOWN_HOLD_MAX_SEC; a flapping link then
+# costs one split-brain window per hold-down instead of one per TTL
+STEP_DOWN_HOLD_FACTOR = 2
+STEP_DOWN_HOLD_MAX_SEC = 15 * 60
+TRANSITION_COLLAPSE_SEC = 10 * 60  # an identical transition message within this window is counted, not re-sent
 HA_ROLE_ACTIVE, HA_ROLE_PASSIVE, HA_ROLE_DRAINING = 'active', 'passive', 'draining'
 
 # A banned user's request shows the loading animation, then fails after a

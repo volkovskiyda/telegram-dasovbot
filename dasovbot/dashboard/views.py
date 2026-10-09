@@ -119,6 +119,8 @@ async def ha_processor(request: web.Request) -> dict:
         'manual_hold': bool(status.get('manual_hold')),
         'handback_requested': bool(status.get('handback_requested')),
         'handoff_pending': bool(status.get('handoff_pending')),
+        'step_downs': status.get('step_downs') or 0,
+        'hold_down_remaining_sec': status.get('hold_down_remaining_sec'),
         'draining': role == 'draining',
         'drained': bool(status.get('drained')),
     }}

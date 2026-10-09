@@ -19,7 +19,9 @@ from urllib.parse import urlsplit
 import aiohttp
 
 from dasovbot.config import Config
-from dasovbot.constants import DATETIME_FORMAT, SNAPSHOT_INTERVAL_SEC, SYNC_ERROR_NOTIFY_INTERVAL_SEC, SYNC_PAGE_SIZE
+from dasovbot.constants import (
+    DATETIME_FORMAT, SNAPSHOT_INTERVAL_SEC, SYNC_ERROR_NOTIFY_INTERVAL_SEC, SYNC_PAGE_SIZE, TRANSITION_COLLAPSE_SEC,
+)
 from dasovbot.database import get_meta, set_meta, last_applied_key, reconcile_from_snapshot
 from dasovbot.services.ha import SyncError  # noqa: F401 — re-exported: the port's contract lives in ha.py
 from dasovbot.state import BotState
@@ -263,11 +265,24 @@ class DeveloperNotifier:
         self.clock = clock
         self.bot = None
         self._last_error_sent: float | None = None
+        self._recent: dict[str, tuple[float, int]] = {}   # text -> (first sent at, repeats collapsed since)
 
     def attach_bot(self, bot):
         self.bot = bot
 
     async def transition(self, text: str):
+        """Sent at once, except an exact repeat within TRANSITION_COLLAPSE_SEC: that is counted and the
+        count is appended to the next copy sent (a flapping node yields one message per window)."""
+        now = self.clock()
+        first_at, collapsed = self._recent.get(text, (None, 0))
+        if first_at is not None and now - first_at < TRANSITION_COLLAPSE_SEC:
+            self._recent[text] = (first_at, collapsed + 1)
+            logger.info("HA: %s (repeat, collapsed)", text)
+            return
+        self._recent = {k: v for k, v in self._recent.items() if now - v[0] < TRANSITION_COLLAPSE_SEC}
+        self._recent[text] = (now, 0)
+        if collapsed:
+            text = f"{text} (+{collapsed} collapsed in the last {int(round((now - first_at) / 60))} min)"
         logger.info("HA: %s", text)
         await self._send(text)
 

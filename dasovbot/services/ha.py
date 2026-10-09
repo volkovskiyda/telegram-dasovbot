@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable, Protocol
@@ -24,6 +25,7 @@ from telegram import Update
 from dasovbot.config import Config
 from dasovbot.constants import (
     DATETIME_FORMAT, HA_ROLE_ACTIVE, HA_ROLE_DRAINING, HA_ROLE_PASSIVE, READINESS_LEASE_FACTOR,
+    STEP_DOWN_HOLD_FACTOR, STEP_DOWN_HOLD_MAX_SEC,
 )
 from dasovbot.database import get_meta, set_meta
 from dasovbot.services.background import start_background_tasks, stop_background_tasks
@@ -87,6 +89,11 @@ class Notifier(Protocol):
         """Rate-limited to one message per SYNC_ERROR_NOTIFY_INTERVAL_SEC."""
 
 
+def _fmt_duration(seconds: float) -> str:
+    seconds = int(round(seconds))
+    return f"{seconds // 60} min" if seconds >= 60 and seconds % 60 == 0 else f"{seconds} s"
+
+
 def _parse(stamp: str | None) -> datetime | None:
     if not stamp:
         return None
@@ -126,6 +133,8 @@ class RoleController:
         self._handoff_manual = False       # the pending handoff was manual / a handback
         self._reconciled_for: tuple[str, int] | None = None
         self._stepping_down = False
+        self.step_downs = 0                           # consecutive step-downs; cleared by a stable peer
+        self.hold_down_until: float | None = None     # monotonic: no automatic takeover before this
         self._task: asyncio.Task | None = None
 
     # --- public API ---------------------------------------------------------
@@ -214,6 +223,8 @@ class RoleController:
             'peer_role': self.peer_status.get('role') if self.peer_status else None,
             'peer_seen_at': self._peer_seen_at(),
             'ready': self.is_ready(),
+            'step_downs': self.step_downs,
+            'hold_down_remaining_sec': self.hold_down_remaining(),
             'last_sync_at': sync.get('last_sync_at'),
             'last_sync_rev': sync.get('last_sync_rev'),
             'last_heartbeat_at': sync.get('last_heartbeat_at'),
@@ -231,6 +242,13 @@ class RoleController:
         if heartbeat_at is None or sync_at is None:
             return False
         return (heartbeat_at - sync_at).total_seconds() <= READINESS_LEASE_FACTOR * self.config.lease_ttl_sec
+
+    def hold_down_remaining(self) -> int | None:
+        """Seconds until an automatic takeover is allowed again, None when not holding down."""
+        if self.hold_down_until is None:
+            return None
+        remaining = self.hold_down_until - self.clock()
+        return math.ceil(remaining) if remaining > 0 else None
 
     def readiness_reason(self) -> str:
         sync = self.peer.sync_status() if self.peer is not None else {}
@@ -304,6 +322,10 @@ class RoleController:
                 self.last_active_seen = now
             if reply.get('role') == HA_ROLE_ACTIVE:
                 self.peer_active_wall_at = self.wall_clock()
+            if self.step_downs and now - self.healthy_since >= self.config.failback_stable_sec:
+                # The link has been stable for a whole failback window: forget the flapping
+                self.step_downs = 0
+                self.hold_down_until = None
         else:
             self.healthy_since = None
             self.peer_status = None
@@ -346,6 +368,11 @@ class RoleController:
             lost = now - self.last_active_seen >= self.config.lease_ttl_sec
             reason = 'lease lost'
         if not lost:
+            return
+        if self.hold_down_until is not None and now < self.hold_down_until:
+            # The peer was alive the last time this node claimed the lease; a
+            # flapping link must not turn into a split brain every TTL
+            logger.info("lease lost but holding down for another %s", _fmt_duration(self.hold_down_until - now))
             return
         # Readiness gates a node that may hold stale data: the standby always,
         # the primary only once it has seen the standby hold the lease (its own
@@ -466,7 +493,12 @@ class RoleController:
             self._stepping_down = False
         await self._persist(META_HANDOFF_REV, None)
         await self.peer.on_handed_back()
-        await self.notifier.transition(f"🔴 {self.node} stepped down ({reason})")
+        self.step_downs += 1
+        hold = min(STEP_DOWN_HOLD_FACTOR * self.config.lease_ttl_sec * 2 ** (self.step_downs - 1),
+                   STEP_DOWN_HOLD_MAX_SEC)
+        self.hold_down_until = self.clock() + hold
+        await self.notifier.transition(
+            f"🔴 {self.node} stepped down ({reason}); no automatic takeover for {_fmt_duration(hold)}")
 
     # --- helpers ------------------------------------------------------------
 

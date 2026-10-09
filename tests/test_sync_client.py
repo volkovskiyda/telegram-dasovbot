@@ -254,6 +254,27 @@ class TestDeveloperNotifier(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.bot.send_message.await_count, 2)
         self.bot.send_message.assert_awaited_with(chat_id='42', text='two')
 
+    async def test_identical_transition_collapsed_within_window(self):
+        self.notifier.attach_bot(self.bot)
+        await self.notifier.transition('flap')
+        self.t += 60
+        await self.notifier.transition('flap')
+        self.t += 60
+        await self.notifier.transition('other')
+        self.assertEqual([c.kwargs['text'] for c in self.bot.send_message.await_args_list], ['flap', 'other'])
+
+    async def test_collapsed_count_reported_once_the_window_passes(self):
+        self.notifier.attach_bot(self.bot)
+        for _ in range(4):
+            await self.notifier.transition('flap')
+            self.t += 120
+        self.t += 600
+        await self.notifier.transition('flap')
+        self.assertEqual(self.bot.send_message.await_count, 2)
+        self.bot.send_message.assert_awaited_with(chat_id='42', text='flap (+3 collapsed in the last 18 min)')
+        await self.notifier.transition('flap')       # a fresh window: collapsed again, count restarts
+        self.assertEqual(self.bot.send_message.await_count, 2)
+
     async def test_errors_rate_limited_to_one_per_interval(self):
         self.notifier.attach_bot(self.bot)
         await self.notifier.error('a')

@@ -469,6 +469,84 @@ class TestConflictAndTwoActives(ControllerTestCase):
         self.assertTrue(any('both nodes' in e for e in self.notifier.errors))
 
 
+class TestHoldDown(TestConflictAndTwoActives):
+    async def stepped_down(self, times=1):
+        """A standby that claimed the lease while the primary was alive, `times` times in a row."""
+        ctl = await self.activate('standby')
+        for _ in range(times):
+            ctl.role = HA_ROLE_ACTIVE
+            self.peer.reply = self.active_reply()
+            await self.tick(ctl)
+            self.assertEqual(ctl.role, HA_ROLE_PASSIVE)
+        self.peer.reply = None
+        self.runner.calls.clear()
+        return ctl
+
+    async def test_step_down_announces_hold_and_blocks_lease_lost_takeover(self):
+        ctl = await self.stepped_down()
+        self.assertIn('stepped down (peer active); no automatic takeover for 1 min', self.notifier.transitions[-1])
+        for _ in range(5):                           # t+10 .. t+50: lease lost at +30, still held
+            await self.tick(ctl)
+            self.assertEqual(ctl.role, HA_ROLE_PASSIVE)
+        self.assertEqual(self.runner.calls, [])
+        self.assertEqual(ctl.status()['hold_down_remaining_sec'], 10)
+        await self.tick(ctl)                         # t+60: hold over
+        self.assertEqual(ctl.role, HA_ROLE_ACTIVE)
+        self.assertEqual(self.runner.names(), ['start'])
+        self.assertIsNone(ctl.status()['hold_down_remaining_sec'])
+
+    async def test_hold_doubles_per_step_down_and_caps(self):
+        ctl = await self.stepped_down(times=6)
+        holds = [t.rsplit('for ', 1)[1] for t in self.notifier.transitions if 'stepped down' in t]
+        self.assertEqual(holds, ['1 min', '2 min', '4 min', '8 min', '15 min', '15 min'])
+        self.assertEqual(ctl.status()['step_downs'], 6)
+
+    async def test_409_step_down_also_holds(self):
+        ctl = await self.activate('standby')
+        ctl.on_conflict()
+        await asyncio.sleep(0.02)
+        self.assertEqual(ctl.hold_down_remaining(), 60)
+        self.assertIn('no automatic takeover for 1 min', self.notifier.transitions[-1])
+
+    async def test_manual_takeover_ignores_hold(self):
+        ctl = await self.stepped_down()
+        await ctl.request_takeover()
+        await self.tick(ctl)
+        self.assertEqual(ctl.role, HA_ROLE_ACTIVE)
+        self.assertIn('manual takeover', self.notifier.transitions[-1])
+
+    async def test_handoff_ignores_hold(self):
+        ctl = await self.stepped_down()
+        self.peer.reply = self.active_reply(handback_requested=True)
+        await self.tick(ctl)
+        self.assertTrue(ctl.handoff_pending)
+        self.peer.reply = self.active_reply(role=HA_ROLE_DRAINING, drained=True)
+        await self.tick(ctl)
+        self.assertEqual(ctl.role, HA_ROLE_ACTIVE)
+        self.assertIn('handoff', self.notifier.transitions[-1])
+
+    async def test_stable_peer_clears_backoff(self):
+        ctl = await self.stepped_down(times=2)       # next hold would be 4 min
+        self.peer.reply = self.active_reply()
+        for _ in range(int(STABLE / HEARTBEAT)):
+            await self.tick(ctl)
+        self.assertEqual((ctl.step_downs, ctl.hold_down_until), (0, None))
+        ctl.role = HA_ROLE_ACTIVE
+        await self.tick(ctl)
+        self.assertTrue(self.notifier.transitions[-1].endswith('for 1 min'))
+
+    async def test_heartbeat_failure_keeps_backoff(self):
+        ctl = await self.stepped_down()
+        self.peer.reply = self.active_reply()
+        for _ in range(int(STABLE / HEARTBEAT) - 1):
+            await self.tick(ctl)
+        self.peer.reply = None
+        await self.tick(ctl)                         # one failure restarts the stability window
+        self.peer.reply = self.active_reply()
+        await self.tick(ctl)
+        self.assertEqual(ctl.step_downs, 1)
+
+
 class TestManualOverrides(ControllerTestCase):
     async def test_takeover_not_ready_raises(self):
         self.peer.reply = self.active_reply()

@@ -57,6 +57,7 @@
             {% if ha.role == 'draining' %}<tr><td>Drained</td><td>{{ 'yes' if ha.drained else 'not yet' }}</td></tr>{% endif %}
             {% if ha.handback_requested %}<tr><td>Hand back</td><td>requested, waiting for the peer</td></tr>{% endif %}
             {% if ha.handoff_pending %}<tr><td>Handoff</td><td>requested from the peer, waiting for it to drain</td></tr>{% endif %}
+            {% if ha.hold_down_remaining_sec %}<tr><td>Hold-down</td><td>no automatic takeover for another {{ ha.hold_down_remaining_sec }} s <span class="text-muted">({{ ha.step_downs }} step-down{{ 's' if ha.step_downs != 1 else '' }} since the peer was last stable; Take over still works)</span></td></tr>{% endif %}
         </tbody>
     </table>
     <div style="display: flex; gap: 12px; align-items: center; margin-top: 14px;">
