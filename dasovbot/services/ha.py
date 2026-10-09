@@ -28,6 +28,7 @@ from dasovbot.constants import (
     STEP_DOWN_HOLD_FACTOR, STEP_DOWN_HOLD_MAX_SEC,
 )
 from dasovbot.database import get_meta, set_meta
+from dasovbot.persistence import remove_unfinished_downloads
 from dasovbot.services.background import start_background_tasks, stop_background_tasks
 from dasovbot.state import BotState
 
@@ -76,7 +77,7 @@ class ActiveRunner(Protocol):
     async def stop_polling(self) -> None: ...
 
     async def drain(self) -> None:
-        """Stop new work, wait for the in-flight download/upload, stop the worker."""
+        """Stop every background task at once; the download/upload in flight is abandoned."""
 
     async def stop_all(self) -> None:
         """Stop polling and every background task without waiting."""
@@ -123,6 +124,7 @@ class RoleController:
         self.healthy_since: float | None = None
         self.peer_status: dict | None = None
         self.handoff_pending = False
+        self.handoff_retry_at: float | None = None     # monotonic: no new handoff request before this
         self.drained = False
         self.drain_finished_at: float | None = None
         self.drain_task: asyncio.Task | None = None
@@ -340,14 +342,27 @@ class RoleController:
 
     async def _tick_passive(self, reply: dict | None, peer_active: bool, now: float):
         if peer_active:
+            if self.handoff_pending and reply.get('drained'):
+                # The peer has stopped; take over right away — the final pull
+                # replaces the regular one, nothing else may delay this tick
+                await self._final_pull_and_activate('handoff')
+                return
+            if self.handoff_pending and reply.get('role') == HA_ROLE_ACTIVE:
+                # The peer waited LEASE_TTL_SEC for us and re-activated: this
+                # handoff is over. Start again after a pause instead of waiting
+                # forever for a `drained` that will never come
+                self.handoff_pending = False
+                self._handoff_manual = False
+                self.handoff_retry_at = now + self.config.lease_ttl_sec
+                await self.notifier.error(
+                    f"⚠️ {self.node} handoff lapsed: {self.peer_name} re-activated before the takeover; "
+                    f"retrying in {_fmt_duration(self.config.lease_ttl_sec)}")
             try:
                 await self._pull(reply)
                 await self.peer.maybe_snapshot()
             except SyncError as e:
                 await self.notifier.error(f"⚠️ {self.node} sync error: {e}")
-            if self.handoff_pending and reply.get('drained'):
-                await self._final_pull_and_activate('handoff')
-            elif not self.handoff_pending and self._should_request_handoff(reply, now):
+            if not self.handoff_pending and self._should_request_handoff(reply, now):
                 manual = bool(reply.get('handback_requested')) or self._manual_takeover
                 if await self.peer.request_handoff(manual=manual):
                     self.handoff_pending = True
@@ -402,6 +417,8 @@ class RoleController:
 
     def _should_request_handoff(self, reply: dict, now: float) -> bool:
         if not self.is_ready():
+            return False
+        if self.handoff_retry_at is not None and now < self.handoff_retry_at:
             return False
         if reply.get('handback_requested') or self._manual_takeover:
             return True
@@ -515,9 +532,6 @@ class RoleController:
         await self.state.db.commit()
 
 
-WORKER_TASK_NAME = 'monitor_process_intents'
-
-
 class PtbRunner:
     """ActiveRunner over a python-telegram-bot Application: polling + background tasks."""
 
@@ -526,6 +540,7 @@ class PtbRunner:
         self.state = state
 
     async def start(self, backlog_since: datetime | None):
+        await self._remove_unfinished_downloads()
         try:
             await self._drain_backlog(backlog_since)
         except Exception:  # noqa: BLE001 — an unreachable API server is the updater's problem to retry
@@ -580,24 +595,33 @@ class PtbRunner:
             await self.app.updater.stop()
 
     async def drain(self):
-        """Stop new work, let the in-progress download and in-flight uploads finish, stop the worker."""
+        """Stop every background task at once, the worker included.
+
+        The download in progress is abandoned (cancelling the worker cancels
+        its DownloadAttempt, which deletes what yt-dlp wrote) and an upload in
+        flight is cut off; the intent stays in the synced state, so the node
+        that takes over simply does it again. Waiting for in-flight work used
+        to hold the handoff open for minutes with nobody polling.
+        """
         self.state.draining = True
-        others = [t for t in self.state.background_tasks if t.get_name() != WORKER_TASK_NAME]
-        for task in others:
-            task.cancel()
-        await asyncio.gather(*others, return_exceptions=True)
-        await self.state.worker_idle.wait()
-        permits = max(1, getattr(getattr(self.state, 'config', None), 'upload_concurrency', 1) or 1)
-        semaphore = self.state.upload_semaphore
-        for _ in range(permits):
-            await semaphore.acquire()
-        for _ in range(permits):
-            semaphore.release()
-        workers = [t for t in self.state.background_tasks if t.get_name() == WORKER_TASK_NAME]
-        for task in workers:
-            task.cancel()
-        await asyncio.gather(*workers, return_exceptions=True)
-        self.state.draining = False
+        try:
+            await stop_background_tasks(self.state)
+        finally:
+            self.state.draining = False
+
+    async def _remove_unfinished_downloads(self):
+        """Drop what the previous ACTIVE period left half-written in the media folder."""
+        media_folder = getattr(getattr(self.state, 'config', None), 'media_folder', None)
+        if not media_folder:
+            return
+        loop = asyncio.get_running_loop()
+        try:
+            removed = await loop.run_in_executor(None, remove_unfinished_downloads, media_folder)
+        except Exception:  # noqa: BLE001 — never block activation on a cleanup
+            logger.warning("unfinished-download cleanup failed in %s", media_folder, exc_info=True)
+            return
+        if removed:
+            logger.info("activation removed %d unfinished download file(s): %s", len(removed), sorted(removed))
 
     async def stop_all(self):
         await self.stop_polling()

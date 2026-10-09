@@ -4,7 +4,9 @@ import time
 import unittest
 from unittest.mock import patch
 
-from dasovbot.persistence import remove, empty_media_folder_files, remove_stale_media_files, move_atomic
+from dasovbot.persistence import (
+    remove, empty_media_folder_files, remove_stale_media_files, remove_unfinished_downloads, move_atomic,
+)
 
 
 class TestRemove(unittest.TestCase):
@@ -122,3 +124,21 @@ class TestMoveAtomic(unittest.TestCase):
             move_atomic(self.src, self.dst)
         self.assertFalse(os.path.exists(self.dst + '.partial'))
         self.assertFalse(os.path.exists(self.dst))
+
+
+class TestRemoveUnfinishedDownloads(unittest.TestCase):
+    def test_removes_only_unfinished_artifacts(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            keep = ['20261009 - title [id].mp4', 'notes.txt']
+            drop = ['x.webm.part', 'x.webm.ytdl', 'x.webm.part-Frag12', 'x.temp.mp4', 'y.mp4.partial']
+            for name in keep + drop:
+                open(os.path.join(tmp, name), 'w').close()
+            os.mkdir(os.path.join(tmp, 'sub.part'))
+            removed = remove_unfinished_downloads(tmp)
+            self.assertEqual(sorted(removed), sorted(drop))
+            self.assertEqual(sorted(os.listdir(tmp)), sorted(keep + ['sub.part']))
+
+    def test_missing_folder(self):
+        self.assertEqual(remove_unfinished_downloads('/nonexistent/media'), [])
+

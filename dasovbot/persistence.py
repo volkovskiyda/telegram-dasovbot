@@ -51,6 +51,39 @@ def empty_media_folder_files(media_folder: str):
         remove(file_path)
 
 
+# What an abandoned yt-dlp/ffmpeg run leaves behind: the .part being written,
+# its .ytdl resume state, HLS/DASH fragments and the postprocessor's temp file
+UNFINISHED_SUFFIXES = ('.part', '.ytdl', '.partial')
+UNFINISHED_MARKERS = ('-Frag', '.temp.')
+
+
+def is_unfinished_download(name: str) -> bool:
+    return name.endswith(UNFINISHED_SUFFIXES) or any(marker in name for marker in UNFINISHED_MARKERS)
+
+
+def remove_unfinished_downloads(media_folder: str) -> list[str]:
+    """Remove the leftovers of downloads that were cut short (see is_unfinished_download).
+
+    Run when a node becomes ACTIVE: a handoff no longer waits for the download
+    in progress, so whatever the previous ACTIVE period left half-written is
+    garbage — the intent it belonged to is retried from scratch.
+    """
+    removed = []
+    try:
+        entries = list(os.scandir(media_folder))
+    except FileNotFoundError:
+        return removed
+    for entry in entries:
+        try:
+            if not entry.is_file(follow_symlinks=False) or not is_unfinished_download(entry.name):
+                continue
+        except OSError:
+            continue
+        remove(entry.path)
+        removed.append(entry.name)
+    return removed
+
+
 def remove_stale_media_files(media_folder: str, max_age_sec: float) -> list[str]:
     """Remove files in the media folder untouched for longer than max_age_sec.
 

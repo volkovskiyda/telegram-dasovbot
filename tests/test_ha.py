@@ -332,10 +332,34 @@ class TestHandoffRequestingSide(ControllerTestCase):
         pulls_before = len(self.peer.pull_calls)
         await self.tick(ctl)
         self.assertEqual(ctl.role, HA_ROLE_ACTIVE)
-        self.assertEqual(len(self.peer.pull_calls), pulls_before + 2, 'regular pull + final pull')
+        self.assertEqual(len(self.peer.pull_calls), pulls_before + 1, 'only the final pull, nothing before it')
+        self.assertEqual(getattr(self.peer, 'maybe_snapshots', 0), 2, 'no snapshot reconcile on the takeover tick')
         self.assertFalse(ctl.handoff_pending)
         self.assertTrue(ctl.manual_hold, 'a handback-driven takeover holds until Hand back')
         self.assertEqual(await get_meta(self.state.db, META_MANUAL_HOLD), True)
+
+    async def test_lapsed_handoff_is_dropped_and_requested_again(self):
+        self.peer.reply = self.active_reply(handback_requested=True)
+        ctl = await self.started('standby')
+        await self.tick(ctl)                                       # requests handoff
+        self.assertEqual(len(self.peer.handoff_calls), 1)
+        self.peer.reply = {**self.active_reply(), 'role': HA_ROLE_DRAINING, 'drained': False}
+        await self.tick(ctl)
+        # The peer gave up waiting and re-activated (its `drained` flag is gone)
+        self.peer.reply = self.active_reply(handback_requested=True)
+        await self.tick(ctl)
+        self.assertEqual(ctl.role, HA_ROLE_PASSIVE)
+        self.assertFalse(ctl.handoff_pending)
+        self.assertTrue(any('lapsed' in e for e in self.notifier.errors))
+        self.assertEqual(len(self.peer.handoff_calls), 1, 'no immediate re-request')
+        await self.tick(ctl)                                       # 10 s into the 30 s pause
+        self.assertEqual(len(self.peer.handoff_calls), 1)
+        await self.tick(ctl, TTL)                                  # pause over
+        self.assertEqual(len(self.peer.handoff_calls), 2, 'asked again')
+        self.assertTrue(ctl.handoff_pending)
+        self.peer.reply = {**self.active_reply(), 'role': HA_ROLE_DRAINING, 'drained': True}
+        await self.tick(ctl)
+        self.assertEqual(ctl.role, HA_ROLE_ACTIVE)
 
     async def test_final_pull_error_keeps_passive_and_retries(self):
         self.peer.reply = self.active_reply(handback_requested=True)
@@ -743,15 +767,12 @@ class TestPtbRunner(unittest.IsolatedAsyncioTestCase):
         await self.runner.stop_polling()
         self.app.updater.stop.assert_awaited_once()
 
-    async def test_drain_waits_for_worker_and_uploads_then_stops_worker(self):
+    async def test_drain_cancels_worker_and_tasks_without_waiting(self):
         events = []
-        worker_gate = asyncio.Event()
 
         async def worker():
             try:
-                self.state.worker_idle.clear()
-                await worker_gate.wait()
-                self.state.worker_idle.set()
+                self.state.worker_idle.clear()     # a download is in progress
                 await asyncio.Event().wait()
             except asyncio.CancelledError:
                 events.append('worker cancelled')
@@ -769,19 +790,25 @@ class TestPtbRunner(unittest.IsolatedAsyncioTestCase):
             asyncio.create_task(other(), name='populate_subscriptions'),
         }
         await asyncio.sleep(0)
-        await self.state.upload_semaphore.acquire()  # one in-flight upload
-        drain = asyncio.create_task(self.runner.drain())
-        await asyncio.sleep(0.01)
-        self.assertTrue(self.state.draining)
-        self.assertEqual(events, ['other cancelled'], 'other tasks cancelled at once, the worker is not')
-        worker_gate.set()
-        await asyncio.sleep(0.01)
-        self.assertFalse(drain.done(), 'still waiting for the in-flight upload')
-        self.state.upload_semaphore.release()
-        await asyncio.wait_for(drain, 1)
-        self.assertEqual(events, ['other cancelled', 'worker cancelled'])
+        await self.state.upload_semaphore.acquire()  # an upload in flight does not matter either
+        await asyncio.wait_for(self.runner.drain(), 1)
+        self.assertEqual(sorted(events), ['other cancelled', 'worker cancelled'])
         self.assertFalse(self.state.draining)
-        self.assertEqual(self.state.upload_semaphore._value, 2, 'permits returned')
+
+    async def test_start_removes_unfinished_downloads(self):
+        import os
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as tmp:
+            self.state.config = make_config(config_folder=tmp)
+            media = self.state.config.media_folder
+            os.mkdir(media)
+            for name in ('clip.mp4.part', 'clip.mp4.ytdl', 'clip.mp4-Frag3', 'clip.temp.mp4', 'done.mp4'):
+                open(os.path.join(media, name), 'w').close()
+            self.app.bot.get_updates.side_effect = [[], []]
+            with patch('dasovbot.services.ha.start_background_tasks'):
+                await self.runner.start(backlog_since=None)
+            self.assertEqual(os.listdir(media), ['done.mp4'])
 
     async def test_stop_all_stops_polling_and_tasks(self):
         from unittest.mock import AsyncMock, patch
