@@ -1,0 +1,22 @@
+# Monthly bumps for everything that is pinned. yt-dlp is deliberately
+# unpinned (the image is rebuilt on every yt-dlp release, see docker.yml).
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      python:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly
