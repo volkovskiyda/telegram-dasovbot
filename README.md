@@ -360,7 +360,7 @@ api_token.txt
 
 #### Backups
 
-Only the active node's cron runs `backup.py`: it asks `http://127.0.0.1:$DASHBOARD_PORT/health` and exits 0 (skipped) when the node is passive or the bot is not answering, so two cron jobs never prune each other's files in the shared `/data`. `BACKUP_SKIP_ROLE_CHECK=true` (env, or `docker exec dasovbot env BACKUP_SKIP_ROLE_CHECK=true python backup.py`) forces a backup of a passive replica. `monitor_backups` alerts only on the active node.
+Only the active node's cron runs `backup.py`: it asks `http://127.0.0.1:$DASHBOARD_PORT/health` and exits 0 (skipped) when the node is passive or the bot is not answering, so two cron jobs never prune each other's files in the shared `/data`. `BACKUP_SKIP_ROLE_CHECK=true` (env, or `docker exec dasovbot env BACKUP_SKIP_ROLE_CHECK=true python backup.py`) forces a backup of a passive replica. `monitor_backups` alerts only on the active node. The `subscriptions.py` CLI asks the same `/health` and refuses to write unless the node is active (rows written on a passive node are overwritten by the next sync); `--skip-role-check` writes anyway, e.g. while the bot is stopped.
 
 #### Addressing
 

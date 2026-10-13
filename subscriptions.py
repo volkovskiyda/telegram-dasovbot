@@ -6,16 +6,20 @@ updates rows in the subscriptions table. The bot caches subscriptions in
 memory, so restart it (or wait for a redeploy) to pick up the changes.
 
 Every row it touches is stamped with a fresh revision from sync_meta, so the
-change reaches the HA peer. Run it against the ACTIVE node's database only:
-rows written on the passive node are overwritten by the next sync.
+change reaches the HA peer. It writes only when the bot's /health on this
+host says the node is ACTIVE: rows written on the passive node are overwritten
+by the next sync. --skip-role-check writes anyway (e.g. the bot is stopped).
 """
 
 import argparse
 import json
+import os
 import sqlite3
+import sys
 
 import yt_dlp
 
+from backup import node_is_active
 from dasovbot.config import load_config, make_ydl_opts
 
 
@@ -92,15 +96,27 @@ def main() -> None:
     config = load_config()
 
     parser = argparse.ArgumentParser(
-        epilog='HA: run against the ACTIVE node\'s bot.db only; rows written on the passive node are lost.')
+        epilog='HA: writes only when this node is ACTIVE (asks /health on DASHBOARD_PORT); '
+               'rows written on the passive node are lost.')
     parser.add_argument('-u', '--user', help='User chat id')
     parser.add_argument('-d', '--database', help='SQLite database file', default=config.db_file)
     parser.add_argument('-n', '--new', help='File with new subscription urls', default=f'{config.config_folder}/data/new_subscriptions.txt')
+    parser.add_argument('--skip-role-check', action='store_true',
+                        help='Write even when /health does not report this node as ACTIVE')
     args = parser.parse_args()
 
     if not args.user:
         parser.print_help()
         return
+
+    if not args.skip_role_check:
+        port = os.environ.get('DASHBOARD_PORT', '8080')
+        active = node_is_active(port)
+        if active is None:
+            sys.exit(f"Not written: /health unreachable on port {port} (bot not running?); "
+                     "pass --skip-role-check to write anyway")
+        if not active:
+            sys.exit("Not written: this node is not the ACTIVE HA node; run it on the active node")
 
     with open(args.new) as file:
         lines = [line.strip() for line in file]

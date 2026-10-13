@@ -104,9 +104,7 @@ class TestAddSubscription(SubscriptionsScriptTestCase):
 
 
 class TestMain(SubscriptionsScriptTestCase):
-    @patch('subscriptions.yt_dlp.YoutubeDL')
-    @patch('subscriptions.load_config')
-    def test_processes_urls_and_commits(self, mock_load, mock_ydl_cls):
+    def _run(self, mock_load, mock_ydl_cls, *extra):
         from tests.helpers import make_config
         mock_load.return_value = make_config(config_folder=self.tmp.name)
         mock_ydl_cls.return_value.extract_info.return_value = {
@@ -116,16 +114,50 @@ class TestMain(SubscriptionsScriptTestCase):
         with open(urls_file, 'w') as f:
             f.write('https://example.com/c\n\n')
 
-        argv = ['subscriptions.py', '-u', '1', '-d', self.db_path, '-n', urls_file]
+        argv = ['subscriptions.py', '-u', '1', '-d', self.db_path, '-n', urls_file, *extra]
         with patch('sys.argv', argv):
             main()
 
+    def _stored(self):
         with sqlite3.connect(self.db_path) as check_db:
             row = check_db.execute(
                 "SELECT data FROM subscriptions WHERE key = ?",
                 ('https://example.com/c/videos',)).fetchone()
-        self.assertIsNotNone(row)
-        self.assertEqual(json.loads(row[0])['chat_ids'], ['1'])
+        return json.loads(row[0]) if row else None
+
+    @patch('subscriptions.node_is_active', return_value=True)
+    @patch('subscriptions.yt_dlp.YoutubeDL')
+    @patch('subscriptions.load_config')
+    def test_processes_urls_and_commits(self, mock_load, mock_ydl_cls, _active):
+        self._run(mock_load, mock_ydl_cls)
+        self.assertEqual(self._stored()['chat_ids'], ['1'])
+
+    @patch('subscriptions.node_is_active', return_value=False)
+    @patch('subscriptions.yt_dlp.YoutubeDL')
+    @patch('subscriptions.load_config')
+    def test_passive_node_refuses_to_write(self, mock_load, mock_ydl_cls, _active):
+        with self.assertRaises(SystemExit) as ctx:
+            self._run(mock_load, mock_ydl_cls)
+        self.assertIn('not the ACTIVE', str(ctx.exception.code))
+        mock_ydl_cls.assert_not_called()
+        self.assertIsNone(self._stored())
+
+    @patch('subscriptions.node_is_active', return_value=None)
+    @patch('subscriptions.yt_dlp.YoutubeDL')
+    @patch('subscriptions.load_config')
+    def test_unreachable_health_refuses_to_write(self, mock_load, mock_ydl_cls, _active):
+        with self.assertRaises(SystemExit) as ctx:
+            self._run(mock_load, mock_ydl_cls)
+        self.assertIn('--skip-role-check', str(ctx.exception.code))
+        self.assertIsNone(self._stored())
+
+    @patch('subscriptions.node_is_active')
+    @patch('subscriptions.yt_dlp.YoutubeDL')
+    @patch('subscriptions.load_config')
+    def test_skip_role_check_writes_without_asking(self, mock_load, mock_ydl_cls, mock_active):
+        self._run(mock_load, mock_ydl_cls, '--skip-role-check')
+        mock_active.assert_not_called()
+        self.assertEqual(self._stored()['chat_ids'], ['1'])
 
     @patch('subscriptions.yt_dlp.YoutubeDL')
     @patch('subscriptions.load_config')
