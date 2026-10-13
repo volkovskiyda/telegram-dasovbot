@@ -8,7 +8,7 @@ from tests.helpers import make_config
 
 def make_builder(app):
     builder = MagicMock()
-    for method in ('token', 'base_url', 'base_file_url', 'read_timeout', 'local_mode'):
+    for method in ('token', 'base_url', 'base_file_url', 'read_timeout', 'local_mode', 'concurrent_updates'):
         getattr(builder, method).return_value = builder
     builder.build.return_value = app
     return builder
