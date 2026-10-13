@@ -4,6 +4,7 @@ import asyncio
 import glob
 import logging
 import os
+import shutil
 import time
 from functools import partial
 from typing import TYPE_CHECKING
@@ -198,6 +199,77 @@ async def monitor_backups(bot: Bot, state: BotState):
         await asyncio.sleep(BACKUP_CHECK_INTERVAL_SEC)
 
 
+def check_disk_space(paths: dict[str, str], min_free_bytes: int) -> list[dict]:
+    """Free space per distinct volume behind `paths` ({label: path}).
+
+    Paths that live on the same filesystem (one bind mount, or a single-node
+    config folder) are reported once under their joined labels. A path that
+    does not exist yet is skipped. Each entry: {'labels', 'path', 'free',
+    'total', 'low'}.
+    """
+    volumes: dict[int, dict] = {}
+    for label, path in paths.items():
+        try:
+            device = os.stat(path).st_dev
+            usage = shutil.disk_usage(path)
+        except OSError:
+            continue
+        entry = volumes.setdefault(device, {'labels': [], 'path': path, 'free': usage.free, 'total': usage.total})
+        entry['labels'].append(label)
+    for entry in volumes.values():
+        entry['low'] = entry['free'] < min_free_bytes
+    return list(volumes.values())
+
+
+async def monitor_disk_space(bot: Bot, state: BotState):
+    """Alert when a volume the bot writes to runs low on space.
+
+    The export folder is a media library that only grows and shares a disk
+    with other things; the media folder takes multi-GB downloads; the data
+    folder holds the database and its backups. One dashboard alert per
+    volume while it stays low, one developer message per episode.
+    """
+    from dasovbot.constants import DISK_CHECK_INTERVAL_SEC
+
+    config = state.config
+    min_free = int(config.disk_free_min_gb * 2**30)
+    paths = {'media': config.media_folder, 'export': config.export_folder, 'data': config.data_folder}
+    alerted: set[str] = set()
+    while True:
+        try:
+            if min_free > 0:
+                loop = asyncio.get_running_loop()
+                volumes = await loop.run_in_executor(None, check_disk_space, paths, min_free)
+                low_ids = set()
+                for volume in volumes:
+                    alert_id = 'disk_' + '_'.join(volume['labels'])
+                    if not volume['low']:
+                        state.clear_alert(alert_id)
+                        alerted.discard(alert_id)
+                        continue
+                    low_ids.add(alert_id)
+                    text = (f"Low disk space on {volume['path']} ({', '.join(volume['labels'])}): "
+                            f"{volume['free'] / 2**30:.1f} GB free of {volume['total'] / 2**30:.0f} GB "
+                            f"(alert threshold {config.disk_free_min_gb:g} GB)")
+                    state.set_alert(alert_id, text, level='warning')
+                    if alert_id not in alerted:
+                        try:
+                            await bot.send_message(chat_id=config.developer_chat_id, text=f"⚠️ {text}",
+                                                   disable_notification=True)
+                            logger.warning(text)
+                            alerted.add(alert_id)  # latch only after a successful send
+                        except Exception:
+                            logger.error("monitor_disk_space: failed to alert developer", exc_info=True)
+                # A volume that vanished (unmounted) drops its alert too
+                for alert_id in [a for a in state.health_alerts if a.startswith('disk_') and a not in low_ids]:
+                    state.clear_alert(alert_id)
+                    alerted.discard(alert_id)
+            state.background_task_status['monitor_disk_space'] = now()
+        except Exception:
+            logger.error("monitor_disk_space error", exc_info=True)
+        await asyncio.sleep(DISK_CHECK_INTERVAL_SEC)
+
+
 async def sweep_media_folder(state: BotState):
     from dasovbot.constants import MEDIA_MAX_AGE_SEC, MEDIA_SWEEP_INTERVAL_SEC
     from dasovbot.persistence import remove_stale_media_files
@@ -252,6 +324,9 @@ def start_background_tasks(bot: Bot, state: BotState):
         asyncio.create_task(
             run_forever(partial(sweep_media_folder, state), 'sweep_media_folder'),
             name="sweep_media_folder"),
+        asyncio.create_task(
+            run_forever(partial(monitor_disk_space, bot, state), 'monitor_disk_space'),
+            name="monitor_disk_space"),
     ]
     for task in tasks:
         state.background_tasks.add(task)

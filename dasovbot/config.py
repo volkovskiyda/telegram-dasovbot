@@ -25,6 +25,8 @@ class Config:
     local_mode: bool = False
     base_file_url: str = ""
     upload_concurrency: int = 1
+    # Free space (GB) below which a volume raises a health alert; 0 disables
+    disk_free_min_gb: float = 20.0
     # High availability (see README "High availability"). HA is enabled only
     # when peer_url and sync_secret are both set; otherwise the node is
     # standalone and behaves exactly as a single deployment
@@ -67,6 +69,14 @@ class Config:
     @property
     def media_folder(self) -> str:
         return f'{self.config_folder}/media'
+
+    @property
+    def export_folder(self) -> str:
+        return f'{self.config_folder}/export'
+
+    @property
+    def data_folder(self) -> str:
+        return f'{self.config_folder}/data'
 
 
 def derive_base_file_url(base_url: str) -> str:
@@ -149,6 +159,7 @@ def load_config() -> Config:
         base_file_url=os.getenv('BASE_FILE_URL') or derive_base_file_url(base_url),
         # Floor of 1: a value of 0 would make the upload semaphore block forever
         upload_concurrency=max(1, int(os.getenv('UPLOAD_CONCURRENCY') or 1)),
+        disk_free_min_gb=max(0.0, float(os.getenv('DISK_FREE_MIN_GB') or 20)),
         **load_ha_settings(),
     )
 

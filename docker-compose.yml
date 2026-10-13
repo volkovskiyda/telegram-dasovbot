@@ -47,6 +47,7 @@ services:
       DEVELOPER_ID: $DEVELOPER_ID
       CONFIG_FOLDER: /
       EMPTY_MEDIA_FOLDER: $EMPTY_MEDIA_FOLDER
+      DISK_FREE_MIN_GB: ${DISK_FREE_MIN_GB:-20}
       DASHBOARD_PASSWORD: $DASHBOARD_PASSWORD
       DASHBOARD_PORT: $DASHBOARD_PORT
       # Compose only uses .env for substitution: without this passthrough the

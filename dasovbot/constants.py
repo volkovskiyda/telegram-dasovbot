@@ -37,6 +37,11 @@ PROCESS_INTERVAL_SEC = 1  # breather between consecutive downloads
 BACKUP_CHECK_INTERVAL_SEC = 60 * 60  # check backup freshness hourly
 BACKUP_STALE_SEC = 26 * 60 * 60  # alert if newest backup is older than this (2x the 12h default cron)
 
+# Disk space: the media, export and data volumes are checked this often and
+# raise a health alert (plus one developer message per episode) when free
+# space drops under DISK_FREE_MIN_GB (Config.disk_free_min_gb)
+DISK_CHECK_INTERVAL_SEC = 60 * 60
+
 # Attempts before a failing intent is dropped
 MAX_INTENT_RETRIES = 3
 

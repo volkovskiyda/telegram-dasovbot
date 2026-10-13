@@ -176,6 +176,26 @@ class TestLoadConfig(unittest.TestCase):
         'BOT_TOKEN': 'tok',
         'BASE_URL': 'https://api.telegram.org',
         'DEVELOPER_CHAT_ID': '123',
+    }, clear=True)
+    def test_disk_free_min_defaults_to_20_gb(self, mock_dotenv):
+        config = load_config()
+        self.assertEqual(config.disk_free_min_gb, 20.0)
+        self.assertEqual(config.export_folder, './config/export')
+        self.assertEqual(config.data_folder, './config/data')
+
+    @patch.dict('os.environ', {
+        'BOT_TOKEN': 'tok',
+        'BASE_URL': 'https://api.telegram.org',
+        'DEVELOPER_CHAT_ID': '123',
+        'DISK_FREE_MIN_GB': '0',
+    }, clear=True)
+    def test_disk_free_min_zero_disables(self, mock_dotenv):
+        self.assertEqual(load_config().disk_free_min_gb, 0.0)
+
+    @patch.dict('os.environ', {
+        'BOT_TOKEN': 'tok',
+        'BASE_URL': 'https://api.telegram.org',
+        'DEVELOPER_CHAT_ID': '123',
         'UPLOAD_CONCURRENCY': '0',
     }, clear=True)
     def test_upload_concurrency_floors_at_one(self, mock_dotenv):

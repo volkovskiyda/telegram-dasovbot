@@ -75,6 +75,7 @@ curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8080/api/videos?expo
 | `ANIMATION_FILE_ID` | No | | Pre-cached animation file ID (skips loading upload) |
 | `CONFIG_FOLDER` | No | `./config` | Root folder for data/media/export directories. Docker deployments must set `/` so data lands on the mounted `/data`, `/media`, `/export` volumes (docker-compose.yml does) |
 | `EMPTY_MEDIA_FOLDER` | No | `false` | Clear the media folder when the intent worker crashes and restarts |
+| `DISK_FREE_MIN_GB` | No | `20` | Free space below which the media, export or data volume raises a health alert (checked hourly); `0` disables |
 | `DASHBOARD_PASSWORD` | No | | Password for web dashboard access (auto-generated if not set; written to `data/dashboard_password.txt`). Required, with the same value, on both nodes of an HA pair |
 | `DASHBOARD_PORT` | No | `8080` | Port for web dashboard server |
 | `DASHBOARD_BEHIND_PROXY` | No | `false` | Set `true` when the dashboard sits behind a reverse proxy (Traefik, nginx, …): login rate limiting uses the client IP from `X-Forwarded-For` (plus a 5× larger budget per socket peer, so a client that reaches the port without the proxy cannot rotate the header past the limit), and the session cookie is marked `Secure` when the proxy reports HTTPS via `X-Forwarded-Proto` |
@@ -141,6 +142,7 @@ entrypoint.sh          # Docker entrypoint (cron + bot; backup schedule from BAC
 - Inline query cache cleanup
 - Backup freshness monitoring (alerts the developer if backups stop)
 - Media folder sweep (hourly; removes leftover files older than 6 hours)
+- Disk space monitoring (hourly; a dashboard alert and one developer message per episode when the media, export or data volume has less than `DISK_FREE_MIN_GB` free)
 
 The web dashboard is started separately in `__main__.py` (`start_dashboard`) before the Telegram application is built.
 

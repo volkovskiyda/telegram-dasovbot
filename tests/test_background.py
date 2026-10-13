@@ -9,7 +9,7 @@ from dasovbot.constants import RESTART_DELAY_SEC
 from dasovbot.services.background import (
     populate_animation, populate_video, populate_playlist, run_populate_subscriptions,
     populate_subscriptions, clear_temporary_inline_queries, sweep_temporary_inline_queries,
-    monitor_backups, newest_backup_age, sweep_media_folder,
+    monitor_backups, newest_backup_age, sweep_media_folder, check_disk_space, monitor_disk_space,
     start_background_tasks, stop_background_tasks, run_forever, _on_task_done,
 )
 from tests.helpers import make_state, make_config
@@ -215,6 +215,7 @@ class TestRunForever(unittest.IsolatedAsyncioTestCase):
 
 
 class TestStartBackgroundTasks(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.services.background.monitor_disk_space', new_callable=AsyncMock)
     @patch('dasovbot.services.background.sweep_media_folder', new_callable=AsyncMock)
     @patch('dasovbot.services.background.monitor_backups', new_callable=AsyncMock)
     @patch('dasovbot.services.intent_processor.monitor_process_intents', new_callable=AsyncMock)
@@ -224,7 +225,7 @@ class TestStartBackgroundTasks(unittest.IsolatedAsyncioTestCase):
     async def test_keeps_strong_references_until_done(self, *mocks):
         state = make_state()
         start_background_tasks(AsyncMock(), state)
-        self.assertEqual(len(state.background_tasks), 6)
+        self.assertEqual(len(state.background_tasks), 7)
         tasks = list(state.background_tasks)
         await asyncio.gather(*tasks)
         await asyncio.sleep(0)  # let done callbacks run
@@ -477,3 +478,72 @@ class TestOnTaskDone(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestCheckDiskSpace(unittest.TestCase):
+    def test_groups_paths_by_volume_and_flags_low_ones(self):
+        from collections import namedtuple
+        Usage = namedtuple('Usage', 'total used free')
+        devices = {'/media': 1, '/export': 2, '/data': 1}
+        usage = {1: Usage(100 * 2**30, 90 * 2**30, 10 * 2**30), 2: Usage(15 * 2**40, 13 * 2**40, 2 * 2**40)}
+        with patch('dasovbot.services.background.os.stat', side_effect=lambda p: MagicMock(st_dev=devices[p])), \
+             patch('dasovbot.services.background.shutil.disk_usage', side_effect=lambda p: usage[devices[p]]):
+            volumes = check_disk_space({'media': '/media', 'export': '/export', 'data': '/data'}, 20 * 2**30)
+        by_labels = {tuple(v['labels']): v for v in volumes}
+        self.assertEqual(set(by_labels), {('media', 'data'), ('export',)})
+        self.assertTrue(by_labels[('media', 'data')]['low'])
+        self.assertFalse(by_labels[('export',)]['low'])
+
+    def test_missing_path_is_skipped(self):
+        with patch('dasovbot.services.background.os.stat', side_effect=FileNotFoundError):
+            self.assertEqual(check_disk_space({'media': '/nope'}, 1), [])
+
+
+class TestMonitorDiskSpace(unittest.IsolatedAsyncioTestCase):
+    def _volumes(self, low, free_gb=5):
+        return [{'labels': ['export'], 'path': '/export', 'free': free_gb * 2**30, 'total': 100 * 2**30, 'low': low}]
+
+    @patch('dasovbot.services.background.asyncio.sleep', new_callable=AsyncMock)
+    async def test_alerts_once_per_episode_and_clears_when_space_returns(self, mock_sleep):
+        mock_sleep.side_effect = [None, None, asyncio.CancelledError()]
+        state = make_state(config=make_config(developer_chat_id='999'))
+        bot = AsyncMock()
+        with patch('dasovbot.services.background.check_disk_space',
+                   side_effect=[self._volumes(True), self._volumes(True), self._volumes(False, 50)]):
+            with self.assertRaises(asyncio.CancelledError):
+                await monitor_disk_space(bot, state)
+        bot.send_message.assert_awaited_once()
+        self.assertEqual(bot.send_message.await_args.kwargs['chat_id'], '999')
+        self.assertIn('5.0 GB free', bot.send_message.await_args.kwargs['text'])
+        self.assertNotIn('disk_export', state.health_alerts)
+        self.assertIn('monitor_disk_space', state.background_task_status)
+
+    @patch('dasovbot.services.background.asyncio.sleep', new_callable=AsyncMock)
+    async def test_dashboard_alert_set_while_low(self, mock_sleep):
+        mock_sleep.side_effect = asyncio.CancelledError()
+        state = make_state(config=make_config())
+        with patch('dasovbot.services.background.check_disk_space', return_value=self._volumes(True)):
+            with self.assertRaises(asyncio.CancelledError):
+                await monitor_disk_space(AsyncMock(), state)
+        self.assertEqual(state.health_alerts['disk_export']['level'], 'warning')
+        self.assertIn('/export', state.health_alerts['disk_export']['message'])
+
+    @patch('dasovbot.services.background.asyncio.sleep', new_callable=AsyncMock)
+    async def test_failed_notification_retries_next_round(self, mock_sleep):
+        mock_sleep.side_effect = [None, asyncio.CancelledError()]
+        state = make_state(config=make_config())
+        bot = AsyncMock()
+        bot.send_message.side_effect = [Exception('down'), None]
+        with patch('dasovbot.services.background.check_disk_space', return_value=self._volumes(True)):
+            with self.assertRaises(asyncio.CancelledError):
+                await monitor_disk_space(bot, state)
+        self.assertEqual(bot.send_message.await_count, 2)
+
+    @patch('dasovbot.services.background.asyncio.sleep', new_callable=AsyncMock)
+    async def test_zero_threshold_disables_the_check(self, mock_sleep):
+        mock_sleep.side_effect = asyncio.CancelledError()
+        state = make_state(config=make_config(disk_free_min_gb=0))
+        with patch('dasovbot.services.background.check_disk_space') as mock_check:
+            with self.assertRaises(asyncio.CancelledError):
+                await monitor_disk_space(AsyncMock(), state)
+        mock_check.assert_not_called()

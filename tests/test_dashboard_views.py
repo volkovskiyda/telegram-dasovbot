@@ -298,6 +298,7 @@ class TestSystem(DashboardViewTestCase):
         text = await resp.text()
         self.assertIn('populate_subscriptions', text)
         self.assertIn('monitor_process_intents', text)
+        self.assertIn('monitor_disk_space', text)
 
     @patch('dasovbot.dashboard.views.run_populate_subscriptions', new_callable=AsyncMock)
     async def test_force_populate_redirects_to_system(self, mock_populate):
