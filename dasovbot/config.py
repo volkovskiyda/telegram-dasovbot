@@ -1,3 +1,4 @@
+import logging
 import os
 import socket
 from dataclasses import dataclass
@@ -174,6 +175,13 @@ def make_ydl_opts(config: Config) -> dict:
         'match_filter': match_filter,
         'no_warnings': True,
         'quiet': True,
+        # quiet does not imply noprogress: without it every download dumped a
+        # multi-KB carriage-return progress line straight to stdout, and
+        # yt-dlp's own ERROR lines went to stderr with no timestamp or logger
+        # name. With a logger everything goes through logging instead
+        # (progress and status at DEBUG, so dropped at the INFO root level)
+        'noprogress': True,
+        'logger': logging.getLogger('yt_dlp'),
         # Do not pin a YouTube player_client here. Which clients need a PO
         # token changes with every yt-dlp release; pinning tv_simply silently
         # dropped every DASH stream and the b[ext=mp4] fallback shipped 360p

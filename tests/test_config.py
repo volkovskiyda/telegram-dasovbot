@@ -322,6 +322,14 @@ class TestMakeYdlOpts(unittest.TestCase):
         opts_with = make_ydl_opts(config_with_cookies)
         self.assertEqual(opts_with['cookiefile'], '/path/cookies.txt')
 
+    def test_output_goes_through_logging(self):
+        # quiet alone still printed the progress bar and bare ERROR lines to
+        # the container's stdout/stderr, bypassing timestamps and log levels
+        import logging
+        opts = make_ydl_opts(make_config())
+        self.assertTrue(opts['noprogress'])
+        self.assertIs(opts['logger'], logging.getLogger('yt_dlp'))
+
     def test_media_folder_in_outtmpl(self):
         config = make_config(config_folder='/myconfig')
         opts = make_ydl_opts(config)
