@@ -383,7 +383,17 @@ async def _deliver(send, kind: str, query: str, target) -> bool:
 
 
 async def process_intent(bot: Bot, query: str, video: str, caption: str, state: BotState) -> Intent | None:
-    intent = await state.pop_intent(query)
+    """Deliver the uploaded video to every requester, then drop the intent.
+
+    Each requester leaves the intent (persisted, so the HA feed carries it)
+    only after their own delivery has finished. If the worker is cancelled
+    mid-loop (an HA drain, a step-down, shutdown) the requesters not yet
+    served stay in the intent, and whichever node runs it next serves them
+    from the video cache. The worst case is one duplicate, never a silent
+    loss. The live lists are worked through, so a requester who joins
+    during delivery is served in the same pass.
+    """
+    intent = state.intents.get(query)
     if not intent:
         logger.warning("process_intent no intent found: %s", query)
         return None
@@ -392,16 +402,30 @@ async def process_intent(bot: Bot, query: str, video: str, caption: str, state: 
     # gives: nothing for a bare chat id, a failed placeholder for a message.
     # Private-chat ids equal user ids; inline placeholders carry no user
     from dasovbot.services.ban import unavailable_caption
-    for item in intent.chat_ids:
-        if state.is_banned(item):
-            logger.info("process_intent chat_ids banned, skipped: %s - %s", query, item)
-            continue
-        await _deliver(lambda item=item: bot.send_video(chat_id=item, video=video, caption=caption, disable_notification=True), 'chat_ids', query, item)
-    for item in intent.inline_message_ids:
-        await _deliver(lambda item=item: bot.edit_message_media(inline_message_id=item, media=InputMediaVideo(media=video, caption=caption)), 'inline_message_ids', query, item)
-    for item in intent.messages:
-        if state.is_banned(item.chat):
-            await _deliver(lambda item=item: bot.edit_message_caption(chat_id=item.chat, message_id=item.message, caption=unavailable_caption(query)), 'messages_banned', query, item)
-            continue
-        await _deliver(lambda item=item: bot.edit_message_media(chat_id=item.chat, message_id=item.message, media=InputMediaVideo(media=video, caption=caption)), 'messages', query, item)
+    while True:
+        if intent.chat_ids:
+            pending, item = intent.chat_ids, intent.chat_ids[0]
+            if state.is_banned(item):
+                logger.info("process_intent chat_ids banned, skipped: %s - %s", query, item)
+            else:
+                await _deliver(lambda item=item: bot.send_video(chat_id=item, video=video, caption=caption, disable_notification=True), 'chat_ids', query, item)
+        elif intent.inline_message_ids:
+            pending, item = intent.inline_message_ids, intent.inline_message_ids[0]
+            await _deliver(lambda item=item: bot.edit_message_media(inline_message_id=item, media=InputMediaVideo(media=video, caption=caption)), 'inline_message_ids', query, item)
+        elif intent.messages:
+            pending, item = intent.messages, intent.messages[0]
+            if state.is_banned(item.chat):
+                await _deliver(lambda item=item: bot.edit_message_caption(chat_id=item.chat, message_id=item.message, caption=unavailable_caption(query)), 'messages_banned', query, item)
+            else:
+                await _deliver(lambda item=item: bot.edit_message_media(chat_id=item.chat, message_id=item.message, media=InputMediaVideo(media=video, caption=caption)), 'messages', query, item)
+        else:
+            break
+        # Done with this requester, delivered or given up on: only now may it leave the intent
+        pending.remove(item)
+        if state.intents.get(query) is intent:
+            await state.save_intent(query)
+    # Removed from the dashboard meanwhile and re-requested: that newer intent
+    # is not ours to drop
+    if state.intents.get(query) is intent:
+        await state.pop_intent(query)
     return intent

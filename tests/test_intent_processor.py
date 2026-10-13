@@ -220,6 +220,78 @@ class TestProcessIntent(unittest.IsolatedAsyncioTestCase):
         await process_intent(bot, 'q', 'file123', 'caption', state)
         self.assertEqual(bot.send_video.await_count, MAX_SEND_RETRIES + 1)
 
+    @patch('dasovbot.database.upsert_intent', new_callable=AsyncMock)
+    @patch('dasovbot.database.delete_intent', new_callable=AsyncMock)
+    async def test_cancel_mid_delivery_keeps_unserved_requesters(self, mock_delete, mock_upsert):
+        # An HA drain cancels the worker between two sends: the requester
+        # already served is gone from the intent, the rest stay for the next node
+        bot = AsyncMock()
+        bot.send_video.side_effect = [MagicMock(), asyncio.CancelledError()]
+        intent = Intent(chat_ids=['10', '20'], inline_message_ids=['im1'],
+                        messages=[IntentMessage(chat='c1', message='m1')])
+        state = make_state(intents={'q': intent})
+        with self.assertRaises(asyncio.CancelledError):
+            await process_intent(bot, 'q', 'file123', 'caption', state)
+        self.assertIs(state.intents['q'], intent)
+        self.assertEqual(intent.chat_ids, ['20'])
+        self.assertEqual(intent.inline_message_ids, ['im1'])
+        self.assertEqual(len(intent.messages), 1)
+        mock_delete.assert_not_awaited()
+        # The shrunk intent was persisted, so the HA feed carries it to the peer
+        mock_upsert.assert_awaited_once()
+        self.assertEqual(mock_upsert.await_args.args[2].chat_ids, ['20'])
+
+    @patch('dasovbot.database.upsert_intent', new_callable=AsyncMock)
+    @patch('dasovbot.database.delete_intent', new_callable=AsyncMock)
+    async def test_requester_joining_during_delivery_is_served(self, mock_delete, mock_upsert):
+        intent = Intent(chat_ids=['10'])
+        state = make_state(intents={'q': intent})
+
+        async def send_video(**kwargs):
+            if kwargs['chat_id'] == '10':
+                intent.inline_message_ids.append('im-late')
+            return MagicMock()
+
+        bot = AsyncMock()
+        bot.send_video.side_effect = send_video
+        await process_intent(bot, 'q', 'file123', 'caption', state)
+        bot.edit_message_media.assert_awaited_once()
+        self.assertEqual(bot.edit_message_media.await_args.kwargs['inline_message_id'], 'im-late')
+        self.assertNotIn('q', state.intents)
+
+    @patch('dasovbot.database.upsert_intent', new_callable=AsyncMock)
+    @patch('dasovbot.database.delete_intent', new_callable=AsyncMock)
+    async def test_failed_delivery_still_leaves_the_intent(self, mock_delete, mock_upsert):
+        bot = AsyncMock()
+        bot.send_video.side_effect = Exception('blocked by user')
+        intent = Intent(chat_ids=['10'])
+        state = make_state(intents={'q': intent})
+        await process_intent(bot, 'q', 'file123', 'caption', state)
+        self.assertEqual(intent.chat_ids, [])
+        self.assertNotIn('q', state.intents)
+        mock_delete.assert_awaited_once()
+
+    @patch('dasovbot.database.upsert_intent', new_callable=AsyncMock)
+    @patch('dasovbot.database.delete_intent', new_callable=AsyncMock)
+    async def test_replaced_intent_is_not_dropped(self, mock_delete, mock_upsert):
+        # Removed on the dashboard and re-requested while delivering: the new
+        # intent belongs to the next worker round
+        intent = Intent(chat_ids=['10'])
+        newer = Intent(chat_ids=['30'])
+        state = make_state(intents={'q': intent})
+
+        async def send_video(**kwargs):
+            state.intents['q'] = newer
+            return MagicMock()
+
+        bot = AsyncMock()
+        bot.send_video.side_effect = send_video
+        await process_intent(bot, 'q', 'file123', 'caption', state)
+        self.assertIs(state.intents['q'], newer)
+        self.assertEqual(newer.chat_ids, ['30'])
+        mock_delete.assert_not_awaited()
+        mock_upsert.assert_not_awaited()
+
 
 class TestPostProcess(unittest.IsolatedAsyncioTestCase):
     def _make_message(self, file_id='fid1'):
