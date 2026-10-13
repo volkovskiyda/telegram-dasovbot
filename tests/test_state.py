@@ -318,3 +318,26 @@ class TestHealthAlerts(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestHaEvents(unittest.IsolatedAsyncioTestCase):
+    async def test_persisted_bounded_and_reloaded(self):
+        from dasovbot.state import HA_EVENTS_KEPT
+        from tests.helpers import make_memory_db, make_config
+        db = await make_memory_db()
+        self.addAsyncCleanup(db.close)
+        state = BotState(db=db, config=make_config(config_folder='/tmp/nonexistent-dasovbot-test'))
+        for i in range(HA_EVENTS_KEPT + 5):
+            await state.record_ha_event(f'event {i}')
+        self.assertEqual(len(state.ha_events), HA_EVENTS_KEPT)
+        self.assertEqual(state.ha_events[-1]['text'], f'event {HA_EVENTS_KEPT + 4}')
+        self.assertEqual(state.ha_events[0]['text'], 'event 5')
+
+        fresh = BotState(db=db, config=state.config)
+        await fresh.migrate_and_load()
+        self.assertEqual(fresh.ha_events, state.ha_events)
+
+    async def test_without_db_keeps_memory_only(self):
+        state = BotState(db=None)
+        await state.record_ha_event('x', kind='error')
+        self.assertEqual(state.ha_events[0]['kind'], 'error')

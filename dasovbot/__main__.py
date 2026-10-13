@@ -131,7 +131,7 @@ def main():
     # The controller is built before the dashboard so the app can carry it
     # (aiohttp freezes the app once the runner is set up); its runner and the
     # notifier's bot are attached once the PTB application exists
-    notifier = DeveloperNotifier(config)
+    notifier = DeveloperNotifier(config, state=state)
     sync_client = SyncClient(config, state, notifier) if config.ha_enabled else None
     controller = RoleController(config, state, peer=sync_client, runner=None, notifier=notifier)
     loop.run_until_complete(start_dashboard(state, controller))

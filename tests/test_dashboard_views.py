@@ -300,6 +300,22 @@ class TestSystem(DashboardViewTestCase):
         self.assertIn('monitor_process_intents', text)
         self.assertIn('monitor_disk_space', text)
 
+    async def test_shows_ha_history_newest_first(self):
+        self.state.ha_events = [
+            {'at': '20261013_125007', 'kind': 'transition', 'text': 'role: passive'},
+            {'at': '20261013_125338', 'kind': 'transition', 'text': '🟢 dasovbot is now ACTIVE (handoff)'},
+            {'at': '20261013_130000', 'kind': 'error', 'text': '⚠️ sync error'},
+        ]
+        resp = await self.client.get('/system')
+        text = await resp.text()
+        self.assertIn('HA history', text)
+        self.assertLess(text.index('sync error'), text.index('now ACTIVE'))
+        self.assertLess(text.index('now ACTIVE'), text.index('role: passive'))
+
+    async def test_no_history_section_without_events(self):
+        resp = await self.client.get('/system')
+        self.assertNotIn('HA history', await resp.text())
+
     @patch('dasovbot.dashboard.views.run_populate_subscriptions', new_callable=AsyncMock)
     async def test_force_populate_redirects_to_system(self, mock_populate):
         resp = await self.client.post('/system/populate', allow_redirects=False)

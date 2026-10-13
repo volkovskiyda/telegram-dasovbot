@@ -262,11 +262,17 @@ class SyncClient:
 
 
 class DeveloperNotifier:
-    """Transition messages always; error messages at most once per SYNC_ERROR_NOTIFY_INTERVAL_SEC."""
+    """Transition messages always; error messages at most once per SYNC_ERROR_NOTIFY_INTERVAL_SEC.
 
-    def __init__(self, config: Config, clock=time.monotonic):
+    With a `state`, every transition (collapsed repeats included) and every
+    error notice that is actually sent is also appended to `state.ha_events`
+    for the system page.
+    """
+
+    def __init__(self, config: Config, clock=time.monotonic, state: BotState | None = None):
         self.config = config
         self.clock = clock
+        self.state = state
         self.bot = None
         self._last_error_sent: float | None = None
         self._recent: dict[str, tuple[float, int]] = {}   # text -> (first sent at, repeats collapsed since)
@@ -278,6 +284,7 @@ class DeveloperNotifier:
         """Sent at once, except an exact repeat within TRANSITION_COLLAPSE_SEC: that is counted and the
         count is appended to the next copy sent (a flapping node yields one message per window)."""
         now = self.clock()
+        await self._record(text, 'transition')
         first_at, collapsed = self._recent.get(text, (None, 0))
         if first_at is not None and now - first_at < TRANSITION_COLLAPSE_SEC:
             self._recent[text] = (first_at, collapsed + 1)
@@ -296,7 +303,16 @@ class DeveloperNotifier:
         if self._last_error_sent is not None and now - self._last_error_sent < SYNC_ERROR_NOTIFY_INTERVAL_SEC:
             return
         self._last_error_sent = now
+        await self._record(text, 'error')
         await self._send(text)
+
+    async def _record(self, text: str, kind: str):
+        if self.state is None:
+            return
+        try:
+            await self.state.record_ha_event(text, kind)
+        except Exception:  # noqa: BLE001 — history is best effort
+            logger.warning("recording HA event failed", exc_info=True)
 
     async def _send(self, text: str):
         if self.bot is None or not self.config.developer_chat_id:

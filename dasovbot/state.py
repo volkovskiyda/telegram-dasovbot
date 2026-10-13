@@ -11,6 +11,9 @@ from dasovbot.models import VideoInfo, Intent, Subscription, TemporaryInlineQuer
 
 logger = logging.getLogger(__name__)
 
+META_HA_EVENTS = 'ha:events'  # sync_meta key: node-local, never part of the change feed
+HA_EVENTS_KEPT = 200
+
 
 def _set_event() -> asyncio.Event:
     event = asyncio.Event()
@@ -45,6 +48,10 @@ class BotState:
     # Health warnings surfaced on the dashboard, keyed by a stable id so an
     # ongoing condition updates in place instead of piling up duplicates
     health_alerts: dict[str, dict] = field(default_factory=dict)
+    # Recent HA transitions and sent error notices, newest last, kept in
+    # sync_meta (node-local like every ha:* key): docker logs vanish with the
+    # container, and the developer chat was the only record of a failover
+    ha_events: list[dict] = field(default_factory=list)
     # Monotonic deadlines before which a failed intent must not be retried.
     # Deliberately not persisted: after a process restart no abandoned
     # download thread can exist, so an immediate retry is safe.
@@ -89,14 +96,25 @@ class BotState:
     def clear_alert(self, alert_id: str):
         self.health_alerts.pop(alert_id, None)
 
+    async def record_ha_event(self, text: str, kind: str = 'transition'):
+        from dasovbot.database import set_meta
+        from dasovbot.helpers import now
+        self.ha_events.append({'at': now(), 'kind': kind, 'text': text})
+        del self.ha_events[:-HA_EVENTS_KEPT]
+        if self.db is None:
+            return
+        await set_meta(self.db, META_HA_EVENTS, self.ha_events)
+        await self.db.commit()
+
     async def migrate_and_load(self):
         from dasovbot.database import (
-            migrate_from_json, warn_if_data_missing,
+            migrate_from_json, warn_if_data_missing, get_meta,
             load_videos, load_intents, load_users, load_subscriptions,
             load_request_stats, load_banned_users, load_rev,
         )
 
         await migrate_from_json(self.db, self.config, self.migration_progress)
+        self.ha_events = list(await get_meta(self.db, META_HA_EVENTS, []) or [])
         warning = await warn_if_data_missing(self.db, self.config.db_file)
         if warning:
             self.set_alert('data_missing', warning, level='error')

@@ -490,5 +490,10 @@ async def system(request: web.Request) -> web.Response:
         'queue_size': state.download_queue.qsize(),
         'migration': state.migration_progress,
         'ha_error': request.query.get('ha_error', '')[:300],
+        # Newest first; the state keeps HA_EVENTS_KEPT, the page shows a screenful
+        'ha_events': [
+            {**event, 'relative': relative_time(event.get('at'))}
+            for event in reversed(state.ha_events[-50:])
+        ],
     }
     return aiohttp_jinja2.render_template('system.html', request, context)

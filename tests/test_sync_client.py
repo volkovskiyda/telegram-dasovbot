@@ -282,6 +282,21 @@ class TestDeveloperNotifier(unittest.IsolatedAsyncioTestCase):
         await self.notifier.transition('flap')       # a fresh window: collapsed again, count restarts
         self.assertEqual(self.bot.send_message.await_count, 2)
 
+    async def test_events_recorded_in_state_history(self):
+        from tests.helpers import make_state
+        state = make_state()
+        notifier = DeveloperNotifier(make_config(developer_chat_id='42'), clock=lambda: self.t, state=state)
+        notifier.attach_bot(self.bot)
+        await notifier.transition('🟢 me is now ACTIVE')
+        await notifier.transition('🟢 me is now ACTIVE')     # collapsed for the chat, still history
+        await notifier.error('⚠️ sync error')
+        await notifier.error('⚠️ sync error again')           # rate-limited: not sent, not recorded
+        self.assertEqual([(e['kind'], e['text']) for e in state.ha_events],
+                         [('transition', '🟢 me is now ACTIVE'), ('transition', '🟢 me is now ACTIVE'),
+                          ('error', '⚠️ sync error')])
+        self.assertTrue(all(e['at'] for e in state.ha_events))
+        self.assertEqual(self.bot.send_message.await_count, 2)
+
     async def test_errors_rate_limited_to_one_per_interval(self):
         self.notifier.attach_bot(self.bot)
         await self.notifier.error('a')

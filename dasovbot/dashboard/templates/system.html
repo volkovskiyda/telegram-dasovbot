@@ -77,6 +77,26 @@
 </div>
 {% endif %}
 
+{% if ha_events %}
+<h2 style="font-size: 16px; margin-bottom: 12px; color: #94a3b8;">HA history</h2>
+<table style="margin-bottom: 24px;" data-ha-history>
+    <thead>
+        <tr>
+            <th>When</th>
+            <th>Event</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for event in ha_events %}
+        <tr>
+            <td style="white-space: nowrap;">{{ event.at }} <span class="text-muted">({{ event.relative }})</span></td>
+            <td{% if event.kind == 'error' %} style="color: #ffb3c1;"{% endif %}>{{ event.text }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
 <h2 style="font-size: 16px; margin-bottom: 12px; color: #94a3b8;">Background Tasks</h2>
 <table>
     <thead>
