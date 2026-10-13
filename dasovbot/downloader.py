@@ -8,7 +8,7 @@ import re
 import subprocess
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import partial
 from typing import TYPE_CHECKING
 
@@ -229,9 +229,16 @@ def process_info(info) -> VideoInfo | None:
     else:
         thumbnail = info.get('thumbnail')
 
-    timestamp = info.get('timestamp')
-    if timestamp:
-        timestamp = datetime.fromtimestamp(timestamp).strftime(DATETIME_FORMAT)
+    # Rendered in UTC explicitly: the old local-time rendering only ever matched the file
+    # name's prefix (which yt-dlp renders in UTC) because the container runs without a TZ.
+    # The raw instant is kept beside it for the API.
+    upload_timestamp = info.get('timestamp')
+    if upload_timestamp:
+        upload_timestamp = int(upload_timestamp)
+        timestamp = datetime.fromtimestamp(upload_timestamp, timezone.utc).strftime(DATETIME_FORMAT)
+    else:
+        upload_timestamp = None
+        timestamp = None
 
     upload_date = info.get('upload_date')
     description = info.get('description') or ''
@@ -254,6 +261,7 @@ def process_info(info) -> VideoInfo | None:
         description=description,
         upload_date=upload_date,
         timestamp=timestamp,
+        upload_timestamp=upload_timestamp,
         thumbnail=thumbnail,
         duration=int(info.get('duration') or 0),
         uploader_url=info.get('uploader_url'),

@@ -30,7 +30,12 @@ class VideoInfo:
     file_id: str | None = None
     webpage_url: str | None = None
     upload_date: str | None = None
+    # yt-dlp's upload instant rendered as DATETIME_FORMAT in UTC (display/legacy); None on
+    # rows stored before the field existed and for videos YouTube publishes without one
     timestamp: str | None = None
+    # The same instant as raw epoch seconds, for the /api/videos consumers; rows stored
+    # before it existed derive it from `timestamp` on the way out (see dashboard/api.py)
+    upload_timestamp: int | None = None
     thumbnail: str | None = None
     duration: int = 0
     uploader_url: str | None = None
@@ -66,6 +71,7 @@ class VideoInfo:
             'webpage_url': self.webpage_url,
             'upload_date': self.upload_date,
             'timestamp': self.timestamp,
+            'upload_timestamp': self.upload_timestamp,
             'thumbnail': self.thumbnail,
             'duration': self.duration,
             'uploader_url': self.uploader_url,
@@ -104,6 +110,7 @@ class VideoInfo:
             webpage_url=data.get('webpage_url'),
             upload_date=data.get('upload_date'),
             timestamp=data.get('timestamp'),
+            upload_timestamp=data.get('upload_timestamp'),
             thumbnail=data.get('thumbnail'),
             duration=int(data.get('duration') or 0),
             uploader_url=data.get('uploader_url'),

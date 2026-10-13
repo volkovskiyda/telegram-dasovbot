@@ -134,6 +134,29 @@ class TestApiVideos(DashboardApiTestCase):
         self.assertTrue(entry['exported'])
         self.assertEqual(entry['thumbnail'], 'https://i.ytimg.com/vi/abc123def45/maxresdefault.webp')
 
+    async def test_upload_timestamp_from_the_raw_instant(self):
+        video = make_video(upload_timestamp=1791576036, timestamp='19700101_000000')
+        self.state.videos = {video.webpage_url: video}
+        items = await self._get_json('/api/videos')
+        self.assertEqual(items[0]['uploadTimestamp'], 1791576036)
+
+    async def test_upload_timestamp_derived_from_a_legacy_row(self):
+        # Rows enriched before upload_timestamp existed only carry the UTC-rendered string
+        video = make_video(timestamp='20261009_200036')
+        self.state.videos = {video.webpage_url: video}
+        items = await self._get_json('/api/videos')
+        self.assertEqual(items[0]['uploadTimestamp'], 1791576036)
+
+    async def test_upload_timestamp_null_without_an_instant(self):
+        video = make_video()
+        self.state.videos = {video.webpage_url: video}
+        items = await self._get_json('/api/videos')
+        self.assertIsNone(items[0]['uploadTimestamp'])
+        broken = make_video('idbroken123', timestamp='not-a-stamp')
+        self.state.videos = {broken.webpage_url: broken}
+        items = await self._get_json('/api/videos')
+        self.assertIsNone(items[0]['uploadTimestamp'])
+
     async def test_thumbnail_falls_back_to_hqdefault(self):
         video = make_video(thumbnail_url=None)
         self.state.videos = {video.webpage_url: video}

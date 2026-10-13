@@ -2,15 +2,33 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from aiohttp import web
 
+from dasovbot.constants import DATETIME_FORMAT
 from dasovbot.dashboard.views import get_state
 
 if TYPE_CHECKING:
     from dasovbot.models import VideoInfo
     from dasovbot.state import BotState
+
+
+def upload_timestamp(info: VideoInfo) -> int | None:
+    # Rows stored before `upload_timestamp` existed carry the instant only as the
+    # DATETIME_FORMAT string. Every such row was written by a container without a
+    # TZ (so in UTC — verified against the sidecars of 199 videos), which is also
+    # what process_info renders explicitly now; parse it back the same way
+    if info.upload_timestamp is not None:
+        return info.upload_timestamp
+    if not info.timestamp:
+        return None
+    try:
+        return int(datetime.strptime(info.timestamp, DATETIME_FORMAT)
+                   .replace(tzinfo=timezone.utc).timestamp())
+    except ValueError:
+        return None
 
 
 def video_entry(info: VideoInfo) -> dict:
@@ -24,6 +42,7 @@ def video_entry(info: VideoInfo) -> dict:
         'channelId': info.channel_id,
         'duration': info.duration,
         'uploadDate': info.upload_date,
+        'uploadTimestamp': upload_timestamp(info),
         'tags': info.tags or [],
         'categories': info.categories or [],
         'description': info.description,

@@ -31,6 +31,7 @@ class TestVideoInfo(unittest.TestCase):
             webpage_url='https://example.com/video',
             upload_date='20240101',
             timestamp='20240101_120000',
+            upload_timestamp=1704110400,
             thumbnail='https://example.com/thumb.jpg',
             duration=120,
             uploader_url='https://example.com/user',

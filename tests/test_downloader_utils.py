@@ -74,6 +74,18 @@ class TestProcessInfo(unittest.TestCase):
         self.assertEqual(result.duration, 120)
         self.assertEqual(result.width, 1920)
 
+    def test_upload_timestamp_is_kept_raw_and_rendered_in_utc(self):
+        raw = {'title': 'T', 'url': 'https://x.com', 'timestamp': 1791576036}  # 2026-10-09T20:00:36Z
+        result = process_info(raw)
+        self.assertEqual(result.upload_timestamp, 1791576036)
+        # Must not depend on the host's zone: the file name prefix yt-dlp writes is UTC too
+        self.assertEqual(result.timestamp, '20261009_200036')
+
+    def test_no_upload_timestamp_when_youtube_publishes_none(self):
+        result = process_info({'title': 'T', 'url': 'https://x.com', 'upload_date': '20240101'})
+        self.assertIsNone(result.upload_timestamp)
+        self.assertIsNone(result.timestamp)
+
     def test_requested_downloads(self):
         raw = {
             'title': 'T',
