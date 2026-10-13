@@ -132,7 +132,7 @@ entrypoint.sh          # Docker entrypoint (cron + bot; backup schedule from BAC
 
 **Intent system:** Video download requests are modeled as `Intent` objects (not processed immediately). Intents accumulate `chat_ids` and `inline_message_ids` from multiple requesters, with priority based on requester count. A background worker (`intent_processor.py`) processes the queue in priority order — this deduplicates downloads when multiple users request the same video.
 
-**Handler registration:** All handlers registered in `handlers/__init__.py:register_handlers()`. Multi-step flows (download, subscribe, unsubscribe) use `ConversationHandler` with states defined in `constants.py`.
+**Handler registration:** All handlers registered in `handlers/__init__.py:register_handlers()`. Updates are processed concurrently (`MAX_CONCURRENT_UPDATES`): the download and inline handlers await a yt-dlp metadata extraction, and PTB's default serial queue let one slow URL stall every other user. Multi-step flows (download, subscribe, unsubscribe) use `ConversationHandler` with states defined in `constants.py`.
 
 **Background tasks:** Started in `services/background.py:start_background_tasks()` via `asyncio.create_task`:
 - Loading-animation population

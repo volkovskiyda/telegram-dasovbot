@@ -42,6 +42,10 @@ MEDIA_MAX_AGE_SEC = 6 * 60 * 60
 # Retries when Telegram rate-limits a delivery (RetryAfter)
 MAX_SEND_RETRIES = 2
 
+# Updates PTB may process at once. Handlers block on yt-dlp metadata
+# extraction, so a serial queue let one slow URL stall every other user
+MAX_CONCURRENT_UPDATES = 16
+
 # HA / sync (timers live in Config: HEARTBEAT_INTERVAL_SEC, LEASE_TTL_SEC,
 # FAILBACK_STABLE_SEC are env-tunable per node)
 SYNC_PAGE_SIZE = 500  # rows per /sync/changes page

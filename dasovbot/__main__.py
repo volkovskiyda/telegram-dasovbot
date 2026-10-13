@@ -8,6 +8,7 @@ from telegram.ext import Application
 from telegram.warnings import PTBUserWarning
 
 from dasovbot.config import Config, load_config
+from dasovbot.constants import MAX_CONCURRENT_UPDATES
 from dasovbot.downloader import init_downloader
 from dasovbot.handlers import register_handlers
 from dasovbot.state import BotState
@@ -22,12 +23,20 @@ def build_application(config: Config) -> Application:
     # straight from disk — a multi-GB video must never be loaded into this
     # process. Requires a server started with --local (see docker-compose.yml)
     # that can reach the media folder under the same absolute path.
+    # PTB processes updates one at a time by default. The download and inline
+    # handlers await a yt-dlp metadata extraction (extractor_retries 5, bounded
+    # only by TIMEOUT_SEC), so one user pasting a URL YouTube is throttling
+    # stalled every other user's commands and inline queries until it returned.
+    # Handlers run on one event loop and only interleave at awaits, which the
+    # shared state already tolerates for the background tasks; the
+    # ConversationHandlers serialize updates per conversation on their own.
     builder = (
         Application.builder()
         .token(config.bot_token)
         .base_url(config.base_url)
         .read_timeout(config.read_timeout)
         .local_mode(config.local_mode)
+        .concurrent_updates(MAX_CONCURRENT_UPDATES)
     )
     if config.base_file_url:
         builder = builder.base_file_url(config.base_file_url)

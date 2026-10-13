@@ -228,6 +228,13 @@ class TestBuildApplication(unittest.TestCase):
         self.assertFalse(app.bot.local_mode)
         self.assertIn('api.telegram.org/file/bot', app.bot.base_file_url)
 
+    def test_processes_updates_concurrently(self):
+        # A serial queue let one user's slow yt-dlp extraction stall everyone
+        from dasovbot.constants import MAX_CONCURRENT_UPDATES
+        app = self._build()
+        self.assertEqual(app.concurrent_updates, MAX_CONCURRENT_UPDATES)
+        self.assertGreater(app.concurrent_updates, 1)
+
     def test_no_lifecycle_hooks_registered(self):
         # Polling and background tasks are owned by the role controller now
         app = self._build()
