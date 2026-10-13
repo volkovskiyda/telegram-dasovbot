@@ -10,7 +10,7 @@ import unittest
 
 from dasovbot.database import (
     init_db, read_changes, apply_changes, write_snapshot, reconcile_from_snapshot,
-    keys_above_rev, load_rev, get_meta, last_applied_key, upsert_video, delete_video,
+    keys_above_rev, load_rev, get_meta, set_meta, last_applied_key, upsert_video, delete_video,
     load_videos, KEYED_TABLES,
 )
 from dasovbot.models import VideoInfo, Intent, Subscription
@@ -319,6 +319,59 @@ class TestReconcileAfterReturn(FeedTestCase):
         self.assertEqual([r[0] for r in page['rows']['videos']], ['A'])
         self.assertEqual([t[:2] for t in page['tombstones']], [['intents', 'gone']])
         self.assertEqual(await get_meta(primary.db, last_applied_key('standby')), standby_counter)
+
+    async def test_survivors_reach_a_standby_that_kept_writing_after_the_reconcile(self):
+        """The full round trip: takeover, reconcile, more standby writes, handback, pull.
+
+        The standby serves users for FAILBACK_STABLE_SEC after the primary's
+        reconcile, so its counter overtakes the re-stamped revs. The handback
+        must leave the standby's cursor where its last passive pull put it, or
+        the survivors fall between the cursor and the counter and never arrive.
+        """
+        from dasovbot.services.sync import SyncClient
+        primary = await self.make_state('primary')
+        standby = await self.make_state('standby')
+        for i in range(99):
+            await primary.set_user(f'u{i}', {'i': i})
+        await primary.set_video('A', VideoInfo(title='A0'))
+        # Standby pulls to rev 100 while passive and remembers that cursor
+        await self.pull_all(primary, standby, peer='primary')
+        await set_meta(standby.db, last_applied_key('primary'), standby.rev)
+        handoff_rev = standby.rev
+        # Primary writes A once more (rev 101) that the standby never sees, then dies
+        await primary.set_video('A', VideoInfo(title='A1-primary-unseen'))
+        # Standby ACTIVE: first burst of writes
+        for i in range(20):
+            await standby.set_video(f's{i}', VideoInfo(title=f's{i}'))
+
+        async def pull(since):
+            touched = await self.pull_all(standby, primary, since=since, peer='standby')
+            await set_meta(primary.db, last_applied_key('standby'), standby.rev)
+            return touched
+
+        # Primary returns PASSIVE and reconciles: A is re-stamped above the standby's counter so far
+        await primary.reconcile_after_return(handoff_rev, pull)
+        cursor = await primary.db.execute("SELECT rev FROM videos WHERE key = 'A'")
+        a_rev = (await cursor.fetchone())[0]
+        self.assertGreater(a_rev, standby.rev)
+        # The standby keeps serving users: its counter overtakes the re-stamp
+        for i in range(20, 50):
+            await standby.set_video(f's{i}', VideoInfo(title=f's{i}'))
+        await self.pull_all(standby, primary, since=await get_meta(primary.db, last_applied_key('standby')),
+                            peer='standby')
+        self.assertGreater(standby.rev, a_rev)
+
+        # Handback: the standby goes PASSIVE and pulls the primary's feed from its cursor
+        client = SyncClient(make_config(node_name='standby', node_role='standby', peer_url='http://primary',
+                                        sync_secret='s'), standby)
+        client._peer_node = 'primary'
+        await client.on_handed_back()
+        since = await get_meta(standby.db, last_applied_key('primary'))
+        touched = await self.pull_all(primary, standby, since=since, peer='primary')
+
+        self.assertIn(('videos', 'A'), touched)
+        self.assertEqual(standby.videos['A'].title, 'A1-primary-unseen')
+        self.assertEqual(await self.dump(standby), await self.dump(primary))
 
     async def test_keys_above_rev(self):
         state = await self.make_state('s')

@@ -240,16 +240,20 @@ class SyncClient:
     async def on_handed_back(self):
         """This node just stopped being ACTIVE: its data is current as of now.
 
-        Moves the feed cursor past everything it wrote (re-stamped survivors
-        sort above it) and marks the data fresh, so a takeover right after a
-        step-down is not refused for a stale `last_sync_at`.
+        Marks the data fresh so a takeover right after a step-down is not
+        refused for a stale `last_sync_at`. The feed cursor is deliberately
+        left where the last passive pull put it: the peer re-stamped its
+        survivors while this node was still ACTIVE and writing, so those revs
+        sit *below* this node's counter. Jumping the cursor to the counter
+        skipped them and only the hourly snapshot healed the divergence. The
+        rows this node wrote while active come back once through the feed and
+        apply as no-ops.
         """
         key = last_applied_key(self.peer_name)
-        current = int(await get_meta(self.state.db, key, 0) or 0)
-        cursor = max(current, self.state.rev)
+        cursor = int(await get_meta(self.state.db, key, 0) or 0)
         self.last_sync_at = _now()
         self.last_sync_rev = cursor
-        await self._persist(**{key: cursor, META_LAST_SYNC_AT: self.last_sync_at, META_LAST_SYNC_REV: cursor})
+        await self._persist(**{META_LAST_SYNC_AT: self.last_sync_at, META_LAST_SYNC_REV: cursor})
 
     # --- helpers ------------------------------------------------------------
 

@@ -217,12 +217,19 @@ class TestHandoffAndHandback(SyncClientTestCase):
         self.addAsyncCleanup(client.aclose)
         self.assertFalse(await client.request_handoff(manual=True))
 
-    async def test_on_handed_back_raises_cursor_and_marks_fresh(self):
+    async def test_on_handed_back_keeps_cursor_and_marks_fresh(self):
         await self.client.heartbeat()
+        key = last_applied_key(self.client.peer_name)
+        from dasovbot.database import set_meta
+        await set_meta(self.local.db, key, 120)
+        await self.local.db.commit()
+        # Wrote plenty while ACTIVE: the counter is far past the cursor
         self.local.rev = 500
         await self.client.on_handed_back()
-        self.assertEqual(await get_meta(self.local.db, last_applied_key(self.client.peer_name)), 500)
-        self.assertEqual(self.client.last_sync_rev, 500)
+        # The cursor must not jump to the counter: the peer's re-stamped
+        # survivors carry revs between the two and would be skipped
+        self.assertEqual(await get_meta(self.local.db, key), 120)
+        self.assertEqual(self.client.last_sync_rev, 120)
         self.assertIsNotNone(self.client.last_sync_at)
         self.assertEqual(await get_meta(self.local.db, META_LAST_SYNC_AT), self.client.last_sync_at)
 
