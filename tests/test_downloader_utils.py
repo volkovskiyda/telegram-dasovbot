@@ -105,6 +105,22 @@ class TestProcessInfo(unittest.TestCase):
         result = process_info(raw)
         self.assertEqual(result.thumbnail, 'https://i.ytimg.com/vi/abc123/default.jpg')
 
+    def test_non_youtube_id_does_not_get_a_ytimg_thumbnail(self):
+        # Every extractor sets an id; only YouTube's maps onto i.ytimg.com
+        raw = {
+            'title': 'T',
+            'url': 'https://other.com/video/9541',
+            'id': '9541',
+            'extractor_key': 'Generic',
+            'thumbnail': 'https://other.com/thumb.jpg',
+        }
+        result = process_info(raw)
+        self.assertEqual(result.thumbnail, 'https://other.com/thumb.jpg')
+
+    def test_youtube_detected_by_extractor_key(self):
+        raw = {'title': 'T', 'url': 'https://example.invalid/x', 'id': 'abc123', 'extractor_key': 'Youtube'}
+        self.assertEqual(process_info(raw).thumbnail, 'https://i.ytimg.com/vi/abc123/default.jpg')
+
     def test_non_youtube_thumbnail(self):
         raw = {
             'title': 'T',

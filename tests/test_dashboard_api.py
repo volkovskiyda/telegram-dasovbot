@@ -163,6 +163,12 @@ class TestApiVideos(DashboardApiTestCase):
         items = await self._get_json('/api/videos')
         self.assertEqual(items[0]['thumbnail'], 'https://i.ytimg.com/vi/abc123def45/hqdefault.jpg')
 
+    async def test_non_youtube_video_without_thumbnail_gets_none(self):
+        video = make_video(thumbnail_url=None, webpage_url='https://other.com/video/9541', video_id='9541')
+        self.state.videos = {video.webpage_url: video}
+        items = await self._get_json('/api/videos')
+        self.assertIsNone(items[0]['thumbnail'])
+
     async def test_exported_filter(self):
         exported = make_video('idexported1', exported=True)
         kept = make_video('idprivate12', exported=False)

@@ -224,7 +224,9 @@ def process_info(info) -> VideoInfo | None:
 
     url = extract_url(info)
     id = info.get('id')
-    if id:
+    if id and is_youtube(info):
+        # The small jpg, not the extractor's maxres pick: it is what the
+        # Telegram-facing fields want. Only a YouTube id maps onto ytimg
         thumbnail = f"https://i.ytimg.com/vi/{id}/default.jpg"
     else:
         thumbnail = info.get('thumbnail')
@@ -282,6 +284,16 @@ def process_info(info) -> VideoInfo | None:
         thumbnail_url=info.get('thumbnail'),
         epoch=int(info.get('epoch') or time.time()),
     )
+
+
+def is_youtube(info) -> bool:
+    """Whether a raw yt-dlp info dict (or VideoInfo) comes from YouTube."""
+    if isinstance(info, VideoInfo):
+        extractor, url = '', info.webpage_url or info.url or ''
+    else:
+        extractor = (info.get('extractor_key') or info.get('extractor') or '').lower()
+        url = info.get('webpage_url') or info.get('url') or ''
+    return extractor.startswith('youtube') or 'youtube.com/' in url or 'youtu.be/' in url
 
 
 def contains_text(origin: str, text: list[str]) -> bool:

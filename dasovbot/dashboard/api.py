@@ -9,6 +9,7 @@ from aiohttp import web
 
 from dasovbot.constants import DATETIME_FORMAT
 from dasovbot.dashboard.views import get_state
+from dasovbot.downloader import is_youtube
 
 if TYPE_CHECKING:
     from dasovbot.models import VideoInfo
@@ -46,7 +47,8 @@ def video_entry(info: VideoInfo) -> dict:
         'tags': info.tags or [],
         'categories': info.categories or [],
         'description': info.description,
-        'thumbnail': info.thumbnail_url or f'https://i.ytimg.com/vi/{info.video_id}/hqdefault.jpg',
+        'thumbnail': info.thumbnail_url or (
+            f'https://i.ytimg.com/vi/{info.video_id}/hqdefault.jpg' if is_youtube(info) else None),
         'chapters': [
             {'start': chapter.get('start_time'), 'title': chapter.get('title')}
             for chapter in info.chapters
