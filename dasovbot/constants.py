@@ -14,6 +14,18 @@ VIDEO_ERROR_MESSAGES = [
     "members on level",
 ]
 
+# yt-dlp failures that clear up on their own: YouTube's bot check (it lifts
+# after a while or with a different media URL), an expired or throttled
+# download URL (403), rate limiting, server errors. Matched case-insensitively
+# against the DownloadError text after VIDEO_ERROR_MESSAGES
+TRANSIENT_ERROR_MESSAGES = [
+    'Please sign in',
+    'sign in to confirm you',  # "you're not a bot", with either apostrophe
+    'HTTP Error 403',
+    'HTTP Error 429',
+    'HTTP Error 50',  # 500, 502, 503, 504
+]
+
 # Intervals
 INTERVAL_SEC = 60 * 60  # an hour
 TIMEOUT_SEC = 60 * 10  # 10 minutes
@@ -27,6 +39,13 @@ BACKUP_STALE_SEC = 26 * 60 * 60  # alert if newest backup is older than this (2x
 
 # Attempts before a failing intent is dropped
 MAX_INTENT_RETRIES = 3
+
+# A transient failure (TRANSIENT_ERROR_MESSAGES) backs the intent off for
+# this long and does not count against MAX_INTENT_RETRIES, until the same
+# intent has failed that way MAX_TRANSIENT_RETRIES times in a row; from then
+# on it is an ordinary failure. 8 x 15 min = about two hours of patience
+INTENT_TRANSIENT_BACKOFF_SEC = 15 * 60
+MAX_TRANSIENT_RETRIES = 8
 
 # Minimum delay before a failed intent becomes eligible again (it is also
 # demoted to priority 0 so it cannot head-of-line-block fresh requests).

@@ -164,7 +164,7 @@ The web dashboard is started separately in `__main__.py` (`start_dashboard`) bef
 
 **Video caching:** `VideoInfo` objects cached by URL in `state.videos`. Once a video has a Telegram `file_id`, it's served instantly without re-downloading.
 
-**Error classification:** Video extraction errors are matched against `VIDEO_ERROR_MESSAGES` in `constants.py` to distinguish user-facing errors from internal failures.
+**Error classification:** Video extraction errors are matched against `VIDEO_ERROR_MESSAGES` in `constants.py` to distinguish user-facing errors from internal failures. Errors matching `TRANSIENT_ERROR_MESSAGES` (YouTube's bot check, an expired or throttled media URL, 429/5xx) are waited out instead: the intent backs off for `INTENT_TRANSIENT_BACKOFF_SEC` (15 min) without spending one of its `MAX_INTENT_RETRIES`, up to `MAX_TRANSIENT_RETRIES` times in a row, before it counts as a real failure.
 
 ### **System dependencies:**
 - Python 3.10+

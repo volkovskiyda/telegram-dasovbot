@@ -103,6 +103,55 @@ class TestExtractInfo(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(intent.ignored)
 
     @patch('dasovbot.downloader.get_ydl')
+    async def test_bot_check_counts_as_transient_for_an_intent(self, mock_get_ydl):
+        mock_get_ydl.return_value.extract_info.side_effect = yt_dlp.DownloadError(
+            "ERROR: [youtube] abc: Sign in to confirm you\u2019re not a bot. Use --cookies-from-browser"
+        )
+        intent = Intent()
+        state = self._make_state(intents={'q': intent})
+        self.assertIsNone(await extract_info('q', download=False, state=state))
+        self.assertFalse(intent.ignored)
+        self.assertEqual(state.transient_failures['q'], 1)
+        self.assertIsNone(await extract_info('q', download=False, state=state))
+        self.assertEqual(state.transient_failures['q'], 2)
+
+    @patch('dasovbot.downloader.get_ydl')
+    async def test_transient_without_intent_is_not_counted(self, mock_get_ydl):
+        # A handler's metadata lookup has no intent to back off
+        mock_get_ydl.return_value.extract_info.side_effect = yt_dlp.DownloadError('ERROR: Please sign in.')
+        state = self._make_state()
+        self.assertIsNone(await extract_info('q', download=False, state=state))
+        self.assertEqual(state.transient_failures, {})
+
+    @patch('dasovbot.downloader.get_ydl')
+    async def test_other_error_clears_the_transient_count(self, mock_get_ydl):
+        mock_get_ydl.return_value.extract_info.side_effect = yt_dlp.DownloadError('ERROR: network timeout')
+        state = self._make_state(intents={'q': Intent()}, transient_failures={'q': 3})
+        self.assertIsNone(await extract_info('q', download=False, state=state))
+        self.assertNotIn('q', state.transient_failures)
+
+    @patch('dasovbot.downloader.get_ydl')
+    async def test_download_403_counts_as_transient(self, mock_get_ydl):
+        # The 403 shows up on the download, after the metadata succeeded
+        mock_get_ydl.return_value.extract_info.side_effect = yt_dlp.DownloadError(
+            'ERROR: unable to download video data: HTTP Error 403: Forbidden'
+        )
+        cached = VideoInfo(title='cached')
+        state = self._make_state(videos={'q': cached}, intents={'q': Intent()})
+        result = await extract_info('q', download=True, state=state)
+        self.assertIs(result, cached)
+        self.assertEqual(state.transient_failures['q'], 1)
+
+    @patch('dasovbot.downloader.get_ydl')
+    async def test_successful_download_clears_the_transient_count(self, mock_get_ydl):
+        mock_get_ydl.return_value.extract_info.return_value = make_raw_info(
+            requested_downloads=[{'filepath': '/tmp/v.mp4', 'filename': 'v.mp4'}])
+        state = self._make_state(intents={'q': Intent()}, transient_failures={'q': 2})
+        result = await extract_info('q', download=True, state=state)
+        self.assertEqual(result.filepath, '/tmp/v.mp4')
+        self.assertNotIn('q', state.transient_failures)
+
+    @patch('dasovbot.downloader.get_ydl')
     async def test_generic_error_returns_none(self, mock_get_ydl):
         mock_get_ydl.return_value.extract_info.side_effect = ValueError('boom')
         state = self._make_state()

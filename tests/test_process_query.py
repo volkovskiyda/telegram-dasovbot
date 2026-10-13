@@ -427,6 +427,31 @@ class TestRetryBackoff(unittest.IsolatedAsyncioTestCase):
         await drop_or_retry_intent(AsyncMock(), 'q', state)
         self.assertEqual(state.intent_retry_after['q'], far)
 
+    async def test_transient_failure_backs_off_long_without_spending_a_retry(self):
+        from dasovbot.constants import INTENT_TRANSIENT_BACKOFF_SEC
+        intent = Intent(priority=7, chat_ids=['1'], inline_message_ids=['im1'])
+        bot = AsyncMock()
+        state = make_state(config=make_config(), intents={'q': intent}, transient_failures={'q': 1})
+        await drop_or_retry_intent(bot, 'q', state)
+        self.assertEqual(intent.retries, 0)
+        self.assertEqual(intent.priority, 0)
+        self.assertIn('q', state.intents)
+        self.assertGreater(state.intent_retry_after['q'], time.monotonic() + INTENT_TRANSIENT_BACKOFF_SEC - 60)
+        bot.edit_message_caption.assert_not_awaited()  # requesters are not told it failed
+
+    async def test_transient_failures_beyond_the_cap_count_as_real(self):
+        from dasovbot.constants import MAX_TRANSIENT_RETRIES
+        intent = Intent(chat_ids=['1'])
+        state = make_state(config=make_config(), intents={'q': intent},
+                           transient_failures={'q': MAX_TRANSIENT_RETRIES + 1})
+        await drop_or_retry_intent(AsyncMock(), 'q', state)
+        self.assertEqual(intent.retries, 1)
+
+    async def test_pop_intent_forgets_the_transient_count(self):
+        state = make_state(config=make_config(), intents={'q': Intent()}, transient_failures={'q': 2})
+        await state.pop_intent('q')
+        self.assertNotIn('q', state.transient_failures)
+
     async def test_missing_intent_is_noop(self):
         state = make_state(config=make_config())
         await drop_or_retry_intent(AsyncMock(), 'unknown', state)

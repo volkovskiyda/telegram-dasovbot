@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 import yt_dlp
 
 from dasovbot.config import Config, make_ydl_opts
-from dasovbot.constants import DATETIME_FORMAT, TIMEOUT_SEC, VIDEO_ERROR_MESSAGES
+from dasovbot.constants import DATETIME_FORMAT, TIMEOUT_SEC, TRANSIENT_ERROR_MESSAGES, VIDEO_ERROR_MESSAGES
 from dasovbot.models import VideoInfo
 from dasovbot.persistence import remove
 
@@ -343,6 +343,9 @@ async def extract_info(query: str, download: bool, state: BotState) -> VideoInfo
                     if tiq:
                         tiq.ignored = True
                 return None
+            if _note_transient(e, query, state):
+                return None
+            state.transient_failures.pop(query, None)
             logger.error("extract_info error: %s: %s", query, str(e).replace("\n", " "))
             return None
 
@@ -356,19 +359,41 @@ async def extract_info(query: str, download: bool, state: BotState) -> VideoInfo
                     partial(extract_info_sync, query, download=True, attempt=attempt), attempt)
                 logger.info("extract_info downloaded: %s", query)
                 info = process_info(raw_info)
+                state.transient_failures.pop(query, None)
         except asyncio.TimeoutError:
             # The attempt was cancelled, but yt-dlp only stops at its next
             # callback (a merge or a stalled socket delays that). Hold the
             # intent back for a full timeout window so a retry does not write
             # the same output path concurrently with that thread.
             state.intent_retry_after[query] = time.monotonic() + TIMEOUT_SEC
+            state.transient_failures.pop(query, None)
             logger.warning("extract_info timeout, download cancelled: %s", query)
         except Exception as e:
-            logger.error("extract_info download error: %s", query, exc_info=e)
+            if not _note_transient(e, query, state):
+                state.transient_failures.pop(query, None)
+                logger.error("extract_info download error: %s", query, exc_info=e)
         finally:
             logger.debug("lock_release")
 
     return info
+
+
+def _note_transient(error: Exception, query: str, state: BotState) -> bool:
+    """Count a yt-dlp failure that will clear up by itself (see TRANSIENT_ERROR_MESSAGES).
+
+    Only intents are counted: the worker's drop_or_retry_intent turns the count
+    into a long backoff instead of spending the retry budget. A handler's
+    metadata lookup has nothing to back off, so it is just reported.
+    """
+    if not (isinstance(error, yt_dlp.DownloadError) and contains_text(error.msg, TRANSIENT_ERROR_MESSAGES)):
+        return False
+    count = None
+    if query in state.intents:
+        count = state.transient_failures.get(query, 0) + 1
+        state.transient_failures[query] = count
+    logger.warning("extract_info transient failure%s: %s: %s",
+                   f' #{count}' if count else '', query, error.msg.replace("\n", " "))
+    return True
 
 
 def _run_ffmpeg(input_path: str, output_path: str, codec_args: list[str]) -> bool:

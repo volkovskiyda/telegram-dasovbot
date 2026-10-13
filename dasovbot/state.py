@@ -49,6 +49,9 @@ class BotState:
     # Deliberately not persisted: after a process restart no abandoned
     # download thread can exist, so an immediate retry is safe.
     intent_retry_after: dict[str, float] = field(default_factory=dict)
+    # Consecutive transient yt-dlp failures per intent (TRANSIENT_ERROR_MESSAGES);
+    # any other outcome of an extraction clears the entry. Not persisted either
+    transient_failures: dict[str, int] = field(default_factory=dict)
     # HA drain: while True the intent worker starts nothing new. worker_idle is
     # set whenever the worker is waiting and cleared for the duration of one
     # process_query, so a drain can wait for the in-progress download to end
@@ -131,6 +134,7 @@ class BotState:
         from dasovbot.helpers import now
         intent = self.intents.pop(key, None)
         self.intent_retry_after.pop(key, None)
+        self.transient_failures.pop(key, None)
         await delete_intent(self.db, key, self.next_rev(), now())
         return intent
 
@@ -226,6 +230,7 @@ class BotState:
         self.video_requesters, self.user_requests = await load_request_stats(self.db)
         self.banned_users = await load_banned_users(self.db)
         self.intent_retry_after.clear()
+        self.transient_failures.clear()
 
     async def apply_remote_page(self, page: dict, peer: str) -> dict:
         """Apply one change-feed page to the database and to memory.
@@ -260,6 +265,7 @@ class BotState:
             tables[tbl].pop(key, None)
             if tbl == 'intents':
                 self.intent_retry_after.pop(key, None)
+                self.transient_failures.pop(key, None)
             touched.add((tbl, key))
         for user_id, url, _source, requested_at in result['requests']:
             requesters = self.video_requesters.setdefault(url, [])

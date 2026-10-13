@@ -59,7 +59,9 @@ async def notify_intent_failed(bot: Bot, query: str, intent: Intent, reason: str
 
 
 async def drop_or_retry_intent(bot: Bot, query: str, state: BotState):
-    from dasovbot.constants import MAX_INTENT_RETRIES, INTENT_RETRY_BACKOFF_SEC
+    from dasovbot.constants import (
+        MAX_INTENT_RETRIES, INTENT_RETRY_BACKOFF_SEC, INTENT_TRANSIENT_BACKOFF_SEC, MAX_TRANSIENT_RETRIES,
+    )
     intent = state.intents.get(query)
     if not intent:
         return
@@ -71,6 +73,22 @@ async def drop_or_retry_intent(bot: Bot, query: str, state: BotState):
             intent.inline_message_ids.clear()
             intent.messages.clear()
             await state.save_intent(query)
+        return
+    transient = state.transient_failures.get(query, 0)
+    if 0 < transient <= MAX_TRANSIENT_RETRIES:
+        # YouTube's bot check or an expired media URL: the video is fine, the
+        # moment is not. Wait it out instead of telling requesters it failed
+        # (a dropped intent came back an hour later through the subscription
+        # poll and downloaded first time). Once the same intent has done this
+        # MAX_TRANSIENT_RETRIES times in a row it is treated as a real failure
+        intent.priority = 0
+        state.intent_retry_after[query] = max(
+            state.intent_retry_after.get(query, 0),
+            time.monotonic() + INTENT_TRANSIENT_BACKOFF_SEC,
+        )
+        await state.save_intent(query)
+        logger.warning("intent backing off %d min after transient failure %d/%d: %s",
+                       INTENT_TRANSIENT_BACKOFF_SEC // 60, transient, MAX_TRANSIENT_RETRIES, query)
         return
     intent.retries += 1
     if intent.retries >= MAX_INTENT_RETRIES:
