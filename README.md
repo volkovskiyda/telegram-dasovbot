@@ -77,7 +77,7 @@ curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8080/api/videos?expo
 | `EMPTY_MEDIA_FOLDER` | No | `false` | Clear the media folder when the intent worker crashes and restarts |
 | `DASHBOARD_PASSWORD` | No | | Password for web dashboard access (auto-generated if not set; written to `data/dashboard_password.txt`). Required, with the same value, on both nodes of an HA pair |
 | `DASHBOARD_PORT` | No | `8080` | Port for web dashboard server |
-| `DASHBOARD_BEHIND_PROXY` | No | `false` | Set `true` when the dashboard sits behind a reverse proxy (Traefik, nginx, …): login rate limiting uses the client IP from `X-Forwarded-For`, and the session cookie is marked `Secure` when the proxy reports HTTPS via `X-Forwarded-Proto` |
+| `DASHBOARD_BEHIND_PROXY` | No | `false` | Set `true` when the dashboard sits behind a reverse proxy (Traefik, nginx, …): login rate limiting uses the client IP from `X-Forwarded-For` (plus a 5× larger budget per socket peer, so a client that reaches the port without the proxy cannot rotate the header past the limit), and the session cookie is marked `Secure` when the proxy reports HTTPS via `X-Forwarded-Proto` |
 | `API_TOKEN` | No | | Bearer token for the JSON API under `/api/` (auto-generated if not set; written to `data/api_token.txt`). Required, with the same value, on both nodes of an HA pair |
 | `COOKIES_FILE` | No | | Path to cookies file for yt-dlp |
 | `BACKUP_CRON` | Docker | | Cron schedule for automatic SQLite backups (`entrypoint.sh` installs it into cron; empty disables). docker-compose defaults it to `0 */12 * * *` |

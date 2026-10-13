@@ -10,6 +10,12 @@ COOKIE_NAME = 'dasovbot_token'
 SESSION_TTL_SEC = 7 * 24 * 60 * 60  # a week
 MAX_LOGIN_ATTEMPTS = 5
 LOGIN_ATTEMPT_WINDOW_SEC = 60
+# Behind a proxy the limit is keyed on the X-Forwarded-For client so one
+# user's failures never lock out the others, but the dashboard port is also
+# published directly on the LAN: a client that reaches it without the proxy
+# can forge a new X-Forwarded-For per attempt. The socket peer therefore gets
+# a second, more generous budget that such a client cannot rotate out of
+MAX_LOGIN_ATTEMPTS_PER_REMOTE = 5 * MAX_LOGIN_ATTEMPTS
 
 _generated_password: str | None = None
 _generated_api_token: str | None = None
@@ -124,14 +130,39 @@ def _sweep_failed_logins():
             del _failed_logins[remote]
 
 
-def _rate_limited(remote: str) -> bool:
+def _rate_limited(remote: str, limit: int = MAX_LOGIN_ATTEMPTS) -> bool:
     cutoff = time.time() - LOGIN_ATTEMPT_WINDOW_SEC
     attempts = [item for item in _failed_logins.get(remote, []) if item > cutoff]
     if attempts:
         _failed_logins[remote] = attempts
     else:
         _failed_logins.pop(remote, None)
-    return len(attempts) >= MAX_LOGIN_ATTEMPTS
+    return len(attempts) >= limit
+
+
+def _remote_key(request: web.Request, client: str) -> str | None:
+    """The socket peer's limiter key, or None when it is the client key already."""
+    remote = request.remote or ''
+    if not remote or remote == client:
+        return None
+    return f'remote:{remote}'
+
+
+def login_rate_limited(request: web.Request) -> bool:
+    client = client_ip(request)
+    if _rate_limited(client):
+        return True
+    remote_key = _remote_key(request, client)
+    return remote_key is not None and _rate_limited(remote_key, MAX_LOGIN_ATTEMPTS_PER_REMOTE)
+
+
+def record_failed_login(request: web.Request):
+    now = time.time()
+    client = client_ip(request)
+    _failed_logins.setdefault(client, []).append(now)
+    remote_key = _remote_key(request, client)
+    if remote_key is not None:
+        _failed_logins.setdefault(remote_key, []).append(now)
 
 
 @web.middleware
@@ -168,8 +199,7 @@ async def login_page(request: web.Request) -> web.Response:
 
 async def login_post(request: web.Request) -> web.Response:
     _sweep_failed_logins()
-    remote = client_ip(request)
-    if _rate_limited(remote):
+    if login_rate_limited(request):
         raise web.HTTPFound('/login?error=2')
     data = await request.post()
     password = data.get('password', '')
@@ -181,7 +211,7 @@ async def login_post(request: web.Request) -> web.Response:
             httponly=True, secure=secure_cookie(request), samesite='Lax',
         )
         raise response
-    _failed_logins.setdefault(remote, []).append(time.time())
+    record_failed_login(request)
     raise web.HTTPFound('/login?error=1')
 
 

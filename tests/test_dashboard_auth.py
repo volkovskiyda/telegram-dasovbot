@@ -9,7 +9,7 @@ from dasovbot.dashboard.auth import (
     check_sync_token, get_sync_secret,
     auth_middleware, login_page, login_post, logout,
     create_session, check_token, client_ip, secure_cookie,
-    COOKIE_NAME, MAX_LOGIN_ATTEMPTS,
+    COOKIE_NAME, MAX_LOGIN_ATTEMPTS, MAX_LOGIN_ATTEMPTS_PER_REMOTE,
 )
 
 
@@ -72,6 +72,44 @@ class TestClientIp(AuthTestCase):
         victim.post = AsyncMock(return_value={'password': 'secret'})
         with self.assertRaises(web.HTTPFound) as ctx:
             await login_post(victim)
+        self.assertEqual(ctx.exception.location, '/')
+
+    @patch.dict('os.environ', {'DASHBOARD_BEHIND_PROXY': 'true'})
+    @patch('dasovbot.dashboard.auth.get_password', return_value='secret')
+    async def test_rotating_forwarded_header_hits_the_remote_budget(self, mock_pwd):
+        # The port is reachable without the proxy too: a direct LAN client
+        # forging a fresh X-Forwarded-For per attempt must still run out
+        for i in range(MAX_LOGIN_ATTEMPTS_PER_REMOTE):
+            attacker = make_request(remote='192.168.11.99', forwarded=f'203.0.113.{i}')
+            attacker.post = AsyncMock(return_value={'password': 'wrong'})
+            with self.assertRaises(web.HTTPFound) as ctx:
+                await login_post(attacker)
+            self.assertEqual(ctx.exception.location, '/login?error=1')
+        attacker = make_request(remote='192.168.11.99', forwarded='203.0.113.250')
+        attacker.post = AsyncMock(return_value={'password': 'secret'})
+        with self.assertRaises(web.HTTPFound) as ctx:
+            await login_post(attacker)
+        self.assertEqual(ctx.exception.location, '/login?error=2')
+        # Honest clients through the proxy (another socket peer) are unaffected
+        other = make_request(remote='10.0.0.2', forwarded='198.51.100.9')
+        other.post = AsyncMock(return_value={'password': 'secret'})
+        with self.assertRaises(web.HTTPFound) as ctx:
+            await login_post(other)
+        self.assertEqual(ctx.exception.location, '/')
+
+    @patch('dasovbot.dashboard.auth.get_password', return_value='secret')
+    async def test_without_proxy_each_failure_is_counted_once(self, mock_pwd):
+        # client_ip and remote are the same address: no second key, so the
+        # per-client limit is not reached twice as fast
+        request = make_request(remote='1.2.3.4')
+        request.post = AsyncMock(return_value={'password': 'wrong'})
+        for _ in range(MAX_LOGIN_ATTEMPTS - 1):
+            with self.assertRaises(web.HTTPFound):
+                await login_post(request)
+        self.assertEqual(len(auth_module._failed_logins), 1)
+        request.post = AsyncMock(return_value={'password': 'secret'})
+        with self.assertRaises(web.HTTPFound) as ctx:
+            await login_post(request)
         self.assertEqual(ctx.exception.location, '/')
 
 
