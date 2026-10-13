@@ -6,7 +6,7 @@ from telegram.error import BadRequest
 
 from dasovbot.constants import SOURCE_INLINE
 from dasovbot.downloader import extract_info, extract_url, process_info, process_entries
-from dasovbot.helpers import extract_user, now
+from dasovbot.helpers import extract_user, looks_like_url, now
 from dasovbot.models import VideoInfo, TemporaryInlineQuery
 from dasovbot.state import BotState
 from dasovbot.services.intent_processor import append_intent
@@ -43,6 +43,17 @@ async def inline_query_handler(update: Update, context):
     logger.info("%s # inline_query: %s", extract_user(user), query)
 
     if not query:
+        return
+
+    if not looks_like_url(query):
+        # Telegram sends a query per keystroke; yt-dlp would try http://<text>
+        # for every word and burn its retries on a DNS failure. Nothing is
+        # cached for it either, so the entry does not clutter the sweeper
+        logger.info("inline_query not a url: %s", query)
+        try:
+            await query_obj.answer(results=[])
+        except Exception:
+            pass
         return
 
     temporary_inline_query = state.temporary_inline_queries.get(query)

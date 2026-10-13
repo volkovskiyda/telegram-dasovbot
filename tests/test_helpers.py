@@ -117,3 +117,16 @@ class TestAppendPlaylist(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestLooksLikeUrl(unittest.TestCase):
+    def test_accepts_urls_with_and_without_scheme(self):
+        from dasovbot.helpers import looks_like_url
+        for text in ('https://www.youtube.com/watch?v=abc', 'youtu.be/abc', 'http://host.example:8080/p?q=1#f',
+                     'https://vm.tiktok.com/ZM/', ' https://example.com '):
+            self.assertTrue(looks_like_url(text), text)
+
+    def test_rejects_plain_text(self):
+        from dasovbot.helpers import looks_like_url
+        for text in ('hello', 'cat videos', 'youtube', 'www', 'https://', 'a b.com', 'example.c'):
+            self.assertFalse(looks_like_url(text), text)

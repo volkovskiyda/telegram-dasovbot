@@ -30,6 +30,17 @@ class TestInlineQueryHandler(unittest.IsolatedAsyncioTestCase):
         query_obj.answer.assert_not_called()
 
     @patch('dasovbot.handlers.inline.extract_info', new_callable=AsyncMock)
+    async def test_non_url_query_answers_empty_without_extracting(self, mock_extract):
+        for text in ('hello', 'cat videos', 'youtube', 'www'):
+            query_obj = make_inline_query(query=text)
+            state = make_state(animation_file_id='anim123')
+            from dasovbot.handlers.inline import inline_query_handler
+            await inline_query_handler(make_update(inline_query=query_obj), make_context(state=state))
+            query_obj.answer.assert_awaited_once_with(results=[])
+            self.assertEqual(state.temporary_inline_queries, {}, text)
+        mock_extract.assert_not_awaited()
+
+    @patch('dasovbot.handlers.inline.extract_info', new_callable=AsyncMock)
     async def test_fresh_query_extracts_and_answers(self, mock_extract):
         info = self._make_info()
         mock_extract.return_value = info
@@ -442,12 +453,15 @@ class TestChosenQuery(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(call_kwargs['upload_date'])
 
 
+URL = 'https://example.com/v1'  # plain words never reach extraction (looks_like_url)
+
+
 class TestInlineAnswerErrors(unittest.IsolatedAsyncioTestCase):
     @patch('dasovbot.handlers.inline.extract_info', new_callable=AsyncMock)
     async def test_ignored_query_answer_error_swallowed(self, mock_extract):
         from dasovbot.handlers.inline import inline_query_handler
-        state = make_state(temporary_inline_queries={'q': TemporaryInlineQuery(ignored=True)})
-        iq = make_inline_query('q')
+        state = make_state(temporary_inline_queries={URL: TemporaryInlineQuery(ignored=True)})
+        iq = make_inline_query(URL)
         iq.answer.side_effect = Exception('timed out')
         await inline_query_handler(make_update(inline_query=iq), make_context(state=state))
         mock_extract.assert_not_awaited()
@@ -456,8 +470,8 @@ class TestInlineAnswerErrors(unittest.IsolatedAsyncioTestCase):
     async def test_cached_results_answer_error_swallowed(self, mock_extract):
         from dasovbot.handlers.inline import inline_query_handler
         tiq = TemporaryInlineQuery(results=[MagicMock()], inline_queries={'id': 'q'})
-        state = make_state(temporary_inline_queries={'q': tiq})
-        iq = make_inline_query('q')
+        state = make_state(temporary_inline_queries={URL: tiq})
+        iq = make_inline_query(URL)
         iq.answer.side_effect = Exception('timed out')
         context = make_context(state=state)
         await inline_query_handler(make_update(inline_query=iq), context)
@@ -468,7 +482,7 @@ class TestInlineAnswerErrors(unittest.IsolatedAsyncioTestCase):
     async def test_no_info_answer_error_swallowed(self, mock_extract):
         from dasovbot.handlers.inline import inline_query_handler
         state = make_state()
-        iq = make_inline_query('q')
+        iq = make_inline_query(URL)
         iq.answer.side_effect = Exception('timed out')
         await inline_query_handler(make_update(inline_query=iq), make_context(state=state))
         mock_extract.assert_awaited_once()
@@ -479,7 +493,7 @@ class TestInlineAnswerErrors(unittest.IsolatedAsyncioTestCase):
         from dasovbot.handlers.inline import inline_query_handler
         mock_extract.return_value = VideoInfo(title='playlist', entries=[{'id': '1'}])
         state = make_state()
-        iq = make_inline_query('q')
+        iq = make_inline_query(URL)
         await inline_query_handler(make_update(inline_query=iq), make_context(state=state))
         iq.answer.assert_awaited_once_with(results=[], cache_time=1)
 

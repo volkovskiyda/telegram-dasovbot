@@ -18,6 +18,16 @@ def extract_user(user: User) -> str:
     return f"{now()} {user.username} ({user.id})"
 
 
+# A host with a dot and a TLD, an optional scheme and port, no whitespace. The
+# bar is deliberately low (yt-dlp accepts scheme-less URLs); it only has to
+# keep plain words and half-typed text away from a network round trip
+_URL_RE = re.compile(r'^(?:https?://)?[\w.-]+\.[a-z]{2,}(?::\d+)?(?:[/?#]\S*)?$', re.IGNORECASE)
+
+
+def looks_like_url(text: str) -> bool:
+    return bool(_URL_RE.match(text.strip()))
+
+
 def remove_command_prefix(command: str) -> str:
     return re.sub(r'^/\w+', '', command).lstrip()
 
