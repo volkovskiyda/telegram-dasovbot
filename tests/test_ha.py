@@ -78,10 +78,12 @@ class FakeRunner:
 
 class FakeNotifier:
     def __init__(self):
-        self.transitions, self.errors = [], []
+        self.transitions, self.errors, self.quiet = [], [], []
 
-    async def transition(self, text):
+    async def transition(self, text, quiet=False):
         self.transitions.append(text)
+        if quiet:
+            self.quiet.append(text)
 
     async def error(self, text):
         self.errors.append(text)
@@ -273,6 +275,7 @@ class TestFailback(ControllerTestCase):
         self.assertEqual(self.peer.handoff_calls, [False])
         self.assertTrue(ctl.handoff_pending)
         self.assertIn('requested handoff', self.notifier.transitions[-1])
+        self.assertEqual(self.notifier.quiet[-1], self.notifier.transitions[-1])
         await self.tick(ctl)
         self.assertEqual(self.peer.handoff_calls, [False], 'requested once')
 
@@ -409,6 +412,7 @@ class TestHandoffDrainingSide(ControllerTestCase):
         await asyncio.sleep(0)
         self.assertTrue(ctl.drained)
         self.assertIn('drained', self.notifier.transitions[-1])
+        self.assertEqual(self.notifier.quiet[-1], self.notifier.transitions[-1])
         self.assertEqual((await ctl.handoff_requested_by_peer(manual=False))['drained'], True)
         # peer takes over → PASSIVE
         self.peer.reply = self.active_reply()
@@ -418,6 +422,7 @@ class TestHandoffDrainingSide(ControllerTestCase):
         self.assertIsNone(await get_meta(self.state.db, META_HANDOFF_REV))
         self.assertEqual(self.peer.handed_back, 1)
         self.assertIn('handed over', self.notifier.transitions[-1])
+        self.assertEqual(self.notifier.quiet[-1], self.notifier.transitions[-1])
 
     async def test_peer_never_takes_over_reactivates_after_ttl(self):
         ctl = await self.activate()
@@ -547,7 +552,8 @@ class TestHoldDown(TestConflictAndTwoActives):
         self.peer.reply = self.active_reply(role=HA_ROLE_DRAINING, drained=True)
         await self.tick(ctl)
         self.assertEqual(ctl.role, HA_ROLE_ACTIVE)
-        self.assertIn('handoff', self.notifier.transitions[-1])
+        self.assertIn('is now ACTIVE (handoff from ', self.notifier.transitions[-1])
+        self.assertNotIn(self.notifier.transitions[-1], self.notifier.quiet)
 
     async def test_stable_peer_clears_backoff(self):
         ctl = await self.stepped_down(times=2)       # next hold would be 4 min

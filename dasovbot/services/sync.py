@@ -262,7 +262,8 @@ class SyncClient:
 
 
 class DeveloperNotifier:
-    """Transition messages always; error messages at most once per SYNC_ERROR_NOTIFY_INTERVAL_SEC.
+    """Transition messages always (quiet ones go to the history only); error messages at most
+    once per SYNC_ERROR_NOTIFY_INTERVAL_SEC.
 
     With a `state`, every transition (collapsed repeats included) and every
     error notice that is actually sent is also appended to `state.ha_events`
@@ -280,11 +281,15 @@ class DeveloperNotifier:
     def attach_bot(self, bot):
         self.bot = bot
 
-    async def transition(self, text: str):
+    async def transition(self, text: str, quiet: bool = False):
         """Sent at once, except an exact repeat within TRANSITION_COLLAPSE_SEC: that is counted and the
-        count is appended to the next copy sent (a flapping node yields one message per window)."""
+        count is appended to the next copy sent (a flapping node yields one message per window).
+        A `quiet` step (the intermediate ones of a planned handoff) is recorded and logged only."""
         now = self.clock()
         await self._record(text, 'transition')
+        if quiet:
+            logger.info("HA: %s", text)
+            return
         first_at, collapsed = self._recent.get(text, (None, 0))
         if first_at is not None and now - first_at < TRANSITION_COLLAPSE_SEC:
             self._recent[text] = (first_at, collapsed + 1)

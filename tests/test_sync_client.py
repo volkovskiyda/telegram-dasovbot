@@ -297,6 +297,15 @@ class TestDeveloperNotifier(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(e['at'] for e in state.ha_events))
         self.assertEqual(self.bot.send_message.await_count, 2)
 
+    async def test_quiet_transition_recorded_not_sent(self):
+        from tests.helpers import make_state
+        state = make_state()
+        notifier = DeveloperNotifier(make_config(developer_chat_id='42'), clock=lambda: self.t, state=state)
+        notifier.attach_bot(self.bot)
+        await notifier.transition('🟡 me drained', quiet=True)
+        self.assertEqual([(e['kind'], e['text']) for e in state.ha_events], [('transition', '🟡 me drained')])
+        self.bot.send_message.assert_not_awaited()
+
     async def test_errors_rate_limited_to_one_per_interval(self):
         self.notifier.attach_bot(self.bot)
         await self.notifier.error('a')

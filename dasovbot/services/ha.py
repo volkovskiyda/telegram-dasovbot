@@ -84,7 +84,8 @@ class ActiveRunner(Protocol):
 
 
 class Notifier(Protocol):
-    async def transition(self, text: str) -> None: ...
+    async def transition(self, text: str, quiet: bool = False) -> None:
+        """`quiet` keeps the step in the history only, without a chat message."""
 
     async def error(self, text: str) -> None:
         """Rate-limited to one message per SYNC_ERROR_NOTIFY_INTERVAL_SEC."""
@@ -345,7 +346,7 @@ class RoleController:
             if self.handoff_pending and reply.get('drained'):
                 # The peer has stopped; take over right away — the final pull
                 # replaces the regular one, nothing else may delay this tick
-                await self._final_pull_and_activate('handoff')
+                await self._final_pull_and_activate(f'handoff from {self.peer_name}')
                 return
             if self.handoff_pending and reply.get('role') == HA_ROLE_ACTIVE:
                 # The peer waited LEASE_TTL_SEC for us and re-activated: this
@@ -367,7 +368,7 @@ class RoleController:
                 if await self.peer.request_handoff(manual=manual):
                     self.handoff_pending = True
                     self._handoff_manual = manual
-                    await self.notifier.transition(f"⏳ {self.node} requested handoff from {self.peer_name}")
+                    await self.notifier.transition(f"⏳ {self.node} requested handoff from {self.peer_name}", quiet=True)
             return
 
         # No active peer in sight
@@ -487,7 +488,7 @@ class RoleController:
             logger.error("drain failed; handing over anyway", exc_info=True)
         self.drained = True
         self.drain_finished_at = self.clock()
-        await self.notifier.transition(f"🟡 {self.node} drained, waiting for {self.peer_name} to take over")
+        await self.notifier.transition(f"🟡 {self.node} drained, waiting for {self.peer_name} to take over", quiet=True)
 
     async def _become_passive_after_handoff(self):
         self.role = HA_ROLE_PASSIVE
@@ -496,7 +497,7 @@ class RoleController:
         self.handoff_rev = None
         await self._persist(META_HANDOFF_REV, None)
         await self.peer.on_handed_back()
-        await self.notifier.transition(f"⚪ {self.node} handed over to {self.peer_name}, now PASSIVE")
+        await self.notifier.transition(f"⚪ {self.node} handed over to {self.peer_name}, now PASSIVE", quiet=True)
 
     async def _step_down(self, reason: str):
         try:
