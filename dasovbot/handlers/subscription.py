@@ -46,7 +46,9 @@ def _button_size(text: str, callback_data: str) -> int:
 
 
 def _paginate_items(items: list[tuple[str, dict]]) -> list[list[tuple[str, dict]]]:
-    sorted_items = sorted(items, key=lambda item: len(item[1]['title']))
+    pinned = [item for item in items if item[1].get('pinned')]
+    rest = [item for item in items if not item[1].get('pinned')]
+    sorted_items = pinned + sorted(rest, key=lambda item: len(item[1]['title']))
 
     pages = []
     current_page = []
@@ -157,11 +159,11 @@ async def subscribe_url(update: Update, context) -> int:
         return ConversationHandler.END
 
     playlists = {}
-    append_playlist(playlists, f"{uploader} Videos", uploader_videos)
+    append_playlist(playlists, f"{uploader} Videos", uploader_videos, pinned=True)
     try:
         uploader_streams = f"{uploader_url}/streams"
         await _extract_info(uploader_streams)
-        append_playlist(playlists, f"{uploader} Streams", uploader_streams)
+        append_playlist(playlists, f"{uploader} Streams", uploader_streams, pinned=True)
     except Exception:
         pass
 

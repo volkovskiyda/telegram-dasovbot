@@ -67,6 +67,8 @@ def user_subscriptions(chat_id: str, subscriptions: dict) -> dict:
     return result
 
 
-def append_playlist(playlists: dict, title: str, url: str):
+def append_playlist(playlists: dict, title: str, url: str, pinned: bool = False):
+    # pinned entries (the channel-level Videos/Streams feeds) stay on top of the
+    # keyboard in insertion order instead of being sorted with the playlists
     id = str(uuid4())
-    playlists[id] = {'title': title, 'url': url}
+    playlists[id] = {'title': title, 'url': url, 'pinned': pinned}

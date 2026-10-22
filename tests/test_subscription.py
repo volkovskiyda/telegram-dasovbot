@@ -51,6 +51,14 @@ class TestPaginateItems(unittest.TestCase):
         titles = [data['title'] for _, data in pages[0]]
         self.assertEqual(titles, ['a', 'medium', 'long title here'])
 
+    def test_pinned_items_stay_on_top_in_insertion_order(self):
+        items = self._items(['long playlist title', 'a'])
+        items.append(('videos', {'title': 'Uploader Videos', 'url': 'u/videos', 'pinned': True}))
+        items.append(('streams', {'title': 'Uploader Streams', 'url': 'u/streams', 'pinned': True}))
+        pages = _paginate_items(items)
+        titles = [data['title'] for _, data in pages[0]]
+        self.assertEqual(titles, ['Uploader Videos', 'Uploader Streams', 'a', 'long playlist title'])
+
 
 class TestBuildPaginatedKeyboard(unittest.TestCase):
     def test_single_page_has_only_cancel_footer(self):
@@ -1044,6 +1052,10 @@ class TestSubscribeUrlBranches(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, SUBSCRIBE_PLAYLIST)
         titles = [item['title'] for item in context.user_data['playlists'].values()]
         self.assertIn('Uploader Streams', titles)
+        # Videos and Streams lead the keyboard even though 'P1' is the shortest title
+        keyboard = message.reply_markdown.call_args.kwargs['reply_markup'].inline_keyboard
+        button_titles = [button.text for row in keyboard for button in row]
+        self.assertEqual(button_titles[:3], ['Uploader Videos', 'Uploader Streams', 'P1'])
 
     @patch('dasovbot.handlers.subscription.get_ydl')
     async def test_query_matching_playlist_subscribes_directly(self, mock_get_ydl):
