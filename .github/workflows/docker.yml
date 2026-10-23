@@ -76,6 +76,11 @@ jobs:
     # make should_build true and push :latest / cut a release from unmerged code.
     if: github.event_name != 'pull_request' && needs.check-yt-dlp-release.outputs.should_build == 'true'
     runs-on: ubuntu-latest
+    # One release at a time: two concurrent runs would otherwise pick the same
+    # free tag, and an older build could overwrite a newer :latest.
+    concurrency:
+      group: release
+      cancel-in-progress: false
     permissions:
       contents: write
       packages: write
@@ -105,9 +110,18 @@ jobs:
           username: ${{ env.owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Current date
-        id: date
-        run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+      # Tag is the UTC date; a second release the same day gets .1, then .2 etc.
+      # Checks git tags, not releases: gh release create reuses an existing tag.
+      - name: Version
+        id: version
+        run: |
+          date="$(date -u +'%Y.%m.%d')"
+          version="$date"; n=0
+          while git ls-remote --exit-code --tags origin "refs/tags/$version" >/dev/null; do
+            n=$((n+1)); version="$date.$n"
+          done
+          echo "date=$date" >> $GITHUB_OUTPUT
+          echo "version=$version" >> $GITHUB_OUTPUT
 
       - name: Build and push
         uses: docker/build-push-action@v7
@@ -115,16 +129,16 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ env.repository }}:${{ steps.date.outputs.date }},
+            ${{ env.repository }}:${{ steps.version.outputs.version }},
             ${{ env.repository }}:latest,
-            ${{ env.registry }}/${{ env.repository }}:${{ steps.date.outputs.date }},
+            ${{ env.registry }}/${{ env.repository }}:${{ steps.version.outputs.version }},
             ${{ env.registry }}/${{ env.repository }}:latest
 
       - name: Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${{ steps.date.outputs.date }}" \
+          gh release create "${{ steps.version.outputs.version }}" \
             --generate-notes \
-            --notes "Build date: ${{ steps.date.outputs.date }}
+            --notes "Build date: ${{ steps.version.outputs.date }}
           yt-dlp version: ${{ needs.check-yt-dlp-release.outputs.yt_dlp_version }}"
