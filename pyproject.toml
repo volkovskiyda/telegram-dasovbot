@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+# Packaging exists for the `dasovbot` CLI only (dasovbot/cli.py, stdlib-only):
+#   pipx install -e .
+# The bot itself is installed from requirements.txt (Dockerfile, README "Run")
+# and never through this file, hence the empty dependency list.
+[project]
+name = "dasovbot"
+version = "0.1.0"
+description = "CLI for the dasovbot admin API"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+dasovbot = "dasovbot.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["dasovbot*"]

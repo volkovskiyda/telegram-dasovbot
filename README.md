@@ -77,6 +77,32 @@ curl -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json"
      -d '{"url": "https://www.youtube.com/watch?v=...", "dry_run": true}' http://localhost:8080/api/intents
 ```
 
+#### CLI
+`dasovbot` is a stdlib-only client for the admin API (`dasovbot/cli.py`): it knows both HA nodes, probes `/health`, sends writes to the active node and prints JSON (one line; `--pretty` indents). Installed on its own, without the bot's dependencies:
+
+```bash
+pipx install -e .          # from the repo root; Python 3.11+ (tomllib)
+dasovbot --help
+```
+
+Configuration, env first then file (per key): `DASOVBOT_URLS` (comma-separated) and `DASOVBOT_ADMIN_TOKEN`, or `~/.config/dasovbot/config.toml`:
+
+```toml
+urls = ["http://192.168.1.10:8080", "http://192.168.1.20:8080"]
+admin_token = "..."
+```
+
+| Command | Does |
+|---|---|
+| `status` | one block per node: `{url, reachable, status}` with that node's `/api/status` (a passive node answers too); exit 0 if any node answered |
+| `users [--search X] [--banned true\|false]`, `subscriptions [--user ID]`, `intents [--ignored true\|false] [--url URL]`, `alerts`, `playlists URL` | the read routes, from the first node that answers (active preferred) |
+| `ban ID\|@user`, `unban ID\|@user` | `POST /api/users/{id}/ban\|unban` |
+| `subscribe URL [--user ID] [--populate]`, `unsubscribe URL [--user ID]` | `POST /api/subscriptions`, `POST /api/subscriptions/remove` |
+| `send URL [--to ID] [--wait [SECONDS]]` | `POST /api/intents`; `--wait` polls `GET /api/intents?url=` every 5 s (default 600 s) and prints `{url, result: delivered\|failed\|ignored\|timeout, polls, intent, queued}`; exit 0 only for `delivered` (`failed` = the worker dropped the intent) |
+| `populate [URL]` | `POST /api/populate` |
+
+Every write takes `--dry-run` and `--force`. Writes probe every node, go to the active one and retry once on a `409 passive` (the lease moved between the probe and the request). Exit codes: `0` ok, `1` the server refused (its `{error, detail}` on stderr), `2` no node / no active node answered, `3` not configured.
+
 ### **Configuration:**
 - Copy `.env.example` file to `.env` and change `READ_TIMEOUT`, `BASE_URL`, `BOT_TOKEN`, `DEVELOPER_CHAT_ID` and `LOADING_VIDEO_ID` environment variables.
 - `READ_TIMEOUT` variable sets the waiting timeout for bot requests
@@ -141,6 +167,7 @@ dasovbot/              # Main package
   state.py             # BotState (mutable state container, write-through DB)
   downloader.py        # yt-dlp wrapper
   helpers.py           # Shared utilities
+  cli.py               # `dasovbot` CLI for the admin API (stdlib only, installed via pyproject.toml)
   handlers/            # Telegram handler modules
   services/            # Background tasks and intent processing
     ha.py              # Role controller (active/standby state machine) and PtbRunner
@@ -152,6 +179,7 @@ dasovbot/              # Main package
     openapi.py         # OpenAPI 3.1 description served at /api/openapi.json
     sync.py            # /health and the peer-facing /sync/* endpoints
 main.py                # Thin wrapper entry point
+pyproject.toml         # Packaging for the CLI only (`pipx install -e .`); the bot installs requirements.txt
 info.py                # CLI: video info lookup
 subscriptions.py       # CLI: bulk subscription management
 empty_media_folder.py  # CLI: clear media folder
