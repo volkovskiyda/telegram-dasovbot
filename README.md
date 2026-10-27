@@ -45,6 +45,7 @@ Entry key names mirror a sidecar-built library index (`id`, `title`, `channel`, 
 
 - `GET /api/videos` — all videos with a cached `file_id`, deduplicated by YouTube id, newest upload first. Supports `?exported=true|false` filtering and `ETag`/`If-None-Match` (returns `304 Not Modified` when unchanged). Rows stored before metadata enrichment (no `video_id`) are skipped
 - `GET /api/videos/{id}` — a single entry by YouTube video id, `404` when unknown
+- `GET /api/openapi.json` — OpenAPI 3.1 description of every `/api` route, readable with either token
 
 ```bash
 curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8080/api/videos?exported=true
@@ -148,6 +149,7 @@ dasovbot/              # Main package
   dashboard/           # Web dashboard (aiohttp, jinja2, session auth)
     api.py             # Read-only JSON API (/api/videos, API_TOKEN)
     admin_api.py       # Admin JSON API (status, users, subscriptions, intents, alerts, playlists, writes; ADMIN_TOKEN)
+    openapi.py         # OpenAPI 3.1 description served at /api/openapi.json
     sync.py            # /health and the peer-facing /sync/* endpoints
 main.py                # Thin wrapper entry point
 info.py                # CLI: video info lookup

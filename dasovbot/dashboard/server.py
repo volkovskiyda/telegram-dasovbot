@@ -16,6 +16,7 @@ from dasovbot.dashboard.admin_api import (
     api_ban, api_unban, api_subscribe, api_unsubscribe, api_send, api_populate,
 )
 from dasovbot.dashboard.auth import auth_middleware, login_page, login_post, logout, get_password, get_api_token, get_admin_token
+from dasovbot.dashboard.openapi import api_openapi
 from dasovbot.dashboard.sync import health, sync_heartbeat, sync_changes, sync_snapshot, sync_handoff
 from dasovbot.dashboard.views import index, videos, ignored, retry_ignored, remove_ignored, remove_intent, force_populate, subscriptions, remove_subscription, users, ban_user, unban_user, system, takeover, handback, health_alerts_processor, ha_processor, role_guard_middleware, STATE_KEY, HA_KEY, VPN_KEY
 from dasovbot.services.background import run_forever
@@ -90,6 +91,7 @@ def create_app(state: BotState, ha=None, vpn: VpnMonitor | None = None) -> web.A
     app.router.add_post('/system/takeover', takeover)
     app.router.add_post('/system/handback', handback)
     # Read-only JSON API (API_TOKEN or ADMIN_TOKEN)
+    app.router.add_get('/api/openapi.json', api_openapi)
     app.router.add_get('/api/videos', api_videos)
     app.router.add_get('/api/videos/{video_id}', api_video)
     # Admin API (ADMIN_TOKEN)
