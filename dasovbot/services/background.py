@@ -21,6 +21,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Tasks that stamp state.background_task_status, in the order the system page
+# and the admin API report them
+BACKGROUND_TASK_NAMES = (
+    'populate_subscriptions', 'clear_temporary_inline_queries', 'monitor_process_intents',
+    'sweep_media_folder', 'monitor_backups', 'monitor_disk_space',
+)
+
 # The dashboard can trigger a run while the hourly loop is mid-iteration;
 # both mutate state.subscriptions and enqueue intents, so runs must not overlap
 _populate_lock = asyncio.Lock()

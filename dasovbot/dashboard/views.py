@@ -10,7 +10,7 @@ import aiohttp_jinja2
 from aiohttp import web
 
 from dasovbot.constants import DATETIME_FORMAT
-from dasovbot.services.background import run_populate_subscriptions
+from dasovbot.services.background import BACKGROUND_TASK_NAMES, run_populate_subscriptions
 from dasovbot.services.intent_processor import filter_intents
 
 if TYPE_CHECKING:
@@ -464,17 +464,20 @@ async def handback(request: web.Request) -> web.Response:
     return await _ha_action(request, 'request_handback')
 
 
+TASK_DESCRIPTIONS = {
+    'populate_subscriptions': {'description': 'Checks subscriptions for new videos', 'interval': '1 hour'},
+    'clear_temporary_inline_queries': {'description': 'Cleans up stale inline queries', 'interval': '10 min'},
+    'monitor_process_intents': {'description': 'Processes download queue', 'interval': 'continuous'},
+    'sweep_media_folder': {'description': 'Removes leftover media files older than 6 hours', 'interval': '1 hour'},
+    'monitor_backups': {'description': 'Alerts when the newest database backup goes stale', 'interval': '1 hour'},
+    'monitor_disk_space': {'description': 'Alerts when the media, export or data volume runs low', 'interval': '1 hour'},
+}
+
+
 async def system(request: web.Request) -> web.Response:
     state = get_state(request)
 
-    tasks = [
-        {'name': 'populate_subscriptions', 'description': 'Checks subscriptions for new videos', 'interval': '1 hour'},
-        {'name': 'clear_temporary_inline_queries', 'description': 'Cleans up stale inline queries', 'interval': '10 min'},
-        {'name': 'monitor_process_intents', 'description': 'Processes download queue', 'interval': 'continuous'},
-        {'name': 'sweep_media_folder', 'description': 'Removes leftover media files older than 6 hours', 'interval': '1 hour'},
-        {'name': 'monitor_backups', 'description': 'Alerts when the newest database backup goes stale', 'interval': '1 hour'},
-        {'name': 'monitor_disk_space', 'description': 'Alerts when the media, export or data volume runs low', 'interval': '1 hour'},
-    ]
+    tasks = [{'name': name, **TASK_DESCRIPTIONS[name]} for name in BACKGROUND_TASK_NAMES]
     for task in tasks:
         last_run = state.background_task_status.get(task['name'], '')
         task['last_run'] = last_run

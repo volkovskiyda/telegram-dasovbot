@@ -1,10 +1,12 @@
 import hmac
+import logging
 import os
 import secrets
 import time
 
 from aiohttp import web
 
+logger = logging.getLogger(__name__)
 
 COOKIE_NAME = 'dasovbot_token'
 SESSION_TTL_SEC = 7 * 24 * 60 * 60  # a week
@@ -17,8 +19,16 @@ LOGIN_ATTEMPT_WINDOW_SEC = 60
 # a second, more generous budget that such a client cannot rotate out of
 MAX_LOGIN_ATTEMPTS_PER_REMOTE = 5 * MAX_LOGIN_ATTEMPTS
 
+# The read-only API_TOKEN is accepted only on these prefixes (the videos
+# library the phone app reads, and the API description); every other /api
+# route needs ADMIN_TOKEN, which is accepted everywhere under /api/
+API_READ_ONLY_PATHS = ('/api/videos', '/api/openapi.json')
+# Set on the request by the middleware: 'admin' or 'read'
+API_ROLE_KEY = web.RequestKey('api_role', str)
+
 _generated_password: str | None = None
 _generated_api_token: str | None = None
+_generated_admin_token: str | None = None
 _sessions: dict[str, float] = {}
 _failed_logins: dict[str, list[float]] = {}
 
@@ -43,6 +53,16 @@ def get_api_token() -> str:
     return _generated_api_token
 
 
+def get_admin_token() -> str:
+    global _generated_admin_token
+    token = os.getenv('ADMIN_TOKEN')
+    if token:
+        return token
+    if _generated_admin_token is None:
+        _generated_admin_token = secrets.token_urlsafe(32)
+    return _generated_admin_token
+
+
 def _bearer(request: web.Request) -> str:
     header = request.headers.get('Authorization', '')
     scheme, _, token = header.partition(' ')
@@ -54,6 +74,27 @@ def check_api_token(request: web.Request) -> bool:
     if not token:
         return False
     return hmac.compare_digest(token.encode(), get_api_token().encode())
+
+
+def check_admin_token(request: web.Request) -> bool:
+    token = _bearer(request)
+    if not token:
+        return False
+    return hmac.compare_digest(token.encode(), get_admin_token().encode())
+
+
+def _read_only_path(path: str) -> bool:
+    return any(path == prefix or path.startswith(prefix + '/') for prefix in API_READ_ONLY_PATHS)
+
+
+def api_role(request: web.Request) -> str | None:
+    """'admin' for ADMIN_TOKEN anywhere under /api/, 'read' for API_TOKEN on the
+    read-only prefixes, None when the request must be refused."""
+    if check_admin_token(request):
+        return 'admin'
+    if _read_only_path(request.path) and check_api_token(request):
+        return 'read'
+    return None
 
 
 def get_sync_secret() -> str:
@@ -180,9 +221,14 @@ async def auth_middleware(request: web.Request, handler):
         return await handler(request)
     if request.path.startswith('/api/'):
         # Machine clients authenticate per-request with a bearer token and
-        # must get a JSON 401, never a redirect to the HTML login page
-        if not check_api_token(request):
+        # must get a JSON 401, never a redirect to the HTML login page. One
+        # warning per failure (no rate limit): the tokens are long and random,
+        # the log line is there to notice a leaked or stale client
+        role = api_role(request)
+        if role is None:
+            logger.warning('api auth failed from %s for %s %s', client_ip(request), request.method, request.path)
             return web.json_response({'error': 'unauthorized'}, status=401)
+        request[API_ROLE_KEY] = role
         return await handler(request)
     if not check_token(request):
         raise web.HTTPFound('/login')

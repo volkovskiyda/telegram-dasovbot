@@ -119,6 +119,59 @@ async def subscribe(update: Update, context) -> int:
         return SUBSCRIBE_URL
 
 
+async def discover_playlists(query: str) -> dict:
+    """Resolve a video, playlist or channel URL to the uploader's subscribable feeds.
+
+    Returns `uploader`, `uploader_url`, `uploader_videos`, `playlists` (the
+    `append_playlist` dict: Videos and Streams pinned first, then the playlists
+    tab), `direct` (the query itself is one of the playlists) and
+    `fallback_videos` (no playlists tab, only the Videos feed). A query yt-dlp
+    cannot attribute to an uploader comes back with `uploader_url` None.
+    Raises when an extraction fails or the playlists tab is unusable.
+    """
+    info = await _extract_info(query)
+    uploader_url = info.get('uploader_url')
+    if not uploader_url:
+        return {'uploader': None, 'uploader_url': None, 'uploader_videos': None,
+                'playlists': {}, 'direct': False, 'fallback_videos': False}
+    if not uploader_url.startswith(query):
+        await _extract_info(uploader_url)
+    uploader_videos = f"{uploader_url}/videos"
+
+    try:
+        info = await _extract_info(f"{uploader_url}/playlists")
+    except Exception:
+        # No playlists tab: the Videos feed is the only thing to subscribe to
+        uploader = info.get('uploader') or info.get('uploader_id') or ''
+        playlists = {}
+        append_playlist(playlists, f"{uploader} Videos".strip(), uploader_videos, pinned=True)
+        return {'uploader': uploader, 'uploader_url': uploader_url, 'uploader_videos': uploader_videos,
+                'playlists': playlists, 'direct': False, 'fallback_videos': True}
+
+    entries = info.get('entries')
+    uploader = info.get('uploader') or info.get('uploader_id')
+    if not entries or not uploader:
+        raise ValueError(f"no playlists for {uploader_url}")
+
+    playlists = {}
+    append_playlist(playlists, f"{uploader} Videos", uploader_videos, pinned=True)
+    uploader_streams = f"{uploader_url}/streams"
+    try:
+        await _extract_info(uploader_streams)
+        append_playlist(playlists, f"{uploader} Streams", uploader_streams, pinned=True)
+    except Exception:
+        pass
+
+    direct = False
+    for entry in entries:
+        url = extract_url(entry)
+        append_playlist(playlists, entry['title'], url)
+        if query == url:
+            direct = True
+    return {'uploader': uploader, 'uploader_url': uploader_url, 'uploader_videos': uploader_videos,
+            'playlists': playlists, 'direct': direct, 'fallback_videos': False}
+
+
 async def subscribe_url(update: Update, context) -> int:
     state: BotState = context.bot_data['state']
     message = update.message
@@ -131,55 +184,29 @@ async def subscribe_url(update: Update, context) -> int:
         return ConversationHandler.END
 
     try:
-        info = await _extract_info(query)
-        uploader_url = info.get('uploader_url')
-        if not uploader_url:
-            await message.reply_text("Unsupported url", reply_markup=ReplyKeyboardRemove())
-            return ConversationHandler.END
-        if not uploader_url.startswith(query):
-            await _extract_info(uploader_url)
-
-        try:
-            playlists_url = f"{uploader_url}/playlists"
-            info = await _extract_info(playlists_url)
-        except Exception:
-            context.user_data['uploader_videos'] = f"{uploader_url}/videos"
-            return await subscribe_playlist(update, context)
-
+        found = await discover_playlists(query)
     except Exception:
         logger.error("%s # subscribe_url failed: %s", extract_user(user), query)
         await message.reply_text("Error occurred", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
 
-    entries = info.get('entries')
-    uploader = info.get('uploader') or info.get('uploader_id')
-    uploader_videos = f"{uploader_url}/videos"
-    if not entries or not uploader or not uploader_videos:
-        await message.reply_text("Error occurred", reply_markup=ReplyKeyboardRemove())
+    if not found['uploader_url']:
+        await message.reply_text("Unsupported url", reply_markup=ReplyKeyboardRemove())
         return ConversationHandler.END
+    if found['fallback_videos']:
+        context.user_data['uploader_videos'] = found['uploader_videos']
+        return await subscribe_playlist(update, context)
+    if found['direct']:
+        # The query is a playlist itself: subscribe_playlist re-reads it from the message
+        return await subscribe_playlist(update, context)
 
-    playlists = {}
-    append_playlist(playlists, f"{uploader} Videos", uploader_videos, pinned=True)
-    try:
-        uploader_streams = f"{uploader_url}/streams"
-        await _extract_info(uploader_streams)
-        append_playlist(playlists, f"{uploader} Streams", uploader_streams, pinned=True)
-    except Exception:
-        pass
-
-    for entry in entries:
-        url = extract_url(entry)
-        append_playlist(playlists, entry['title'], url)
-        if query == url:
-            return await subscribe_playlist(update, context)
-
-    context.user_data['playlists'] = playlists
+    context.user_data['playlists'] = found['playlists']
     # The plain uploader name: the playlist button labels are "{uploader} Videos"
     # etc., which must not end up persisted as the subscription's uploader
-    context.user_data['uploader'] = uploader
+    context.user_data['uploader'] = found['uploader']
     await message.reply_markdown(
-        f"Select playlist of [{uploader}]({uploader_url})",
-        reply_markup=InlineKeyboardMarkup(build_paginated_keyboard(playlists, 0))
+        f"Select playlist of [{found['uploader']}]({found['uploader_url']})",
+        reply_markup=InlineKeyboardMarkup(build_paginated_keyboard(found['playlists'], 0))
     )
     return SUBSCRIBE_PLAYLIST
 

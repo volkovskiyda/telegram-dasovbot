@@ -55,6 +55,7 @@ services:
       # limiter keys on the proxy's IP and the cookie is never marked Secure
       DASHBOARD_BEHIND_PROXY: $DASHBOARD_BEHIND_PROXY
       API_TOKEN: $API_TOKEN
+      ADMIN_TOKEN: $ADMIN_TOKEN
       BACKUP_CRON: ${BACKUP_CRON:-0 */12 * * *}
       BACKUP_MAX_COUNT: ${BACKUP_MAX_COUNT:-14}
       # High availability (README "High availability"); blank PEER_URL and
@@ -85,7 +86,7 @@ services:
 # Both nodes run api and bot inside gluetun (`network_mode: service:vpn`, the
 # dashboard port published on the vpn service). The bot must still reach the
 # LAN peer, so the vpn service needs:
-#     FIREWALL_OUTBOUND_SUBNETS: 192.168.11.0/24
+#     FIREWALL_OUTBOUND_SUBNETS: 192.168.1.0/24
 # and each host its own WireGuard key (one session per key at most providers).
 # Name resolution inside gluetun ignores the LAN DNS, hence the static-IP
 # PEER_URL above.

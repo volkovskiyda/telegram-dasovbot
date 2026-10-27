@@ -23,7 +23,7 @@ def make_controller(role='active', **status):
     ha.config.lease_ttl_sec = 30.0
     ha.status.return_value = {
         'enabled': True, 'role': role, 'node': 'me', 'node_role': 'standby', 'peer': 'other',
-        'peer_url': 'http://192.168.11.150:8080', 'lease_holder': 'me' if role == 'active' else 'other',
+        'peer_url': 'http://192.168.1.10:8080', 'lease_holder': 'me' if role == 'active' else 'other',
         'lease_until': None, 'rev': 42, 'drained': False, 'manual_hold': False, 'handback_requested': False,
         'handoff_rev': 40, 'handoff_pending': False, 'peer_role': 'passive', 'peer_seen_at': '20261007_120000',
         'ready': True, 'last_sync_at': '20261007_120000', 'last_sync_rev': 41,
@@ -76,7 +76,7 @@ class TestHealthWithController(SyncEndpointTestCase):
         body = await resp.json()
         self.assertEqual(body['role'], 'passive')
         self.assertEqual(body['lease_holder'], 'other')
-        self.assertEqual(body['peer_url'], 'http://192.168.11.150:8080')
+        self.assertEqual(body['peer_url'], 'http://192.168.1.10:8080')
         self.assertTrue(body['ready'])
         self.assertNotIn('peer_seen_at', body)  # filtered to the documented keys
         self.assertNotIn('handoff_pending', body)

@@ -228,7 +228,7 @@ class TestLoadConfigHa(unittest.TestCase):
         self.assertEqual(config.failback_stable_sec, 180.0)
 
     @patch.dict('os.environ', {**BASE_ENV, 'NODE_ROLE': 'standby', 'NODE_NAME': 'rpi',
-                               'PEER_URL': 'http://192.168.11.150:8080/', 'SYNC_SECRET': 's3cret',
+                               'PEER_URL': 'http://192.168.1.10:8080/', 'SYNC_SECRET': 's3cret',
                                'HEARTBEAT_INTERVAL_SEC': '5', 'LEASE_TTL_SEC': '20',
                                'FAILBACK_STABLE_SEC': '60'}, clear=True)
     def test_ha_pair_settings(self, mock_dotenv):
@@ -237,7 +237,7 @@ class TestLoadConfigHa(unittest.TestCase):
         self.assertFalse(config.is_primary)
         self.assertEqual(config.node_name, 'rpi')
         # trailing slash stripped so '/sync/...' can be appended
-        self.assertEqual(config.peer_url, 'http://192.168.11.150:8080')
+        self.assertEqual(config.peer_url, 'http://192.168.1.10:8080')
         self.assertEqual(config.sync_secret, 's3cret')
         self.assertEqual((config.heartbeat_interval_sec, config.lease_ttl_sec, config.failback_stable_sec),
                          (5.0, 20.0, 60.0))
@@ -258,7 +258,7 @@ class TestLoadConfigHa(unittest.TestCase):
             load_config()
         self.assertIn('NODE_ROLE', str(ctx.exception))
 
-    @patch.dict('os.environ', {**BASE_ENV, 'PEER_URL': '192.168.11.150:8080', 'SYNC_SECRET': 'top-secret-value'},
+    @patch.dict('os.environ', {**BASE_ENV, 'PEER_URL': '192.168.1.10:8080', 'SYNC_SECRET': 'top-secret-value'},
                 clear=True)
     def test_peer_url_without_scheme_raises_without_echoing_secret(self, mock_dotenv):
         with self.assertRaises(ValueError) as ctx:

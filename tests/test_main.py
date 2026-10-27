@@ -84,7 +84,7 @@ class TestMain(unittest.TestCase):
     def test_ha_pair_gets_a_sync_client(self, mock_load, mock_init, mock_state_cls,
                                         mock_app_cls, mock_register, mock_dashboard, mock_run):
         from dasovbot.services.sync import SyncClient
-        mock_load.return_value = make_config(peer_url='http://192.168.11.7:8080', sync_secret='s')
+        mock_load.return_value = make_config(peer_url='http://192.168.1.20:8080', sync_secret='s')
         state = self._make_state()
         mock_state_cls.create = AsyncMock(return_value=state)
         app = MagicMock()

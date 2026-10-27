@@ -28,21 +28,29 @@ def _node_name(state) -> str:
     return (getattr(config, 'node_name', '') or socket.gethostname()) if config else socket.gethostname()
 
 
-async def health(request: web.Request) -> web.Response:
-    """Unauthenticated: who is active here, and is this node fit to take over."""
+def standalone_health(state) -> dict:
+    """The /health body of a process without a role controller (standalone/pre-HA)."""
+    node = _node_name(state)
+    return {
+        'role': HA_ROLE_ACTIVE, 'node': node, 'lease_holder': node, 'last_sync_rev': None,
+        'last_sync_at': None, 'ready': True, 'peer': None, 'peer_url': '', 'node_role': 'primary',
+        'enabled': False, 'rev': getattr(state, 'rev', 0), 'manual_hold': False,
+        'handback_requested': False, 'drained': False,
+    }
+
+
+def health_body(request: web.Request) -> dict:
     ha = get_ha(request)
     if ha is None:
         # No controller registered (standalone/pre-HA process): behave as today
-        state = get_state(request)
-        node = _node_name(state)
-        return web.json_response({
-            'role': HA_ROLE_ACTIVE, 'node': node, 'lease_holder': node, 'last_sync_rev': None,
-            'last_sync_at': None, 'ready': True, 'peer': None, 'peer_url': '', 'node_role': 'primary',
-            'enabled': False, 'rev': getattr(state, 'rev', 0), 'manual_hold': False,
-            'handback_requested': False, 'drained': False,
-        })
+        return standalone_health(get_state(request))
     status = ha.status()
-    return web.json_response({key: status.get(key) for key in HEALTH_KEYS})
+    return {key: status.get(key) for key in HEALTH_KEYS}
+
+
+async def health(request: web.Request) -> web.Response:
+    """Unauthenticated: who is active here, and is this node fit to take over."""
+    return web.json_response(health_body(request))
 
 
 async def sync_heartbeat(request: web.Request) -> web.Response:

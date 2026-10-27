@@ -380,7 +380,7 @@ async def main():
             ha.readiness_reason.return_value = "last sync 95s behind the last heartbeat"
             ha.status.return_value = {
                 "enabled": True, "role": os.environ["PREVIEW_HA_ROLE"], "node": "rpi", "node_role": "standby",
-                "peer": "dasovbot", "peer_url": "http://192.168.11.150:8080", "peer_role": "active",
+                "peer": "dasovbot", "peer_url": "http://192.168.1.10:8080", "peer_role": "active",
                 "lease_holder": "dasovbot", "ready": False, "last_sync_at": "20260101_000000",
                 "last_sync_rev": 39071, "last_heartbeat_at": "20260101_000100", "manual_hold": False,
             }

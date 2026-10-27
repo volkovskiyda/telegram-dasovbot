@@ -80,12 +80,12 @@ class TestClientIp(AuthTestCase):
         # The port is reachable without the proxy too: a direct LAN client
         # forging a fresh X-Forwarded-For per attempt must still run out
         for i in range(MAX_LOGIN_ATTEMPTS_PER_REMOTE):
-            attacker = make_request(remote='192.168.11.99', forwarded=f'203.0.113.{i}')
+            attacker = make_request(remote='192.168.1.99', forwarded=f'203.0.113.{i}')
             attacker.post = AsyncMock(return_value={'password': 'wrong'})
             with self.assertRaises(web.HTTPFound) as ctx:
                 await login_post(attacker)
             self.assertEqual(ctx.exception.location, '/login?error=1')
-        attacker = make_request(remote='192.168.11.99', forwarded='203.0.113.250')
+        attacker = make_request(remote='192.168.1.99', forwarded='203.0.113.250')
         attacker.post = AsyncMock(return_value={'password': 'secret'})
         with self.assertRaises(web.HTTPFound) as ctx:
             await login_post(attacker)

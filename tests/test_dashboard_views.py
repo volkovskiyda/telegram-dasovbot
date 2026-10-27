@@ -412,7 +412,7 @@ def make_ha(role='passive'):
     ha.HaError = HaError
     ha.status.return_value = {
         'enabled': True, 'role': role, 'node': 'rpi', 'node_role': 'standby', 'peer': 'dasovbot',
-        'peer_url': 'http://192.168.11.150:8080', 'peer_role': 'active', 'lease_holder': 'dasovbot',
+        'peer_url': 'http://192.168.1.10:8080', 'peer_role': 'active', 'lease_holder': 'dasovbot',
         'lease_until': None, 'rev': 10, 'drained': False, 'manual_hold': False, 'handback_requested': False,
         'handoff_rev': None, 'handoff_pending': False, 'peer_seen_at': None, 'ready': True,
         'last_sync_at': '20260101_000000', 'last_sync_rev': 39071, 'last_heartbeat_at': '20260101_000100',
@@ -444,7 +444,7 @@ class TestPassiveDashboard(HaDashboardTestCase):
             self.assertEqual(resp.status, 409, path)
             text = await resp.text()
             self.assertIn('PASSIVE', text)
-            self.assertIn('http://192.168.11.150:8080', text)
+            self.assertIn('http://192.168.1.10:8080', text)
         self.assertEqual(self.state.banned_users, {})
 
     async def test_get_pages_still_work_read_only(self):
@@ -456,7 +456,7 @@ class TestPassiveDashboard(HaDashboardTestCase):
         for path in ('/', '/videos', '/subscriptions', '/system'):
             text = await (await self.client.get(path)).text()
             self.assertIn('data-ha-banner="passive"', text, path)
-            self.assertIn('active node is <a href="http://192.168.11.150:8080">dasovbot</a>', text)
+            self.assertIn('active node is <a href="http://192.168.1.10:8080">dasovbot</a>', text)
             self.assertIn('role-chip role-passive', text)
             self.assertIn('>PASSIVE<', text)
 

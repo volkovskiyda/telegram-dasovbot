@@ -38,13 +38,31 @@ Password-protected web UI served on `DASHBOARD_PORT` (default 8080).
 - **System** (`/system`) — background task status, state sizes, manual subscription polling trigger, and on an HA pair the role card with **Take over** / **Hand back** (see [High availability](#high-availability))
 
 ### **JSON API**
-Machine-readable video metadata served on the same port under `/api/`, authorized per-request with `Authorization: Bearer <API_TOKEN>` (never the dashboard session cookie). Entry key names mirror a sidecar-built library index (`id`, `title`, `channel`, `channelId`, `duration`, `uploadDate`, `tags`, `categories`, `description`, `thumbnail`, `chapters` as `[{start, title}]` with `start` in seconds, `uploadTimestamp` (the upload instant in epoch seconds, `null` when YouTube publishes only a date) and `fetchedAt` in epoch seconds), so index consumers can parse them unchanged; `webpageUrl` and `exported` (file moved to the export folder / media library) are added.
+Machine-readable endpoints served on the same port under `/api/`, authorized per-request with a bearer token (never the dashboard session cookie). Two tokens: the read-only `API_TOKEN` opens the video library only, the `ADMIN_TOKEN` opens every `/api/` route. Success returns a bare object or array; failure returns `{"error", "detail"}` with a 4xx/5xx status. A rejected bearer is logged once (client IP, method, path) and answered `401 {"error": "unauthorized"}`.
+
+#### Read-only (`API_TOKEN` or `ADMIN_TOKEN`)
+Entry key names mirror a sidecar-built library index (`id`, `title`, `channel`, `channelId`, `duration`, `uploadDate`, `tags`, `categories`, `description`, `thumbnail`, `chapters` as `[{start, title}]` with `start` in seconds, `uploadTimestamp` (the upload instant in epoch seconds, `null` when YouTube publishes only a date) and `fetchedAt` in epoch seconds), so index consumers can parse them unchanged; `webpageUrl` and `exported` (file moved to the export folder / media library) are added.
 
 - `GET /api/videos` — all videos with a cached `file_id`, deduplicated by YouTube id, newest upload first. Supports `?exported=true|false` filtering and `ETag`/`If-None-Match` (returns `304 Not Modified` when unchanged). Rows stored before metadata enrichment (no `video_id`) are skipped
 - `GET /api/videos/{id}` — a single entry by YouTube video id, `404` when unknown
 
 ```bash
 curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8080/api/videos?exported=true
+```
+
+#### Admin (`ADMIN_TOKEN`)
+The read side of what an operator or agent needs before acting. Served by both nodes of an HA pair (each describes itself).
+
+- `GET /api/status` — the `/health` fields (`role`, `node`, `ready`, `rev`, …) plus `counts` (`users`, `banned`, `videos` deduplicated as the videos API serves them, `videos_rows`, `subscriptions`, `subscribers`, `intents: {pending, retrying, ignored, total}`, `inline_queries`, `alerts`), `tasks` (background task name → last run or `null`), `backup: {dir, newest_age_sec}`, `migration`, `queue_size`, `vpn` (`null` until the VPN poller is configured) and `node_time`
+- `GET /api/users?search=&banned=true|false` — `[{id, name, username, banned, banned_at, requests, last_at}]`, most requests first; `search` matches id, name and username (with or without `@`) case-insensitively
+- `GET /api/subscriptions?chat_id=` — `[{url, title, uploader, uploader_videos, chat_ids: [{id, name}]}]`, optionally only the given subscriber's
+- `GET /api/intents?ignored=true|false` — `[{url, status, priority, retries, source, title, upload_date, chat_ids, inline_count, message_count, retry_in_sec}]` by priority; `status` is `pending`, `retrying` (failed before or backing off) or `ignored`
+- `GET /api/intents?url=` — one URL's `{url, status, intent}`: the entry above while queued, `delivered` (popped, file cached) or `absent` (never queued or dropped) with `intent: null`
+- `GET /api/alerts` — `[{id, level, message, since}]`, the dashboard health banner
+- `GET /api/playlists?url=` — what `/subscribe` would offer for a video, playlist or channel URL: `{uploader, uploader_url, uploader_videos, playlists: [{title, url}], direct, fallback_videos}`; `400` for a non-http or unsupported URL, `502 {error: "extraction failed", detail}` when yt-dlp fails
+
+```bash
+curl -H "Authorization: Bearer $ADMIN_TOKEN" http://localhost:8080/api/status
 ```
 
 ### **Configuration:**
@@ -79,7 +97,8 @@ curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8080/api/videos?expo
 | `DASHBOARD_PASSWORD` | No | | Password for web dashboard access (auto-generated if not set; written to `data/dashboard_password.txt`). Required, with the same value, on both nodes of an HA pair |
 | `DASHBOARD_PORT` | No | `8080` | Port for web dashboard server |
 | `DASHBOARD_BEHIND_PROXY` | No | `false` | Set `true` when the dashboard sits behind a reverse proxy (Traefik, nginx, …): login rate limiting uses the client IP from `X-Forwarded-For` (plus a 5× larger budget per socket peer, so a client that reaches the port without the proxy cannot rotate the header past the limit), and the session cookie is marked `Secure` when the proxy reports HTTPS via `X-Forwarded-Proto` |
-| `API_TOKEN` | No | | Bearer token for the JSON API under `/api/` (auto-generated if not set; written to `data/api_token.txt`). Required, with the same value, on both nodes of an HA pair |
+| `API_TOKEN` | No | | Read-only bearer token for `/api/videos` (auto-generated if not set; written to `data/api_token.txt`). Required, with the same value, on both nodes of an HA pair |
+| `ADMIN_TOKEN` | No | | Bearer token for the admin API, accepted on every `/api/` route (auto-generated if not set; written to `data/admin_token.txt`). Same value on both nodes of an HA pair; `API_TOKEN` cannot call admin routes |
 | `COOKIES_FILE` | No | | Path to cookies file for yt-dlp |
 | `BACKUP_CRON` | Docker | | Cron schedule for automatic SQLite backups (`entrypoint.sh` installs it into cron; empty disables). docker-compose defaults it to `0 */12 * * *` |
 | `BACKUP_MAX_COUNT` | Docker | `14` | Backups kept by `backup.py`; older ones are pruned |
@@ -89,7 +108,7 @@ curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8080/api/videos?expo
 | `TELEGRAM_API_HASH` | Docker | | Telegram API hash (for local Bot API server) |
 | `NODE_ROLE` | HA | `primary` | `primary` (reclaims the lease after `FAILBACK_STABLE_SEC`) or `standby` |
 | `NODE_NAME` | HA | hostname | Name shown in `/health`, heartbeats and notifications |
-| `PEER_URL` | HA | | Dashboard URL of the *other* node by static LAN IP, e.g. `http://192.168.11.150:8080`. Blank = single node (HA off). Never a hostname (does not resolve inside gluetun) or a floating IP |
+| `PEER_URL` | HA | | Dashboard URL of the *other* node by static LAN IP, e.g. `http://192.168.1.10:8080`. Blank = single node (HA off). Never a hostname (does not resolve inside gluetun) or a floating IP |
 | `SYNC_SECRET` | HA | | Shared bearer secret for `/sync/*`; identical on both nodes, separate from `API_TOKEN`. Blank = HA off |
 | `HEARTBEAT_INTERVAL_SEC` | HA | `10` | Passive node's heartbeat and feed-pull period |
 | `LEASE_TTL_SEC` | HA | `30` | No successful heartbeat for this long = lease lost, the standby takes over. Must be ≥ `HEARTBEAT_INTERVAL_SEC` |
@@ -113,6 +132,8 @@ dasovbot/              # Main package
     ha.py              # Role controller (active/standby state machine) and PtbRunner
     sync.py            # Sync client: heartbeat, change-feed pull, snapshot; developer notifier
   dashboard/           # Web dashboard (aiohttp, jinja2, session auth)
+    api.py             # Read-only JSON API (/api/videos, API_TOKEN)
+    admin_api.py       # Admin JSON API (/api/status, users, subscriptions, intents, alerts, playlists; ADMIN_TOKEN)
     sync.py            # /health and the peer-facing /sync/* endpoints
 main.py                # Thin wrapper entry point
 info.py                # CLI: video info lookup
@@ -335,8 +356,8 @@ Force a takeover from a shell (run against the **active** node, then watch `/hea
 
 ```bash
 curl -X POST -H "Authorization: Bearer $SYNC_SECRET" -H "Content-Type: application/json" \
-     -d '{"manual": true}' http://192.168.11.150:8080/sync/handoff
-curl http://192.168.11.7:8080/health
+     -d '{"manual": true}' http://192.168.1.10:8080/sync/handoff
+curl http://192.168.1.20:8080/health
 ```
 
 #### Syncthing
@@ -366,14 +387,14 @@ Only the active node's cron runs `backup.py`: it asks `http://127.0.0.1:$DASHBOA
 
 #### Addressing
 
-Each node keeps its own dashboard address; the passive dashboard shows a banner linking to the active node, and `/health` tells you who is active. There is no floating IP. `PEER_URL` is the peer's **static LAN IP** (`http://192.168.11.150:8080` on the standby, `http://192.168.11.7:8080` on the primary; the Pi has a reserved DHCP lease): both bots run inside gluetun, whose built-in DNS-over-TLS resolver ignores Pi-hole and the router, so LAN hostnames never resolve inside the container. gluetun on both hosts needs `FIREWALL_OUTBOUND_SUBNETS=192.168.11.0/24` so the bot can reach the peer, and each host its own WireGuard key (most providers allow one session per key).
+Each node keeps its own dashboard address; the passive dashboard shows a banner linking to the active node, and `/health` tells you who is active. There is no floating IP. `PEER_URL` is the peer's **static LAN IP** (`http://192.168.1.10:8080` on the standby, `http://192.168.1.20:8080` on the primary; the Pi has a reserved DHCP lease): both bots run inside gluetun, whose built-in DNS-over-TLS resolver ignores Pi-hole and the router, so LAN hostnames never resolve inside the container. gluetun on both hosts needs `FIREWALL_OUTBOUND_SUBNETS=192.168.1.0/24` so the bot can reach the peer, and each host its own WireGuard key (most providers allow one session per key).
 
 #### Rollout
 
 1. Put the `.stignore` files above on both Syncthing instances.
 2. On the standby, delete the stale replica (`bot.db`, `bot.db-wal`, `bot.db-shm` under `/data`); the standby bootstraps from the primary's snapshot.
-3. Primary: set `NODE_ROLE=primary`, `NODE_NAME`, `PEER_URL=http://192.168.11.7:<port>`, `SYNC_SECRET`, plus explicit `DASHBOARD_PASSWORD` and `API_TOKEN`; `docker compose up -d` (`vpn → api → bot`); `curl /health` → `role: active`.
-4. Standby: the same with `NODE_ROLE=standby`, `NODE_NAME=rpi`, `PEER_URL=http://192.168.11.150:<port>`, the same `SYNC_SECRET`/`DASHBOARD_PASSWORD`/`API_TOKEN`; `docker compose up -d`; watch `/health` go `role: passive`, `ready: true` after the bootstrap snapshot.
+3. Primary: set `NODE_ROLE=primary`, `NODE_NAME`, `PEER_URL=http://192.168.1.20:<port>`, `SYNC_SECRET`, plus explicit `DASHBOARD_PASSWORD`, `API_TOKEN` and `ADMIN_TOKEN`; `docker compose up -d` (`vpn → api → bot`); `curl /health` → `role: active`.
+4. Standby: the same with `NODE_ROLE=standby`, `NODE_NAME=rpi`, `PEER_URL=http://192.168.1.10:<port>`, the same `SYNC_SECRET`/`DASHBOARD_PASSWORD`/`API_TOKEN`/`ADMIN_TOKEN`; `docker compose up -d`; watch `/health` go `role: passive`, `ready: true` after the bootstrap snapshot.
 5. Rehearse once: Take over on the standby's `/system`, send the bot a link, Hand back, confirm the primary is ACTIVE again and the video shows on both dashboards.
 
 **Rollback:** blank `PEER_URL` on both nodes and restart — each node is standalone again (stop the standby's bot, or both will poll).

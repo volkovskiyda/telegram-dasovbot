@@ -10,7 +10,8 @@ import jinja2
 from aiohttp import web
 
 from dasovbot.dashboard.api import api_video, api_videos
-from dasovbot.dashboard.auth import auth_middleware, login_page, login_post, logout, get_password, get_api_token
+from dasovbot.dashboard.admin_api import api_alerts, api_intents, api_playlists, api_status, api_subscriptions, api_users
+from dasovbot.dashboard.auth import auth_middleware, login_page, login_post, logout, get_password, get_api_token, get_admin_token
 from dasovbot.dashboard.sync import health, sync_heartbeat, sync_changes, sync_snapshot, sync_handoff
 from dasovbot.dashboard.views import index, videos, ignored, retry_ignored, remove_ignored, remove_intent, force_populate, subscriptions, remove_subscription, users, ban_user, unban_user, system, takeover, handback, health_alerts_processor, ha_processor, role_guard_middleware, STATE_KEY, HA_KEY
 
@@ -76,8 +77,16 @@ def create_app(state: BotState, ha=None) -> web.Application:
     app.router.add_get('/system', system)
     app.router.add_post('/system/takeover', takeover)
     app.router.add_post('/system/handback', handback)
+    # Read-only JSON API (API_TOKEN or ADMIN_TOKEN)
     app.router.add_get('/api/videos', api_videos)
     app.router.add_get('/api/videos/{video_id}', api_video)
+    # Admin API (ADMIN_TOKEN)
+    app.router.add_get('/api/status', api_status)
+    app.router.add_get('/api/users', api_users)
+    app.router.add_get('/api/subscriptions', api_subscriptions)
+    app.router.add_get('/api/intents', api_intents)
+    app.router.add_get('/api/alerts', api_alerts)
+    app.router.add_get('/api/playlists', api_playlists)
     app.router.add_get('/health', health)
     app.router.add_get('/sync/heartbeat', sync_heartbeat)
     app.router.add_get('/sync/changes', sync_changes)
@@ -108,6 +117,9 @@ async def start_dashboard(state: BotState, ha=None):
     if not os.getenv('API_TOKEN'):
         _persist_generated_secret(state, get_api_token(), 'api_token.txt',
                                   'API_TOKEN', 'authorize /api/ requests')
+    if not os.getenv('ADMIN_TOKEN'):
+        _persist_generated_secret(state, get_admin_token(), 'admin_token.txt',
+                                  'ADMIN_TOKEN', 'authorize admin /api/ requests')
 
     port = int(os.getenv('DASHBOARD_PORT', '8080'))
     app = create_app(state, ha)
