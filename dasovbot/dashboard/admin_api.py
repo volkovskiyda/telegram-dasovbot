@@ -15,7 +15,7 @@ from aiohttp import web
 from dasovbot.constants import SOURCE_API
 from dasovbot.dashboard.api import collect_entries, parse_bool
 from dasovbot.dashboard.sync import health_body
-from dasovbot.dashboard.views import get_ha, get_state, user_label, user_name
+from dasovbot.dashboard.views import VPN_KEY, get_ha, get_state, user_label, user_name
 from dasovbot.handlers.subscription import discover_playlists, resolve_subscription
 from dasovbot.helpers import now
 from dasovbot.models import Subscription
@@ -127,7 +127,8 @@ async def api_status(request: web.Request) -> web.Response:
     body['backup'] = backup_status(state)
     body['migration'] = state.migration_progress
     body['queue_size'] = state.download_queue.qsize()
-    body['vpn'] = None
+    monitor = request.app.get(VPN_KEY)
+    body['vpn'] = dict(monitor.status) if monitor is not None else None
     body['node_time'] = now()
     return web.json_response(body)
 

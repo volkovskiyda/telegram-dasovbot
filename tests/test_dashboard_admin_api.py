@@ -148,6 +148,21 @@ class TestApiStatus(AdminApiTestCase):
         self.assertIsNone(body['backup'])
 
 
+class TestApiStatusVpn(AdminApiTestCase):
+    async def get_application(self):
+        self.state = make_state(config=make_config(), migration_progress={'status': 'skipped', 'tables': {}, 'elapsed': 0.0})
+        self.vpn = MagicMock()
+        self.vpn.status = {'ip': '1.2.3.4', 'country': 'Netherlands', 'city': 'Amsterdam', 'status': 'running',
+                           'last_change_at': None, 'changes_since_start': 0, 'last_poll_ok': True,
+                           'last_poll_at': '20260101_000000'}
+        return create_app(self.state, vpn=self.vpn)
+
+    async def test_status_carries_the_monitor_snapshot(self):
+        body = await self._get_json('/api/status')
+        self.assertEqual(body['vpn'], self.vpn.status)
+        self.assertIsNot(body['vpn'], self.vpn.status)
+
+
 class TestApiUsers(AdminApiTestCase):
     def _seed(self):
         self.state.users = {

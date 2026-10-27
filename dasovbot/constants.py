@@ -75,6 +75,10 @@ MAX_CONCURRENT_UPDATES = 16
 SYNC_PAGE_SIZE = 500  # rows per /sync/changes page
 SNAPSHOT_INTERVAL_SEC = 60 * 60  # passive node pulls a full snapshot hourly (self-healing floor)
 SYNC_ERROR_NOTIFY_INTERVAL_SEC = 10 * 60  # developer hears about sync errors at most this often
+
+# VPN status poller against the gluetun control server (services/vpn.py)
+VPN_POLL_INTERVAL_SEC = 60
+VPN_POLL_TIMEOUT_SEC = 10
 READINESS_LEASE_FACTOR = 3  # ready if the last sync is within this many lease TTLs of the last heartbeat
 # After a step-down (the peer turned out to be alive) a node refuses the next
 # automatic "lease lost" takeover for STEP_DOWN_HOLD_FACTOR lease TTLs, doubling

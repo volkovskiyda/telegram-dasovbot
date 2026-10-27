@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 STATE_KEY = web.AppKey('state')
 HA_KEY = web.AppKey('ha')
+VPN_KEY = web.AppKey('vpn')
 
 
 def get_state(request: web.Request) -> BotState:

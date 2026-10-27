@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from pathlib import Path
@@ -16,7 +17,9 @@ from dasovbot.dashboard.admin_api import (
 )
 from dasovbot.dashboard.auth import auth_middleware, login_page, login_post, logout, get_password, get_api_token, get_admin_token
 from dasovbot.dashboard.sync import health, sync_heartbeat, sync_changes, sync_snapshot, sync_handoff
-from dasovbot.dashboard.views import index, videos, ignored, retry_ignored, remove_ignored, remove_intent, force_populate, subscriptions, remove_subscription, users, ban_user, unban_user, system, takeover, handback, health_alerts_processor, ha_processor, role_guard_middleware, STATE_KEY, HA_KEY
+from dasovbot.dashboard.views import index, videos, ignored, retry_ignored, remove_ignored, remove_intent, force_populate, subscriptions, remove_subscription, users, ban_user, unban_user, system, takeover, handback, health_alerts_processor, ha_processor, role_guard_middleware, STATE_KEY, HA_KEY, VPN_KEY
+from dasovbot.services.background import run_forever
+from dasovbot.services.vpn import VpnMonitor
 
 if TYPE_CHECKING:
     from dasovbot.state import BotState
@@ -45,13 +48,19 @@ def safe_url(url: str | None) -> str:
     return '#'
 
 
-def create_app(state: BotState, ha=None) -> web.Application:
-    """`ha` is the RoleController; without it the node reports itself standalone/active."""
+VPN_TASK_KEY = web.AppKey('vpn_task', asyncio.Task)
+
+
+def create_app(state: BotState, ha=None, vpn: VpnMonitor | None = None) -> web.Application:
+    """`ha` is the RoleController; without it the node reports itself standalone/active.
+    `vpn` is the VpnMonitor whose status `/api/status` reports (None = `vpn: null`)."""
     # Auth first, then the HA write guard (a passive node answers POSTs with 409)
     app = web.Application(middlewares=[auth_middleware, role_guard_middleware])
     app[STATE_KEY] = state
     if ha is not None:
         app[HA_KEY] = ha
+    if vpn is not None:
+        app[VPN_KEY] = vpn
 
     env = aiohttp_jinja2.setup(
         app,
@@ -131,7 +140,15 @@ async def start_dashboard(state: BotState, ha=None):
                                   'ADMIN_TOKEN', 'authorize admin /api/ requests')
 
     port = int(os.getenv('DASHBOARD_PORT', '8080'))
-    app = create_app(state, ha)
+    vpn = None
+    if state.config is not None and state.config.vpn_control_apikey:
+        vpn = VpnMonitor(state.config.vpn_control_url, state.config.vpn_control_apikey)
+    app = create_app(state, ha, vpn)
+    if vpn is not None:
+        # Owned by the app, not state.background_tasks: it describes this host
+        # and must survive a step-down, which cancels every background task
+        app[VPN_TASK_KEY] = asyncio.create_task(run_forever(vpn.run, 'vpn_monitor'), name='vpn_monitor')
+        logger.info('VPN status poller started against %s', vpn.url)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', port)

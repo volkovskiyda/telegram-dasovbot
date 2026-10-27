@@ -53,12 +53,13 @@ curl -H "Authorization: Bearer $API_TOKEN" http://localhost:8080/api/videos?expo
 #### Admin (`ADMIN_TOKEN`)
 The read side of what an operator or agent needs before acting. Served by both nodes of an HA pair (each describes itself).
 
-- `GET /api/status` — the `/health` fields (`role`, `node`, `ready`, `rev`, …) plus `counts` (`users`, `banned`, `videos` deduplicated as the videos API serves them, `videos_rows`, `subscriptions`, `subscribers`, `intents: {pending, retrying, ignored, total}`, `inline_queries`, `alerts`), `tasks` (background task name → last run or `null`), `backup: {dir, newest_age_sec}`, `migration`, `queue_size`, `vpn` (`null` until the VPN poller is configured) and `node_time`
+- `GET /api/status` — the `/health` fields (`role`, `node`, `ready`, `rev`, …) plus `counts` (`users`, `banned`, `videos` deduplicated as the videos API serves them, `videos_rows`, `subscriptions`, `subscribers`, `intents: {pending, retrying, ignored, total}`, `inline_queries`, `alerts`), `tasks` (background task name → last run or `null`), `backup: {dir, newest_age_sec}`, `migration`, `queue_size`, `vpn` (see below; `null` without `VPN_CONTROL_APIKEY`) and `node_time`
 - `GET /api/users?search=&banned=true|false` — `[{id, name, username, banned, banned_at, requests, last_at}]`, most requests first; `search` matches id, name and username (with or without `@`) case-insensitively
 - `GET /api/subscriptions?chat_id=` — `[{url, title, uploader, uploader_videos, chat_ids: [{id, name}]}]`, optionally only the given subscriber's
 - `GET /api/intents?ignored=true|false` — `[{url, status, priority, retries, source, title, upload_date, chat_ids, inline_count, message_count, retry_in_sec}]` by priority; `status` is `pending`, `retrying` (failed before or backing off) or `ignored`
 - `GET /api/intents?url=` — one URL's `{url, status, intent}`: the entry above while queued, `delivered` (popped, file cached) or `absent` (never queued or dropped) with `intent: null`
 - `GET /api/alerts` — `[{id, level, message, since}]`, the dashboard health banner
+- VPN status: with `VPN_CONTROL_APIKEY` set, the bot polls the gluetun control server every 60 s on both nodes and `/api/status` carries `vpn: {ip, country, city, status, last_change_at, changes_since_start, last_poll_ok, last_poll_at}` for *this* host. A reconnect (`last_change_at`, `changes_since_start`) is a public IP that changed between two good polls, or a good poll after a failed one; the first poll after start is the baseline. A failed poll keeps the last known exit and sets `last_poll_ok: false`. In memory only, never synced, no alerts
 - `GET /api/playlists?url=` — what `/subscribe` would offer for a video, playlist or channel URL: `{uploader, uploader_url, uploader_videos, playlists: [{title, url}], direct, fallback_videos}`; `400` for a non-http or unsupported URL, `502 {error: "extraction failed", detail}` when yt-dlp fails
 
 Writes take a JSON object body and run only on the ACTIVE node: a passive node answers every `/api` POST with `409 {"error": "passive", "detail", "active": <peer url>}`. Every write accepts `dry_run: true` (same resolution, nothing written, the response says what would happen). `chat_id` defaults to `DEVELOPER_CHAT_ID` and may be a numeric id or `@username`; an unknown numeric id is refused with `404 {"error": "unknown chat", "candidates": [...]}` (the closest known ids) unless `force: true`. `{id}` in a user route is a numeric id or `@username` (`404 unknown user` with candidates, `409 ambiguous user`). Ban, unban and unsubscribe post one audit line to the developer chat (`API: banned …`); subscribe and send do not. Takeover/handback and removing a subscription for all its subscribers stay dashboard-only.
@@ -124,6 +125,8 @@ curl -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json"
 | `LEASE_TTL_SEC` | HA | `30` | No successful heartbeat for this long = lease lost, the standby takes over. Must be ≥ `HEARTBEAT_INTERVAL_SEC` |
 | `FAILBACK_STABLE_SEC` | HA | `180` | Continuous healthy heartbeats the returning primary needs before it asks for the lease back |
 | `BACKUP_SKIP_ROLE_CHECK` | Docker | `false` | `true` makes `backup.py` back up even on a passive node (manual replica snapshot) |
+| `VPN_CONTROL_APIKEY` | No | | Key of a gluetun control-server auth role that may `GET /v1/publicip/ip` and `GET /v1/vpn/status`; blank = no VPN poller and `vpn: null` in `/api/status` |
+| `VPN_CONTROL_URL` | No | `http://127.0.0.1:8000` | gluetun control server, reachable from the bot (shared network namespace when the bot runs inside the VPN container) |
 
 ### **Project structure:**
 ```
@@ -141,6 +144,7 @@ dasovbot/              # Main package
   services/            # Background tasks and intent processing
     ha.py              # Role controller (active/standby state machine) and PtbRunner
     sync.py            # Sync client: heartbeat, change-feed pull, snapshot; developer notifier
+    vpn.py             # VPN status poller against the gluetun control server
   dashboard/           # Web dashboard (aiohttp, jinja2, session auth)
     api.py             # Read-only JSON API (/api/videos, API_TOKEN)
     admin_api.py       # Admin JSON API (status, users, subscriptions, intents, alerts, playlists, writes; ADMIN_TOKEN)

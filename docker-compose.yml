@@ -69,6 +69,9 @@ services:
       HEARTBEAT_INTERVAL_SEC: ${HEARTBEAT_INTERVAL_SEC:-10}
       LEASE_TTL_SEC: ${LEASE_TTL_SEC:-30}
       FAILBACK_STABLE_SEC: ${FAILBACK_STABLE_SEC:-180}
+      # VPN status in /api/status (README "JSON API"); blank key = off
+      VPN_CONTROL_APIKEY: $VPN_CONTROL_APIKEY
+      VPN_CONTROL_URL: ${VPN_CONTROL_URL:-http://127.0.0.1:8000}
       # Without a cap, glibc creates a malloc arena per executor thread and
       # freed upload buffers never return to the OS, so RSS only ratchets up
       MALLOC_ARENA_MAX: "2"

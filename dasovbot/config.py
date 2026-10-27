@@ -37,6 +37,11 @@ class Config:
     heartbeat_interval_sec: float = 10.0
     lease_ttl_sec: float = 30.0
     failback_stable_sec: float = 180.0
+    # VPN status (optional): a gluetun control server reachable from the bot and
+    # the key of an auth role allowed to read /v1/publicip/ip and /v1/vpn/status.
+    # Blank key = no poller, `vpn: null` in /api/status
+    vpn_control_url: str = ''
+    vpn_control_apikey: str = ''
 
     @property
     def ha_enabled(self) -> bool:
@@ -132,6 +137,14 @@ def load_ha_settings() -> dict:
     )
 
 
+def load_vpn_settings() -> dict:
+    apikey = (os.getenv('VPN_CONTROL_APIKEY') or '').strip()
+    if not apikey:
+        return dict(vpn_control_url='', vpn_control_apikey='')
+    url = (os.getenv('VPN_CONTROL_URL') or 'http://127.0.0.1:8000').strip().rstrip('/')
+    return dict(vpn_control_url=url, vpn_control_apikey=apikey)
+
+
 def load_config() -> Config:
     dotenv.load_dotenv()
 
@@ -161,6 +174,7 @@ def load_config() -> Config:
         upload_concurrency=max(1, int(os.getenv('UPLOAD_CONCURRENCY') or 1)),
         disk_free_min_gb=max(0.0, float(os.getenv('DISK_FREE_MIN_GB') or 20)),
         **load_ha_settings(),
+        **load_vpn_settings(),
     )
 
 

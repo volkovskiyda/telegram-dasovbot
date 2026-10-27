@@ -203,6 +203,48 @@ class TestLoadConfig(unittest.TestCase):
         config = load_config()
         self.assertEqual(config.upload_concurrency, 1)
 
+    @patch.dict('os.environ', {
+        'BOT_TOKEN': 'tok',
+        'BASE_URL': 'https://api.telegram.org',
+        'DEVELOPER_CHAT_ID': '123',
+    }, clear=True)
+    def test_vpn_off_without_a_key(self, mock_dotenv):
+        config = load_config()
+        self.assertEqual(config.vpn_control_apikey, '')
+        self.assertEqual(config.vpn_control_url, '')
+
+    @patch.dict('os.environ', {
+        'BOT_TOKEN': 'tok',
+        'BASE_URL': 'https://api.telegram.org',
+        'DEVELOPER_CHAT_ID': '123',
+        'VPN_CONTROL_APIKEY': ' secret ',
+    }, clear=True)
+    def test_vpn_url_defaults_to_the_local_control_server(self, mock_dotenv):
+        config = load_config()
+        self.assertEqual(config.vpn_control_apikey, 'secret')
+        self.assertEqual(config.vpn_control_url, 'http://127.0.0.1:8000')
+
+    @patch.dict('os.environ', {
+        'BOT_TOKEN': 'tok',
+        'BASE_URL': 'https://api.telegram.org',
+        'DEVELOPER_CHAT_ID': '123',
+        'VPN_CONTROL_APIKEY': 'secret',
+        'VPN_CONTROL_URL': 'http://vpn:8000/',
+    }, clear=True)
+    def test_vpn_url_override_is_stripped(self, mock_dotenv):
+        config = load_config()
+        self.assertEqual(config.vpn_control_url, 'http://vpn:8000')
+
+    @patch.dict('os.environ', {
+        'BOT_TOKEN': 'tok',
+        'BASE_URL': 'https://api.telegram.org',
+        'DEVELOPER_CHAT_ID': '123',
+        'VPN_CONTROL_URL': 'http://vpn:8000',
+    }, clear=True)
+    def test_vpn_url_without_a_key_is_ignored(self, mock_dotenv):
+        config = load_config()
+        self.assertEqual(config.vpn_control_url, '')
+
 
 
 BASE_ENV = {
