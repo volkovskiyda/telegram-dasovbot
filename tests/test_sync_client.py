@@ -261,6 +261,16 @@ class TestDeveloperNotifier(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.bot.send_message.await_count, 2)
         self.bot.send_message.assert_awaited_with(chat_id='42', text='two')
 
+    async def test_notify_is_never_collapsed(self):
+        # The admin API's audit lines: two bans in a row are two messages
+        self.notifier.attach_bot(self.bot)
+        with self.assertLogs('dasovbot.services.sync', level='INFO') as cm:
+            await self.notifier.notify('API: banned 1')
+            await self.notifier.notify('API: banned 1')
+        self.assertEqual(self.bot.send_message.await_count, 2)
+        self.bot.send_message.assert_awaited_with(chat_id='42', text='API: banned 1')
+        self.assertEqual(sum('API: banned 1' in line for line in cm.output), 2)
+
     async def test_identical_transition_collapsed_within_window(self):
         self.notifier.attach_bot(self.bot)
         await self.notifier.transition('flap')

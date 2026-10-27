@@ -33,6 +33,10 @@ BACKGROUND_TASK_NAMES = (
 _populate_lock = asyncio.Lock()
 
 
+def populate_running() -> bool:
+    return _populate_lock.locked()
+
+
 async def run_populate_subscriptions(state: BotState):
     if _populate_lock.locked():
         logger.info("populate_subscriptions already running, skipped")

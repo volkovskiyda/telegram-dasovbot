@@ -302,6 +302,11 @@ class DeveloperNotifier:
         logger.info("HA: %s", text)
         await self._send(text)
 
+    async def notify(self, text: str):
+        """Always sent, never collapsed: the admin API's audit lines (two bans in a row are two lines)."""
+        logger.info("API: %s", text)
+        await self._send(text)
+
     async def error(self, text: str):
         logger.error("HA: %s", text)
         now = self.clock()

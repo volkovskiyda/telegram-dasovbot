@@ -211,6 +211,17 @@ async def subscribe_url(update: Update, context) -> int:
     return SUBSCRIBE_PLAYLIST
 
 
+async def resolve_subscription(url: str) -> Subscription:
+    """The record for a feed or playlist URL subscribed to directly (no keyboard pick): one extraction."""
+    info = await _extract_info(url)
+    uploader_url = info.get('uploader_url')
+    uploader = info.get('uploader') or info.get('uploader_id') or ''
+    # Some extractors return no title: fall back so Markdown links
+    # and the dashboard never render a None title
+    title = info.get('title') or uploader or url
+    return Subscription(chat_ids=[], title=title, uploader=uploader, uploader_videos=f"{uploader_url}/videos")
+
+
 async def subscribe_playlist(update: Update, context) -> int:
     state: BotState = context.bot_data['state']
     callback_query = update.callback_query
@@ -299,13 +310,8 @@ async def subscribe_playlist(update: Update, context) -> int:
         uploader_videos = uploader_info['url']
     else:
         try:
-            info = await _extract_info(url)
-            uploader_url = info.get('uploader_url')
-            uploader = info.get('uploader') or info.get('uploader_id') or ''
-            # Some extractors return no title: fall back so Markdown links
-            # and the dashboard never render a None title
-            title = info.get('title') or uploader or url
-            uploader_videos = f"{uploader_url}/videos"
+            resolved = await resolve_subscription(url)
+            title, uploader, uploader_videos = resolved.title, resolved.uploader, resolved.uploader_videos
         except Exception:
             logger.error("%s # subscribe_playlist failed: %s", extract_user(user), url, exc_info=True)
             await message_text("Error occurred", reply_markup=InlineKeyboardMarkup([]))

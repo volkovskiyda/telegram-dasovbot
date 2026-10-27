@@ -10,7 +10,10 @@ import jinja2
 from aiohttp import web
 
 from dasovbot.dashboard.api import api_video, api_videos
-from dasovbot.dashboard.admin_api import api_alerts, api_intents, api_playlists, api_status, api_subscriptions, api_users
+from dasovbot.dashboard.admin_api import (
+    api_alerts, api_intents, api_playlists, api_status, api_subscriptions, api_users,
+    api_ban, api_unban, api_subscribe, api_unsubscribe, api_send, api_populate,
+)
 from dasovbot.dashboard.auth import auth_middleware, login_page, login_post, logout, get_password, get_api_token, get_admin_token
 from dasovbot.dashboard.sync import health, sync_heartbeat, sync_changes, sync_snapshot, sync_handoff
 from dasovbot.dashboard.views import index, videos, ignored, retry_ignored, remove_ignored, remove_intent, force_populate, subscriptions, remove_subscription, users, ban_user, unban_user, system, takeover, handback, health_alerts_processor, ha_processor, role_guard_middleware, STATE_KEY, HA_KEY
@@ -87,6 +90,12 @@ def create_app(state: BotState, ha=None) -> web.Application:
     app.router.add_get('/api/intents', api_intents)
     app.router.add_get('/api/alerts', api_alerts)
     app.router.add_get('/api/playlists', api_playlists)
+    app.router.add_post('/api/users/{user_id}/ban', api_ban)
+    app.router.add_post('/api/users/{user_id}/unban', api_unban)
+    app.router.add_post('/api/subscriptions', api_subscribe)
+    app.router.add_post('/api/subscriptions/remove', api_unsubscribe)
+    app.router.add_post('/api/intents', api_send)
+    app.router.add_post('/api/populate', api_populate)
     app.router.add_get('/health', health)
     app.router.add_get('/sync/heartbeat', sync_heartbeat)
     app.router.add_get('/sync/changes', sync_changes)

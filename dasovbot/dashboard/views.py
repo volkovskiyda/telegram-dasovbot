@@ -87,10 +87,12 @@ async def role_guard_middleware(request: web.Request, handler):
         if ha is not None and ha.status().get('role') != 'active':
             status = ha.status()
             where = status.get('peer_url') or status.get('peer') or 'the active node'
-            return web.Response(
-                status=409, content_type='text/plain',
-                text=f"This node is {status.get('role', 'passive').upper()}; use the active node at {where}",
-            )
+            detail = f"This node is {status.get('role', 'passive').upper()}; use the active node at {where}"
+            if request.path.startswith('/api/'):
+                # Machine clients get the refusal as JSON, with the peer URL to retry against
+                return web.json_response(
+                    {'error': 'passive', 'detail': detail, 'active': status.get('peer_url') or None}, status=409)
+            return web.Response(status=409, content_type='text/plain', text=detail)
     return await handler(request)
 
 

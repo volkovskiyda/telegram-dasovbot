@@ -61,8 +61,18 @@ The read side of what an operator or agent needs before acting. Served by both n
 - `GET /api/alerts` — `[{id, level, message, since}]`, the dashboard health banner
 - `GET /api/playlists?url=` — what `/subscribe` would offer for a video, playlist or channel URL: `{uploader, uploader_url, uploader_videos, playlists: [{title, url}], direct, fallback_videos}`; `400` for a non-http or unsupported URL, `502 {error: "extraction failed", detail}` when yt-dlp fails
 
+Writes take a JSON object body and run only on the ACTIVE node: a passive node answers every `/api` POST with `409 {"error": "passive", "detail", "active": <peer url>}`. Every write accepts `dry_run: true` (same resolution, nothing written, the response says what would happen). `chat_id` defaults to `DEVELOPER_CHAT_ID` and may be a numeric id or `@username`; an unknown numeric id is refused with `404 {"error": "unknown chat", "candidates": [...]}` (the closest known ids) unless `force: true`. `{id}` in a user route is a numeric id or `@username` (`404 unknown user` with candidates, `409 ambiguous user`). Ban, unban and unsubscribe post one audit line to the developer chat (`API: banned …`); subscribe and send do not. Takeover/handback and removing a subscription for all its subscribers stay dashboard-only.
+
+- `POST /api/users/{id}/ban`, `POST /api/users/{id}/unban` — `{action, user, changed}`; `changed: false` when the user already was in that state
+- `POST /api/subscriptions {url, chat_id?, populate?, force?}` — the same resolution as `/subscribe`: a channel URL subscribes to its Videos feed, a feed or playlist URL of that channel to that entry, a URL yt-dlp cannot place on a channel as is; a video URL gets `409 {"error": "ambiguous url", "playlists": [...]}`. Response `{action: subscribe|add_subscriber, url, subscription, populate: started|skipped}` (`url` is the stored key, which may differ from the request) or `{status: "already_subscribed", …}`; `populate: true` queues the feed's latest videos for that chat; `502 extraction failed` when yt-dlp fails
+- `POST /api/subscriptions/remove {url, chat_id?, force?}` — removes one chat; `{action, url, chat_id, removed_subscription}` (`true` when that was the last subscriber); `404 not subscribed` / `404 chat not subscribed`
+- `POST /api/intents {url, chat_id?, force?}` — queue a download for a chat through the intent system (dedup with every other requester of the raw URL, `source: "api"`): `{action: "queue", url, chat_id, cached, intent}`; `403 chat banned`
+- `POST /api/populate {url?}` — run the subscription poll now, for every subscription or one stored key: `{status: started|already_running, scope}`
+
 ```bash
 curl -H "Authorization: Bearer $ADMIN_TOKEN" http://localhost:8080/api/status
+curl -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+     -d '{"url": "https://www.youtube.com/watch?v=...", "dry_run": true}' http://localhost:8080/api/intents
 ```
 
 ### **Configuration:**
@@ -133,7 +143,7 @@ dasovbot/              # Main package
     sync.py            # Sync client: heartbeat, change-feed pull, snapshot; developer notifier
   dashboard/           # Web dashboard (aiohttp, jinja2, session auth)
     api.py             # Read-only JSON API (/api/videos, API_TOKEN)
-    admin_api.py       # Admin JSON API (/api/status, users, subscriptions, intents, alerts, playlists; ADMIN_TOKEN)
+    admin_api.py       # Admin JSON API (status, users, subscriptions, intents, alerts, playlists, writes; ADMIN_TOKEN)
     sync.py            # /health and the peer-facing /sync/* endpoints
 main.py                # Thin wrapper entry point
 info.py                # CLI: video info lookup

@@ -96,6 +96,7 @@ LARGE_FILE_MB = 2000
 SOURCE_SUBSCRIPTION = 'subscription'
 SOURCE_DOWNLOAD = 'download'
 SOURCE_INLINE = 'inline'
+SOURCE_API = 'api'
 
 # Format strings
 DATETIME_FORMAT = '%Y%m%d_%H%M%S'
