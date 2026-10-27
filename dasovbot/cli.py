@@ -403,13 +403,27 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+HELP_COLUMNS = '80'
+
+
 def render_help() -> str:
-    """The top-level help followed by every subcommand's, in declaration order (the skill embeds it)."""
-    parser = build_parser()
-    parts = [parser.format_help()]
-    for action in parser._actions:
-        if isinstance(action, argparse._SubParsersAction):
-            parts.extend(child.format_help() for child in action.choices.values())
+    """The top-level help followed by every subcommand's, in declaration order.
+
+    The skill embeds it and a test diffs the two, so the width is pinned:
+    argparse wraps to the terminal otherwise."""
+    previous = os.environ.get('COLUMNS')
+    os.environ['COLUMNS'] = HELP_COLUMNS
+    try:
+        parser = build_parser()
+        parts = [parser.format_help()]
+        for action in parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                parts.extend(child.format_help() for child in action.choices.values())
+    finally:
+        if previous is None:
+            os.environ.pop('COLUMNS', None)
+        else:
+            os.environ['COLUMNS'] = previous
     return '\n\n'.join(part.rstrip('\n') for part in parts) + '\n'
 
 

@@ -103,6 +103,14 @@ admin_token = "..."
 
 Every write takes `--dry-run` and `--force`. Writes probe every node, go to the active one and retry once on a `409 passive` (the lease moved between the probe and the request). Exit codes: `0` ok, `1` the server refused (its `{error, detail}` on stderr), `2` no node / no active node answered, `3` not configured.
 
+##### Claude Code skill
+`skills/dasovbot/SKILL.md` teaches an agent the CLI (its command reference is generated from `dasovbot --help`) and the operator playbooks: spam/abuse → ban, undo a ban, a subscription stopped delivering, a stuck download, "send me this video", subscribe to a channel, health/VPN. Link it into Claude Code once per machine, and refresh the embedded reference whenever a flag changes (`tests/test_skill_doc.py` fails until you do):
+
+```bash
+ln -s "$(pwd)/skills/dasovbot" ~/.claude/skills/dasovbot
+python -c "from dasovbot.cli import render_help; print(render_help())"   # paste between the cli-help markers
+```
+
 ### **Configuration:**
 - Copy `.env.example` file to `.env` and change `READ_TIMEOUT`, `BASE_URL`, `BOT_TOKEN`, `DEVELOPER_CHAT_ID` and `LOADING_VIDEO_ID` environment variables.
 - `READ_TIMEOUT` variable sets the waiting timeout for bot requests
@@ -185,6 +193,7 @@ subscriptions.py       # CLI: bulk subscription management
 empty_media_folder.py  # CLI: clear media folder
 backup.py              # CLI: SQLite online backup
 preview_dashboard.py   # CLI: start the dashboard with mock data
+skills/dasovbot/       # Claude Code skill: CLI reference (generated from --help) + operator playbooks
 conftest.py            # Pytest config (silences PTB warnings)
 run_tests.sh           # Full test suite runner (unit + integration + E2E)
 entrypoint.sh          # Docker entrypoint (cron + bot; backup schedule from BACKUP_CRON)
