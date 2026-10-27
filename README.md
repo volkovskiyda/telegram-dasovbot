@@ -169,7 +169,7 @@ The web dashboard is started separately in `__main__.py` (`start_dashboard`) bef
 **Error classification:** Video extraction errors are matched against `VIDEO_ERROR_MESSAGES` in `constants.py` to distinguish user-facing errors from internal failures. Errors matching `TRANSIENT_ERROR_MESSAGES` (YouTube's bot check, an expired or throttled media URL, 429/5xx) are waited out instead: the intent backs off for `INTENT_TRANSIENT_BACKOFF_SEC` (15 min) without spending one of its `MAX_INTENT_RETRIES`, up to `MAX_TRANSIENT_RETRIES` times in a row, before it counts as a real failure.
 
 ### **System dependencies:**
-- Python 3.10+
+- Python 3.11+ (yt-dlp 2026.10.26 dropped 3.10; the Docker image runs 3.12)
 - [ffmpeg](https://ffmpeg.org/) — required for video conversion and yt-dlp post-processing
 - [Deno](https://deno.com/) — JavaScript runtime required by yt-dlp for YouTube extraction (`brew install deno`)
 
