@@ -105,10 +105,37 @@
         {% block content %}{% endblock %}
     </div>
     <script>
-        // Forms with data-confirm ask before submitting
+        // Forms with data-confirm ask before submitting. Forms with data-swap (ban/unban)
+        // post in the background and swap the rendered page in place, so the scroll
+        // position survives instead of jumping to the top after the redirect.
         document.addEventListener('submit', function (event) {
-            var message = event.target.dataset.confirm;
-            if (message && !confirm(message)) event.preventDefault();
+            var form = event.target;
+            var message = form.dataset.confirm;
+            if (message && !confirm(message)) { event.preventDefault(); return; }
+            if (!('swap' in form.dataset) || form.method.toLowerCase() !== 'post') return;
+            event.preventDefault();
+            form.querySelectorAll('button').forEach(function (button) { button.disabled = true; });
+            fetch(form.action, {
+                method: 'POST',
+                body: new URLSearchParams(new FormData(form)),
+                credentials: 'same-origin',
+            }).then(function (response) {
+                var landed = new URL(response.url);
+                if (!response.ok || landed.pathname + landed.search !== location.pathname + location.search) {
+                    throw new Error('not the current page');
+                }
+                return response.text();
+            }).then(function (html) {
+                var page = new DOMParser().parseFromString(html, 'text/html');
+                ['nav', '.container'].forEach(function (selector) {
+                    var fresh = page.querySelector(selector);
+                    if (fresh) document.querySelector(selector).replaceWith(fresh);
+                });
+            }).catch(function () {
+                // Expired session, passive node (409), network error: fall back to a
+                // classic submit so the browser shows whatever the server answers
+                form.submit();
+            });
         });
     </script>
 </body>
