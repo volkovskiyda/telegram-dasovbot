@@ -12,7 +12,7 @@ from aiohttp import web
 
 from dasovbot.constants import DATETIME_FORMAT, HA_ROLE_ACTIVE, HA_ROLE_DRAINING, SYNC_PAGE_SIZE
 from dasovbot.dashboard.views import get_ha, get_state
-from dasovbot.database import read_changes, write_snapshot
+from dasovbot.database import file_sha256, read_changes, write_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -89,13 +89,14 @@ async def sync_snapshot(request: web.Request) -> web.StreamResponse:
     try:
         await write_snapshot(state.db, path)
         size = os.path.getsize(path)
+        loop = asyncio.get_running_loop()
         response = web.StreamResponse(headers={
             'Content-Type': 'application/x-sqlite3',
             'Content-Length': str(size),
             'X-Dasovbot-Rev': str(getattr(state, 'rev', 0)),
+            'X-Dasovbot-Sha256': await loop.run_in_executor(None, file_sha256, path),
         })
         await response.prepare(request)
-        loop = asyncio.get_running_loop()
         with open(path, 'rb') as f:
             while True:
                 chunk = await loop.run_in_executor(None, f.read, SNAPSHOT_CHUNK)

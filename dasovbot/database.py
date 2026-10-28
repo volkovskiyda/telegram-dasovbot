@@ -1,4 +1,5 @@
 import glob
+import hashlib
 import json
 import logging
 import os
@@ -553,6 +554,35 @@ async def write_snapshot(db: aiosqlite.Connection, path: str):
         await db.backup(target)
     finally:
         target.close()
+
+
+def file_sha256(path: str) -> str:
+    """Hex SHA-256 of a file (blocking: run it in an executor)."""
+    digest = hashlib.sha256()
+    with open(path, 'rb') as f:
+        for chunk in iter(lambda: f.read(1 << 20), b''):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def validate_snapshot(path: str):
+    """Raise ValueError when a downloaded snapshot is damaged (blocking: run it in an executor).
+
+    The checksum only covers the transfer: a bit flip on the serving host
+    lands before the hash is taken. A row whose JSON no longer parses would
+    otherwise be reconciled into the live database and only fail later, in
+    reload_from_db.
+    """
+    with closing(sqlite3.connect(path)) as conn:
+        result = conn.execute("PRAGMA quick_check").fetchone()[0]
+        if result != 'ok':
+            raise ValueError(f'quick_check: {result}')
+        for table, column in KEYED_TABLES.items():
+            for key, data in conn.execute(f"SELECT {column}, data FROM {table}"):
+                try:
+                    json.loads(data)
+                except (TypeError, ValueError) as e:
+                    raise ValueError(f'{table} {key!r}: bad JSON: {e}') from None
 
 
 async def reconcile_from_snapshot(db: aiosqlite.Connection, snapshot_path: str, peer: str) -> dict:

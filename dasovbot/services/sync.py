@@ -9,8 +9,10 @@ own data before taking over.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
+import sqlite3
 from tempfile import mkstemp
 import time
 from datetime import datetime
@@ -22,7 +24,7 @@ from dasovbot.config import Config
 from dasovbot.constants import (
     DATETIME_FORMAT, SNAPSHOT_INTERVAL_SEC, SYNC_ERROR_NOTIFY_INTERVAL_SEC, SYNC_PAGE_SIZE, TRANSITION_COLLAPSE_SEC,
 )
-from dasovbot.database import get_meta, set_meta, last_applied_key, reconcile_from_snapshot
+from dasovbot.database import get_meta, set_meta, last_applied_key, reconcile_from_snapshot, validate_snapshot
 from dasovbot.services.ha import SyncError  # noqa: F401 — re-exported: the port's contract lives in ha.py
 from dasovbot.state import BotState
 
@@ -204,12 +206,22 @@ class SyncClient:
                     if resp.status != 200:
                         raise SyncError(f'snapshot: HTTP {resp.status}')
                     header_rev = resp.headers.get('X-Dasovbot-Rev')
+                    # Absent on a peer that predates the checksum: accepted, the row check still runs
+                    expected_sha = resp.headers.get('X-Dasovbot-Sha256')
+                    digest = hashlib.sha256()
                     loop = asyncio.get_running_loop()
                     with open(path, 'wb') as f:
                         async for chunk in resp.content.iter_chunked(SNAPSHOT_CHUNK):
+                            digest.update(chunk)
                             await loop.run_in_executor(None, f.write, chunk)
             except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
                 raise SyncError(f'snapshot: {type(e).__name__}: {e}') from e
+            if expected_sha and digest.hexdigest() != expected_sha.lower():
+                raise SyncError(f'snapshot rejected: checksum mismatch ({digest.hexdigest()[:12]} != {expected_sha[:12]})')
+            try:
+                await loop.run_in_executor(None, validate_snapshot, path)
+            except (ValueError, sqlite3.DatabaseError) as e:
+                raise SyncError(f'snapshot rejected: {e}') from e
             try:
                 result = await reconcile_from_snapshot(self.state.db, path, self.peer_name)
             except Exception as e:  # noqa: BLE001 — a corrupt download must not kill the loop

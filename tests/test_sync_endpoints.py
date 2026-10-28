@@ -1,4 +1,5 @@
 """/health and /sync/* endpoints (plan item 07)."""
+import hashlib
 import json
 import os
 import sqlite3
@@ -139,6 +140,7 @@ class TestSnapshot(SyncEndpointTestCase):
             self.assertEqual(resp.headers['X-Dasovbot-Rev'], '2')
             data = await resp.read()
         self.assertEqual(len(data), int(resp.headers['Content-Length']))
+        self.assertEqual(resp.headers['X-Dasovbot-Sha256'], hashlib.sha256(data).hexdigest())
         self.assertFalse(os.path.exists(known), 'temp file removed after streaming')
         out = os.path.join(tmp, 'received.db')
         with open(out, 'wb') as f:

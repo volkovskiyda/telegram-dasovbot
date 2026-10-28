@@ -186,6 +186,39 @@ class TestSnapshot(SyncClientTestCase):
         self.assertFalse(os.path.exists(known))
         self.assertIsNone(client.last_snapshot_at)
 
+    async def assert_rejected_untouched(self, fragment: str):
+        await self.local.set_video('stale', VideoInfo(title='old'))
+        await self.client.heartbeat()
+        with self.assertRaises(SyncError) as ctx:
+            await self.client.pull_snapshot()
+        self.assertIn('snapshot rejected', str(ctx.exception))
+        self.assertIn(fragment, str(ctx.exception))
+        self.assertEqual(set(self.local.videos), {'stale'})
+        cursor = await self.local.db.execute("SELECT key FROM videos")
+        self.assertEqual([r[0] for r in await cursor.fetchall()], ['stale'])
+        self.assertIsNone(self.client.last_snapshot_at)
+
+    async def test_snapshot_with_bad_json_row_is_rejected_before_reconcile(self):
+        # Oct 2026: a bit flip on the serving host broke one videos row; it was
+        # reconciled in and reload_from_db failed afterwards
+        await self.peer_state.set_video('v', VideoInfo(title='T'))
+        await self.peer_state.db.execute("UPDATE videos SET data = ? WHERE key = 'v'", ('{"title" "T"}',))
+        await self.peer_state.db.commit()
+        await self.assert_rejected_untouched("videos 'v': bad JSON")
+
+    async def test_snapshot_checksum_mismatch_is_rejected(self):
+        await self.peer_state.set_video('v', VideoInfo(title='T'))
+        with patch('dasovbot.dashboard.sync.file_sha256', return_value='0' * 64):
+            await self.assert_rejected_untouched('checksum mismatch')
+
+    async def test_snapshot_without_checksum_header_is_accepted(self):
+        # A peer that predates the checksum: the row check alone guards it
+        await self.peer_state.set_video('v', VideoInfo(title='T'))
+        await self.client.heartbeat()
+        with patch('dasovbot.dashboard.sync.file_sha256', return_value=''):
+            await self.client.pull_snapshot()
+        self.assertEqual(set(self.local.videos), {'v'})
+
     async def test_maybe_snapshot_arms_then_pulls_hourly(self):
         await self.peer_state.set_video('v', VideoInfo(title='T'))
         await self.client.heartbeat()
