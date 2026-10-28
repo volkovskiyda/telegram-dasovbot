@@ -7,9 +7,11 @@ from dasovbot.services.vpn import VpnMonitor
 
 
 class FakeResponse:
-    def __init__(self, body=None, status=200):
+    # gluetun's control server answers JSON with this content type
+    def __init__(self, body=None, status=200, content_type='text/plain; charset=utf-8'):
         self.body = body or {}
         self.status = status
+        self.content_type = content_type
 
     async def __aenter__(self):
         return self
@@ -21,7 +23,10 @@ class FakeResponse:
         if self.status >= 400:
             raise aiohttp.ClientResponseError(MagicMock(), (), status=self.status, message='nope')
 
-    async def json(self):
+    async def json(self, content_type='application/json'):
+        # Same check as aiohttp.ClientResponse.json: a mismatched mimetype raises unless content_type=None
+        if content_type is not None and content_type not in self.content_type:
+            raise aiohttp.ContentTypeError(MagicMock(), (), message='Attempt to decode JSON with unexpected mimetype')
         return self.body
 
 

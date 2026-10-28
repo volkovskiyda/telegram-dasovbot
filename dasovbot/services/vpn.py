@@ -37,7 +37,8 @@ class VpnMonitor:
         timeout = aiohttp.ClientTimeout(total=VPN_POLL_TIMEOUT_SEC)
         async with session.get(f'{self.url}{path}', headers=self._headers, timeout=timeout) as resp:
             resp.raise_for_status()
-            return await resp.json()
+            # gluetun serves its JSON as text/plain; aiohttp rejects that unless the check is off
+            return await resp.json(content_type=None)
 
     async def poll_once(self) -> None:
         try:
