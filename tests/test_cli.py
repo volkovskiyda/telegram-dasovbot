@@ -174,6 +174,19 @@ class TestReads(CliTestCase):
         self.assertEqual(code, 0)
         self.assertEqual(out, '[\n  {\n    "id": "a"\n  }\n]\n')
 
+    def test_pretty_after_the_command(self):
+        for argv, expected in ((['alerts', '--pretty'], '[\n  {\n    "id": "a"\n  }\n]\n'),
+                               (['--pretty', 'alerts'], '[\n  {\n    "id": "a"\n  }\n]\n'),
+                               (['alerts'], '[{"id": "a"}]\n')):
+            with self.subTest(argv=argv):
+                code, out, _, _ = self.run_cli(argv, {
+                    (PRIMARY, 'GET', '/health'): (200, health('active')),
+                    (STANDBY, 'GET', '/health'): (200, health('passive')),
+                    (PRIMARY, 'GET', '/api/alerts'): (200, [{'id': 'a'}]),
+                })
+                self.assertEqual(code, 0)
+                self.assertEqual(out, expected)
+
 
 class TestWrites(CliTestCase):
     def test_ban_goes_to_the_active_node(self):

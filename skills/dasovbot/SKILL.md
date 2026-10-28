@@ -63,69 +63,78 @@ Config: DASOVBOT_URLS (comma-separated) and DASOVBOT_ADMIN_TOKEN, or
 ~/.config/dasovbot/config.toml with urls = [...] and admin_token = "...". Exit
 0 ok, 1 server refused, 2 no (active) node, 3 not configured.
 
-usage: dasovbot status [-h]
+usage: dasovbot status [-h] [--pretty]
 
 options:
   -h, --help  show this help message and exit
+  --pretty    indent the JSON output
 
-usage: dasovbot users [-h] [--search SEARCH] [--banned {true,false}]
+usage: dasovbot users [-h] [--pretty] [--search SEARCH]
+                      [--banned {true,false}]
 
 options:
   -h, --help            show this help message and exit
+  --pretty              indent the JSON output
   --search SEARCH       match id, name or @username (case-insensitive)
   --banned {true,false}
                         only banned or only unbanned users
 
-usage: dasovbot subscriptions [-h] [--user USER]
+usage: dasovbot subscriptions [-h] [--pretty] [--user USER]
 
 options:
   -h, --help   show this help message and exit
+  --pretty     indent the JSON output
   --user USER  only this chat id or @username
 
-usage: dasovbot intents [-h] [--ignored {true,false}] [--url URL]
+usage: dasovbot intents [-h] [--pretty] [--ignored {true,false}] [--url URL]
 
 options:
   -h, --help            show this help message and exit
+  --pretty              indent the JSON output
   --ignored {true,false}
                         only ignored or only live intents
   --url URL             look one URL up: pending, retrying, ignored, delivered
                         or absent
 
-usage: dasovbot alerts [-h]
+usage: dasovbot alerts [-h] [--pretty]
 
 options:
   -h, --help  show this help message and exit
+  --pretty    indent the JSON output
 
-usage: dasovbot playlists [-h] url
+usage: dasovbot playlists [-h] [--pretty] url
 
 positional arguments:
   url
 
 options:
   -h, --help  show this help message and exit
+  --pretty    indent the JSON output
 
-usage: dasovbot ban [-h] [--dry-run] [--force] target
-
-positional arguments:
-  target      numeric id or @username
-
-options:
-  -h, --help  show this help message and exit
-  --dry-run   resolve and report, write nothing
-  --force     accept a numeric chat id the bot has never seen
-
-usage: dasovbot unban [-h] [--dry-run] [--force] target
+usage: dasovbot ban [-h] [--pretty] [--dry-run] [--force] target
 
 positional arguments:
   target      numeric id or @username
 
 options:
   -h, --help  show this help message and exit
+  --pretty    indent the JSON output
   --dry-run   resolve and report, write nothing
   --force     accept a numeric chat id the bot has never seen
 
-usage: dasovbot subscribe [-h] [--user USER] [--populate] [--dry-run]
-                          [--force]
+usage: dasovbot unban [-h] [--pretty] [--dry-run] [--force] target
+
+positional arguments:
+  target      numeric id or @username
+
+options:
+  -h, --help  show this help message and exit
+  --pretty    indent the JSON output
+  --dry-run   resolve and report, write nothing
+  --force     accept a numeric chat id the bot has never seen
+
+usage: dasovbot subscribe [-h] [--pretty] [--user USER] [--populate]
+                          [--dry-run] [--force]
                           url
 
 positional arguments:
@@ -134,23 +143,28 @@ positional arguments:
 
 options:
   -h, --help   show this help message and exit
+  --pretty     indent the JSON output
   --user USER  chat id or @username; default DEVELOPER_CHAT_ID
   --populate   queue the feed's latest videos for that chat now
   --dry-run    resolve and report, write nothing
   --force      accept a numeric chat id the bot has never seen
 
-usage: dasovbot unsubscribe [-h] [--user USER] [--dry-run] [--force] url
+usage: dasovbot unsubscribe [-h] [--pretty] [--user USER] [--dry-run]
+                            [--force]
+                            url
 
 positional arguments:
   url          a stored subscription key (see subscriptions)
 
 options:
   -h, --help   show this help message and exit
+  --pretty     indent the JSON output
   --user USER  chat id or @username; default DEVELOPER_CHAT_ID
   --dry-run    resolve and report, write nothing
   --force      accept a numeric chat id the bot has never seen
 
-usage: dasovbot send [-h] [--to TO] [--wait [SECONDS]] [--dry-run] [--force]
+usage: dasovbot send [-h] [--pretty] [--to TO] [--wait [SECONDS]] [--dry-run]
+                     [--force]
                      url
 
 positional arguments:
@@ -158,19 +172,21 @@ positional arguments:
 
 options:
   -h, --help        show this help message and exit
+  --pretty          indent the JSON output
   --to TO           chat id or @username; default DEVELOPER_CHAT_ID
   --wait [SECONDS]  poll every 5s until delivered, failed or ignored (default
                     600s)
   --dry-run         resolve and report, write nothing
   --force           accept a numeric chat id the bot has never seen
 
-usage: dasovbot populate [-h] [url]
+usage: dasovbot populate [-h] [--pretty] [url]
 
 positional arguments:
   url         a stored subscription key; omit for every subscription
 
 options:
   -h, --help  show this help message and exit
+  --pretty    indent the JSON output
 ```
 <!-- cli-help:end -->
 

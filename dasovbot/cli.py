@@ -354,51 +354,58 @@ def build_parser() -> argparse.ArgumentParser:
                'with urls = [...] and admin_token = "...". Exit 0 ok, 1 server refused, 2 no (active) node, 3 not configured.',
     )
     parser.add_argument('--pretty', action='store_true', help='indent the JSON output')
+    # --pretty is accepted after the command too (`dasovbot status --pretty`); SUPPRESS keeps a
+    # subcommand that omits it from resetting a --pretty given before the command
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument('--pretty', action='store_true', default=argparse.SUPPRESS, help='indent the JSON output')
     sub = parser.add_subparsers(dest='command', metavar='COMMAND', required=True)
 
-    sub.add_parser('status', help='health, counts, task last-runs, backup age and VPN exit, one block per node')
+    def add(name: str, **kwargs) -> argparse.ArgumentParser:
+        return sub.add_parser(name, parents=[common], **kwargs)
 
-    p = sub.add_parser('users', help='known users, most requests first')
+    add('status', help='health, counts, task last-runs, backup age and VPN exit, one block per node')
+
+    p = add('users', help='known users, most requests first')
     p.add_argument('--search', help='match id, name or @username (case-insensitive)')
     p.add_argument('--banned', choices=['true', 'false'], help='only banned or only unbanned users')
 
-    p = sub.add_parser('subscriptions', help='subscriptions with their subscribers')
+    p = add('subscriptions', help='subscriptions with their subscribers')
     p.add_argument('--user', help='only this chat id or @username')
 
-    p = sub.add_parser('intents', help='queued downloads by priority, or one URL\'s delivery state')
+    p = add('intents', help='queued downloads by priority, or one URL\'s delivery state')
     p.add_argument('--ignored', choices=['true', 'false'], help='only ignored or only live intents')
     p.add_argument('--url', help='look one URL up: pending, retrying, ignored, delivered or absent')
 
-    sub.add_parser('alerts', help='active health alerts')
+    add('alerts', help='active health alerts')
 
-    p = sub.add_parser('playlists', help='what /subscribe would offer for a video, playlist or channel URL')
+    p = add('playlists', help='what /subscribe would offer for a video, playlist or channel URL')
     p.add_argument('url')
 
     for name, text in (('ban', 'ban a user (audited in the developer chat)'),
                        ('unban', 'unban a user (audited in the developer chat)')):
-        p = sub.add_parser(name, help=text)
+        p = add(name, help=text)
         p.add_argument('target', help='numeric id or @username')
         _write_flags(p)
 
-    p = sub.add_parser('subscribe', help='subscribe a chat to a channel feed or playlist')
+    p = add('subscribe', help='subscribe a chat to a channel feed or playlist')
     p.add_argument('url', help='channel (its Videos feed), one of its feeds/playlists, or a playlist URL')
     p.add_argument('--user', help='chat id or @username; default DEVELOPER_CHAT_ID')
     p.add_argument('--populate', action='store_true', help='queue the feed\'s latest videos for that chat now')
     _write_flags(p)
 
-    p = sub.add_parser('unsubscribe', help='remove one chat from a subscription (audited)')
+    p = add('unsubscribe', help='remove one chat from a subscription (audited)')
     p.add_argument('url', help='a stored subscription key (see subscriptions)')
     p.add_argument('--user', help='chat id or @username; default DEVELOPER_CHAT_ID')
     _write_flags(p)
 
-    p = sub.add_parser('send', help='download a video to a chat through the intent queue')
+    p = add('send', help='download a video to a chat through the intent queue')
     p.add_argument('url')
     p.add_argument('--to', help='chat id or @username; default DEVELOPER_CHAT_ID')
     p.add_argument('--wait', nargs='?', const=WAIT_DEFAULT_SEC, type=float, metavar='SECONDS',
                    help=f'poll every {WAIT_POLL_SEC}s until delivered, failed or ignored (default {WAIT_DEFAULT_SEC}s)')
     _write_flags(p)
 
-    p = sub.add_parser('populate', help='run the subscription poll now, for all or one subscription')
+    p = add('populate', help='run the subscription poll now, for all or one subscription')
     p.add_argument('url', nargs='?', help='a stored subscription key; omit for every subscription')
     return parser
 
