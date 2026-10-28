@@ -16,10 +16,10 @@ from dasovbot.database import file_sha256, read_changes, write_snapshot
 
 logger = logging.getLogger(__name__)
 
-HEALTH_KEYS = ('role', 'node', 'lease_holder', 'last_sync_rev', 'last_sync_at', 'ready', 'peer', 'peer_url',
-               'node_role', 'enabled', 'rev', 'manual_hold', 'handback_requested', 'drained')
+HEALTH_KEYS = ('role', 'node', 'node_url', 'lease_holder', 'last_sync_rev', 'last_sync_at', 'ready', 'peer',
+               'peer_url', 'node_role', 'enabled', 'rev', 'manual_hold', 'handback_requested', 'drained')
 HEARTBEAT_KEYS = ('node', 'role', 'lease_until', 'rev', 'drained', 'manual_hold', 'handback_requested',
-                  'handoff_rev')
+                  'handoff_rev', 'peer_url')
 SNAPSHOT_CHUNK = 1 << 20
 
 
@@ -32,7 +32,7 @@ def standalone_health(state) -> dict:
     """The /health body of a process without a role controller (standalone/pre-HA)."""
     node = _node_name(state)
     return {
-        'role': HA_ROLE_ACTIVE, 'node': node, 'lease_holder': node, 'last_sync_rev': None,
+        'role': HA_ROLE_ACTIVE, 'node': node, 'node_url': None, 'lease_holder': node, 'last_sync_rev': None,
         'last_sync_at': None, 'ready': True, 'peer': None, 'peer_url': '', 'node_role': 'primary',
         'enabled': False, 'rev': getattr(state, 'rev', 0), 'manual_hold': False,
         'handback_requested': False, 'drained': False,

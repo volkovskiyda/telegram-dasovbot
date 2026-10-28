@@ -124,6 +124,7 @@ class RoleController:
         self.last_ok_at: float | None = None
         self.healthy_since: float | None = None
         self.peer_status: dict | None = None
+        self.node_url: str | None = None              # this node's address as the peer reaches it (its PEER_URL)
         self.handoff_pending = False
         self.handoff_retry_at: float | None = None     # monotonic: no new handoff request before this
         self.drained = False
@@ -212,6 +213,7 @@ class RoleController:
             'enabled': self.config.ha_enabled,
             'role': self.role,
             'node': self.node,
+            'node_url': self.node_url,
             'node_role': self.config.node_role,
             'peer': self.peer_name if self.config.ha_enabled else None,
             'peer_url': self.config.peer_url,
@@ -321,6 +323,8 @@ class RoleController:
             self.last_ok_at = now
             self.healthy_since = self.healthy_since or now
             self.peer_status = reply
+            if reply.get('peer_url'):
+                self.node_url = reply['peer_url']
             if reply.get('role') in (HA_ROLE_ACTIVE, HA_ROLE_DRAINING):
                 self.last_active_seen = now
             if reply.get('role') == HA_ROLE_ACTIVE:

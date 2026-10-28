@@ -23,7 +23,8 @@ def make_controller(role='active', **status):
     ha.role = role
     ha.config.lease_ttl_sec = 30.0
     ha.status.return_value = {
-        'enabled': True, 'role': role, 'node': 'me', 'node_role': 'standby', 'peer': 'other',
+        'enabled': True, 'role': role, 'node': 'me', 'node_url': 'http://192.168.1.20:8080',
+        'node_role': 'standby', 'peer': 'other',
         'peer_url': 'http://192.168.1.10:8080', 'lease_holder': 'me' if role == 'active' else 'other',
         'lease_until': None, 'rev': 42, 'drained': False, 'manual_hold': False, 'handback_requested': False,
         'handoff_rev': 40, 'handoff_pending': False, 'peer_role': 'passive', 'peer_seen_at': '20261007_120000',
@@ -56,6 +57,7 @@ class TestHealthStandalone(SyncEndpointTestCase):
         body = await resp.json()
         self.assertEqual((body['role'], body['node'], body['lease_holder'], body['ready'], body['enabled']),
                          ('active', 'me', 'me', True, False))
+        self.assertIsNone(body['node_url'])
 
     async def test_heartbeat_and_handoff_are_503_without_controller(self):
         self.assertEqual((await self.client.get('/sync/heartbeat', headers=AUTH)).status, 503)
@@ -78,6 +80,7 @@ class TestHealthWithController(SyncEndpointTestCase):
         self.assertEqual(body['role'], 'passive')
         self.assertEqual(body['lease_holder'], 'other')
         self.assertEqual(body['peer_url'], 'http://192.168.1.10:8080')
+        self.assertEqual(body['node_url'], 'http://192.168.1.20:8080')
         self.assertTrue(body['ready'])
         self.assertNotIn('peer_seen_at', body)  # filtered to the documented keys
         self.assertNotIn('handoff_pending', body)
@@ -87,8 +90,9 @@ class TestHealthWithController(SyncEndpointTestCase):
         self.assertEqual(resp.status, 200)
         body = await resp.json()
         self.assertEqual(set(body), {'node', 'role', 'lease_until', 'rev', 'drained', 'manual_hold',
-                                     'handback_requested', 'handoff_rev'})
+                                     'handback_requested', 'handoff_rev', 'peer_url'})
         self.assertEqual((body['node'], body['rev'], body['handoff_rev']), ('me', 42, 40))
+        self.assertEqual(body['peer_url'], 'http://192.168.1.10:8080', 'the peer learns its own node_url from it')
         self.assertIsNone(body['lease_until'], 'a passive node holds no lease')
         self.controller.status.return_value['role'] = 'active'
         try:

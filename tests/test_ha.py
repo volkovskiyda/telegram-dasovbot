@@ -210,6 +210,18 @@ class TestPassiveFollowing(ControllerTestCase):
         status = ctl.status()
         self.assertEqual((status['lease_holder'], status['peer_role']), ('other', 'active'))
 
+    async def test_node_url_learned_from_peer_heartbeat_and_kept_when_it_fails(self):
+        self.peer.reply = self.active_reply()
+        ctl = await self.started('standby')
+        await self.tick(ctl)
+        self.assertIsNone(ctl.status()['node_url'], 'a peer without peer_url in its heartbeat (older image)')
+        self.peer.reply = self.active_reply(peer_url='http://192.168.1.20:8080')
+        await self.tick(ctl)
+        self.assertEqual(ctl.status()['node_url'], 'http://192.168.1.20:8080')
+        self.peer.reply = None
+        await self.tick(ctl)
+        self.assertEqual(ctl.status()['node_url'], 'http://192.168.1.20:8080', 'last known address survives a missed heartbeat')
+
     async def test_sync_error_is_reported_and_loop_continues(self):
         self.peer.reply = self.active_reply()
         self.peer.pull_error = SyncError('boom')

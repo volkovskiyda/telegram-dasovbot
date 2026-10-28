@@ -232,6 +232,6 @@ options:
 
 ### 7. Is the bot healthy / which node is active / where is the VPN
 
-1. `dasovbot status --pretty` — one block per node. Read `role` (exactly one `active`), `ready`, `lease_holder`, `counts.intents`, `tasks` (last runs), `backup.newest_age_sec`, `vpn.country` / `vpn.ip` / `vpn.last_change_at` / `vpn.changes_since_start` (per node; `vpn: null` = poller not configured there).
+1. `dasovbot status --pretty` — one block per node. Read `role` (exactly one `active`), `node`/`node_url` (the node that answered), `peer`/`peer_url` (the other one), `ready`, `lease_holder`, `counts.intents`, `tasks` (last runs), `backup.newest_age_sec`, `vpn.country` / `vpn.ip` / `vpn.last_change_at` / `vpn.changes_since_start` (per node; `vpn: null` = poller not configured there).
 2. `dasovbot alerts` — the dashboard's health warnings (stale backups, low disk, missing data).
 3. `reachable: false` on a node: it is down or unreachable from here; the other node's `role` tells whether it took over.

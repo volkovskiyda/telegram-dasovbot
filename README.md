@@ -399,7 +399,7 @@ When the primary returns after a takeover, the standby wins on every key it touc
 
 | Endpoint | Role | Request | Response |
 |---|---|---|---|
-| `GET /health` | any | — | `200 {role, node, lease_holder, last_sync_rev, last_sync_at, ready, peer, peer_url, node_role, enabled, rev, manual_hold, handback_requested, drained}`; a node without HA reports `role: active`, `ready: true` |
+| `GET /health` | any | — | `200 {role, node, node_url, lease_holder, last_sync_rev, last_sync_at, ready, peer, peer_url, node_role, enabled, rev, manual_hold, handback_requested, drained}`; a node without HA reports `role: active`, `ready: true`; `node_url` is this node's own address as the peer reaches it (the peer's `PEER_URL`, from the last heartbeat, `null` until then), `peer`/`peer_url` the other node |
 | `GET /sync/heartbeat` | any | — | `200 {node, role, lease_until, rev, drained, manual_hold, handback_requested, handoff_rev}`; `503` when HA is off |
 | `GET /sync/changes` | any | `?since=<rev>&limit=<n≤500>` | `200 {since, until, has_more, rows: {videos, intents, users, subscriptions, banned_users, requests}, tombstones}`; `400` on bad params |
 | `GET /sync/snapshot` | any | — | `200` SQLite file (`application/x-sqlite3`, headers `X-Dasovbot-Rev`, `X-Dasovbot-Sha256`) |

@@ -153,6 +153,8 @@ SCHEMAS = {
         'properties': {
             'role': {'type': 'string', 'enum': ['active', 'passive', 'draining']},
             'node': {'type': 'string'},
+            'node_url': {**_NULLABLE_STRING, 'description': "This node's address as its peer reaches it (the peer's "
+                                                            "PEER_URL), from the last heartbeat; null before one."},
             'lease_holder': _NULLABLE_STRING,
             'last_sync_rev': _NULLABLE_INT,
             'last_sync_at': _NULLABLE_STRING,
