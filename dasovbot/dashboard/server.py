@@ -15,7 +15,10 @@ from dasovbot.dashboard.admin_api import (
     api_alerts, api_intents, api_playlists, api_status, api_subscriptions, api_users,
     api_ban, api_unban, api_subscribe, api_unsubscribe, api_send, api_populate,
 )
-from dasovbot.dashboard.auth import auth_middleware, login_page, login_post, logout, get_password, get_api_token, get_admin_token
+from dasovbot.dashboard.auth import (
+    adopt_generated_secret, auth_middleware, csrf_middleware, login_page, login_post, logout,
+    get_password, get_api_token, get_admin_token,
+)
 from dasovbot.dashboard.openapi import api_openapi
 from dasovbot.dashboard.sync import health, sync_heartbeat, sync_changes, sync_snapshot, sync_handoff
 from dasovbot.dashboard.views import index, videos, ignored, retry_ignored, remove_ignored, remove_intent, force_populate, subscriptions, remove_subscription, users, ban_user, unban_user, system, takeover, handback, health_alerts_processor, ha_processor, role_guard_middleware, STATE_KEY, HA_KEY, VPN_KEY
@@ -55,8 +58,9 @@ VPN_TASK_KEY = web.AppKey('vpn_task', asyncio.Task)
 def create_app(state: BotState, ha=None, vpn: VpnMonitor | None = None) -> web.Application:
     """`ha` is the RoleController; without it the node reports itself standalone/active.
     `vpn` is the VpnMonitor whose status `/api/status` reports (None = `vpn: null`)."""
-    # Auth first, then the HA write guard (a passive node answers POSTs with 409)
-    app = web.Application(middlewares=[auth_middleware, role_guard_middleware])
+    # Cross-site check and frame headers first, then auth, then the HA write
+    # guard (a passive node answers POSTs with 409)
+    app = web.Application(middlewares=[csrf_middleware, auth_middleware, role_guard_middleware])
     app[STATE_KEY] = state
     if ha is not None:
         app[HA_KEY] = ha
@@ -116,11 +120,21 @@ def create_app(state: BotState, ha=None, vpn: VpnMonitor | None = None) -> web.A
     return app
 
 
-def _persist_generated_secret(state: BotState, secret: str, filename: str, env_var: str, purpose: str):
+def _restore_or_persist_secret(state: BotState, getter, filename: str, env_var: str, purpose: str):
+    """Keep a generated secret stable across restarts: read it back from data/<filename>
+    when the file exists, otherwise generate one and write it there (mode 0600)."""
     secret_file = Path(state.config.config_folder) / 'data' / filename
     try:
+        existing = secret_file.read_text().strip()
+    except OSError:
+        existing = ''
+    if existing:
+        adopt_generated_secret(env_var, existing)
+        logger.info('%s not set, using the value kept in %s', env_var, secret_file)
+        return
+    try:
         secret_file.parent.mkdir(parents=True, exist_ok=True)
-        secret_file.write_text(secret + '\n')
+        secret_file.write_text(getter() + '\n')
         secret_file.chmod(0o600)
         logger.info('%s not set, generated value written to %s', env_var, secret_file)
     except OSError:
@@ -132,14 +146,14 @@ def _persist_generated_secret(state: BotState, secret: str, filename: str, env_v
 
 async def start_dashboard(state: BotState, ha=None):
     if not os.getenv('DASHBOARD_PASSWORD'):
-        _persist_generated_secret(state, get_password(), 'dashboard_password.txt',
-                                  'DASHBOARD_PASSWORD', 'log in to the dashboard')
+        _restore_or_persist_secret(state, get_password, 'dashboard_password.txt',
+                                   'DASHBOARD_PASSWORD', 'log in to the dashboard')
     if not os.getenv('API_TOKEN'):
-        _persist_generated_secret(state, get_api_token(), 'api_token.txt',
-                                  'API_TOKEN', 'authorize /api/ requests')
+        _restore_or_persist_secret(state, get_api_token, 'api_token.txt',
+                                   'API_TOKEN', 'authorize /api/ requests')
     if not os.getenv('ADMIN_TOKEN'):
-        _persist_generated_secret(state, get_admin_token(), 'admin_token.txt',
-                                  'ADMIN_TOKEN', 'authorize admin /api/ requests')
+        _restore_or_persist_secret(state, get_admin_token, 'admin_token.txt',
+                                   'ADMIN_TOKEN', 'authorize admin /api/ requests')
 
     port = int(os.getenv('DASHBOARD_PORT', '8080'))
     vpn = None

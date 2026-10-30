@@ -3,6 +3,7 @@ import logging
 import os
 import secrets
 import time
+from urllib.parse import urlsplit
 
 from aiohttp import web
 
@@ -61,6 +62,24 @@ def get_admin_token() -> str:
     if _generated_admin_token is None:
         _generated_admin_token = secrets.token_urlsafe(32)
     return _generated_admin_token
+
+
+def adopt_generated_secret(env_var: str, value: str):
+    """Use a previously generated secret (read back from its data/ file at startup) instead of a new one.
+
+    Without this every restart minted a fresh password and tokens whenever the
+    env var was unset, so a CLI configured from `data/admin_token.txt` broke on
+    the next redeploy.
+    """
+    global _generated_password, _generated_api_token, _generated_admin_token
+    if env_var == 'DASHBOARD_PASSWORD':
+        _generated_password = value
+    elif env_var == 'API_TOKEN':
+        _generated_api_token = value
+    elif env_var == 'ADMIN_TOKEN':
+        _generated_admin_token = value
+    else:
+        raise ValueError(f'unknown generated secret {env_var}')
 
 
 def _bearer(request: web.Request) -> str:
@@ -204,6 +223,53 @@ def record_failed_login(request: web.Request):
     remote_key = _remote_key(request, client)
     if remote_key is not None:
         _failed_logins.setdefault(remote_key, []).append(now)
+
+
+def _request_hosts(request: web.Request) -> set[str]:
+    hosts = {request.host.lower()}
+    if behind_proxy():
+        forwarded = request.headers.get('X-Forwarded-Host', '')
+        if forwarded:
+            hosts.add(forwarded.split(',')[0].strip().lower())
+    return hosts
+
+
+def same_origin(request: web.Request) -> bool:
+    """False when the browser says the request came from another site.
+
+    Checked on every cookie-authenticated POST: the session cookie is
+    SameSite=Lax, which still lets any page on a sibling subdomain or another
+    port of the same host submit a form here. Browsers always send `Origin` on
+    a cross-site POST (and on same-origin ones too); `Referer` is the
+    fallback. A request carrying neither (curl, the tests) is let through.
+    """
+    for header in ('Origin', 'Referer'):
+        value = request.headers.get(header, '').strip()
+        if not value:
+            continue
+        if value == 'null':
+            return False
+        return urlsplit(value).netloc.lower() in _request_hosts(request)
+    return True
+
+
+FRAME_HEADERS = {'X-Frame-Options': 'DENY', 'Content-Security-Policy': "frame-ancestors 'none'"}
+
+
+@web.middleware
+async def csrf_middleware(request: web.Request, handler):
+    """Refuse cross-site POSTs to the cookie-authenticated dashboard and forbid framing it."""
+    if request.method == 'POST' and not request.path.startswith(('/api/', '/sync/')) and not same_origin(request):
+        logger.warning('cross-site POST refused from %s for %s (origin %s)', client_ip(request), request.path,
+                       request.headers.get('Origin') or request.headers.get('Referer'))
+        return web.Response(status=403, content_type='text/plain', text='cross-site request refused')
+    try:
+        response = await handler(request)
+    except web.HTTPException as e:
+        e.headers.update(FRAME_HEADERS)
+        raise
+    response.headers.update(FRAME_HEADERS)
+    return response
 
 
 @web.middleware

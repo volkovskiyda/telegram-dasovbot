@@ -93,6 +93,39 @@ class TestStartDashboard(unittest.IsolatedAsyncioTestCase):
     @patch('dasovbot.dashboard.server.web.AppRunner')
     @patch('dasovbot.dashboard.server.create_app')
     @patch.dict('os.environ', {}, clear=True)
+    async def test_generated_secrets_are_read_back_on_restart(self, mock_create_app, mock_runner_cls, mock_site_cls):
+        # A restart must not mint new secrets: the CLI is configured from
+        # data/admin_token.txt and the operator from dashboard_password.txt
+        mock_runner_cls.return_value = AsyncMock()
+        mock_site_cls.return_value = AsyncMock()
+        auth_module._generated_api_token = None
+        auth_module._generated_admin_token = None
+
+        from dasovbot.dashboard.server import start_dashboard
+        state = MagicMock()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state.config.config_folder = tmpdir
+            data = Path(tmpdir) / 'data'
+            data.mkdir()
+            (data / 'dashboard_password.txt').write_text('kept-password\n')
+            (data / 'admin_token.txt').write_text('kept-admin-token\n')
+
+            with self.assertLogs('dasovbot.dashboard.server', level='INFO') as cm:
+                await start_dashboard(state)
+
+            self.assertEqual(get_password(), 'kept-password')
+            self.assertEqual(auth_module.get_admin_token(), 'kept-admin-token')
+            # api_token.txt did not exist: generated and written as before
+            self.assertEqual((data / 'api_token.txt').read_text().strip(), auth_module.get_api_token())
+            log_output = '\n'.join(cm.output)
+            self.assertNotIn('kept-password', log_output)
+            self.assertNotIn('kept-admin-token', log_output)
+            self.assertIn('using the value kept in', log_output)
+
+    @patch('dasovbot.dashboard.server.web.TCPSite')
+    @patch('dasovbot.dashboard.server.web.AppRunner')
+    @patch('dasovbot.dashboard.server.create_app')
+    @patch.dict('os.environ', {}, clear=True)
     async def test_password_not_logged_when_file_write_fails(self, mock_create_app, mock_runner_cls, mock_site_cls):
         runner = AsyncMock()
         mock_runner_cls.return_value = runner

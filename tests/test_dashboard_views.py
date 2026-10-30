@@ -328,11 +328,69 @@ class TestSystem(DashboardViewTestCase):
     async def test_force_populate_redirects_to_index_from_index(self, mock_populate):
         resp = await self.client.post(
             '/system/populate',
-            headers={'Referer': 'http://localhost/'},
+            headers={'Referer': str(self.client.make_url('/'))},
             allow_redirects=False,
         )
         self.assertEqual(resp.status, 302)
         self.assertEqual(resp.headers['Location'], '/')
+
+
+class TestCrossSite(DashboardViewTestCase):
+    """The session cookie is SameSite=Lax, which a sibling subdomain or another
+    port on the same host can still ride: the Origin/Referer of a POST must be
+    this dashboard."""
+
+    def _foreign(self):
+        return 'http://evil.example:8080'
+
+    async def test_post_from_another_origin_is_refused(self):
+        resp = await self.client.post('/users/ban', data={'user_id': '7'}, allow_redirects=False,
+                                      headers={'Origin': self._foreign()})
+        self.assertEqual(resp.status, 403)
+        self.assertNotIn('7', self.state.banned_users)
+
+    async def test_post_from_another_referer_is_refused(self):
+        resp = await self.client.post('/system/takeover', allow_redirects=False,
+                                      headers={'Referer': self._foreign() + '/system'})
+        self.assertEqual(resp.status, 403)
+
+    async def test_null_origin_is_refused(self):
+        resp = await self.client.post('/users/ban', data={'user_id': '7'}, allow_redirects=False,
+                                      headers={'Origin': 'null'})
+        self.assertEqual(resp.status, 403)
+
+    async def test_same_origin_post_passes(self):
+        origin = str(self.client.make_url('')).rstrip('/')
+        resp = await self.client.post('/users/ban', data={'user_id': '7', 'name': 'x'}, allow_redirects=False,
+                                      headers={'Origin': origin})
+        self.assertEqual(resp.status, 302)
+        self.assertIn('7', self.state.banned_users)
+
+    async def test_post_without_origin_or_referer_passes(self):
+        resp = await self.client.post('/users/ban', data={'user_id': '7', 'name': 'x'}, allow_redirects=False)
+        self.assertEqual(resp.status, 302)
+
+    async def test_forwarded_host_counts_behind_proxy(self):
+        with patch.dict('os.environ', {'DASHBOARD_BEHIND_PROXY': 'true'}):
+            resp = await self.client.post(
+                '/users/ban', data={'user_id': '7', 'name': 'x'}, allow_redirects=False,
+                headers={'Origin': 'https://dash.example.net', 'X-Forwarded-Host': 'dash.example.net'})
+        self.assertEqual(resp.status, 302)
+
+    async def test_api_posts_are_not_subject_to_the_origin_check(self):
+        # Bearer-authenticated: no cookie to ride, and machine clients send any Origin
+        with patch.dict('os.environ', {'ADMIN_TOKEN': 'admin'}):
+            resp = await self.client.post('/api/populate', json={}, headers={
+                'Authorization': 'Bearer admin', 'Origin': self._foreign()})
+        self.assertNotEqual(resp.status, 403)
+
+    async def test_pages_refuse_framing(self):
+        for path in ('/', '/login', '/static/favicon.png'):
+            resp = await self.client.get(path, allow_redirects=False)
+            self.assertEqual(resp.headers.get('X-Frame-Options'), 'DENY', path)
+            self.assertEqual(resp.headers.get('Content-Security-Policy'), "frame-ancestors 'none'", path)
+        resp = await self.client.post('/users/ban', data={'user_id': '7', 'name': 'x'}, allow_redirects=False)
+        self.assertEqual(resp.headers.get('X-Frame-Options'), 'DENY', 'redirect responses carry it too')
 
 
 class TestIgnoredInlineTitle(DashboardViewTestCase):
