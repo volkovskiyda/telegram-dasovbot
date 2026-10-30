@@ -63,6 +63,11 @@ INTENT_RETRY_BACKOFF_SEC = 60
 MEDIA_SWEEP_INTERVAL_SEC = 60 * 60
 MEDIA_MAX_AGE_SEC = 6 * 60 * 60
 
+# Tombstones (HA change feed) older than this are pruned hourly on the ACTIVE
+# node. A peer away for longer is healed by the hourly snapshot reconcile
+TOMBSTONE_PRUNE_INTERVAL_SEC = 60 * 60
+TOMBSTONE_RETENTION_SEC = 30 * 24 * 60 * 60
+
 # Retries when Telegram rate-limits a delivery (RetryAfter)
 MAX_SEND_RETRIES = 2
 

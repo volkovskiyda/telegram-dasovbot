@@ -474,6 +474,7 @@ TASK_DESCRIPTIONS = {
     'sweep_media_folder': {'description': 'Removes leftover media files older than 6 hours', 'interval': '1 hour'},
     'monitor_backups': {'description': 'Alerts when the newest database backup goes stale', 'interval': '1 hour'},
     'monitor_disk_space': {'description': 'Alerts when the media, export or data volume runs low', 'interval': '1 hour'},
+    'prune_tombstones': {'description': 'Drops HA change-feed tombstones older than 30 days', 'interval': '1 hour'},
 }
 
 

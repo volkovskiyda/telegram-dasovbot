@@ -90,6 +90,11 @@ async def init_db(db_path: str) -> aiosqlite.Connection:
     # access, and must wait out e.g. a running backup rather than abort startup
     await db.execute("PRAGMA busy_timeout=30000")
     await db.execute("PRAGMA journal_mode=WAL")
+    # Every BotState write is its own commit. With the default FULL sync that
+    # is one fsync per write (a subscription poll queues dozens of intents in
+    # a row, and the standby runs on an SD card). In WAL mode NORMAL is still
+    # safe against a process crash; only a power cut can lose the last commits
+    await db.execute("PRAGMA synchronous=NORMAL")
     await db.executescript(SCHEMA)
     await migrate_schema_ha(db)
     await db.commit()
@@ -641,6 +646,19 @@ async def reconcile_from_snapshot(db: aiosqlite.Connection, snapshot_path: str, 
             await db.rollback()
             await db.execute("DETACH DATABASE snap")
     return {'changed': changed, 'snapshot_rev': snap_rev}
+
+
+async def prune_tombstones(db: aiosqlite.Connection, deleted_before: str) -> int:
+    """Delete tombstones whose `deleted_at` (DATETIME_FORMAT, sorts as text) is older than the cutoff.
+
+    Every delivered intent leaves a tombstone, so the table grew without
+    bound. A tombstone only has to outlive the window in which the peer may
+    still need it; a peer that was away longer than that is healed by the
+    hourly snapshot reconcile, which makes its tables equal to ours. Commits.
+    """
+    cursor = await db.execute("DELETE FROM tombstones WHERE deleted_at < ?", (deleted_before,))
+    await db.commit()
+    return cursor.rowcount
 
 
 async def keys_above_rev(db: aiosqlite.Connection, rev: int) -> dict:

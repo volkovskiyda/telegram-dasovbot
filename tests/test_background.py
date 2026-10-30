@@ -215,6 +215,7 @@ class TestRunForever(unittest.IsolatedAsyncioTestCase):
 
 
 class TestStartBackgroundTasks(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.services.background.prune_tombstones', new_callable=AsyncMock)
     @patch('dasovbot.services.background.monitor_disk_space', new_callable=AsyncMock)
     @patch('dasovbot.services.background.sweep_media_folder', new_callable=AsyncMock)
     @patch('dasovbot.services.background.monitor_backups', new_callable=AsyncMock)
@@ -225,7 +226,7 @@ class TestStartBackgroundTasks(unittest.IsolatedAsyncioTestCase):
     async def test_keeps_strong_references_until_done(self, *mocks):
         state = make_state()
         start_background_tasks(AsyncMock(), state)
-        self.assertEqual(len(state.background_tasks), 7)
+        self.assertEqual(len(state.background_tasks), 8)
         tasks = list(state.background_tasks)
         await asyncio.gather(*tasks)
         await asyncio.sleep(0)  # let done callbacks run

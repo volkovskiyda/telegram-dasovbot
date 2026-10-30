@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 # and the admin API report them
 BACKGROUND_TASK_NAMES = (
     'populate_subscriptions', 'clear_temporary_inline_queries', 'monitor_process_intents',
-    'sweep_media_folder', 'monitor_backups', 'monitor_disk_space',
+    'sweep_media_folder', 'monitor_backups', 'monitor_disk_space', 'prune_tombstones',
 )
 
 # The dashboard can trigger a run while the hourly loop is mid-iteration;
@@ -172,6 +172,24 @@ def newest_backup_age(backup_dir: str) -> float | None:
     backups = glob.glob(os.path.join(backup_dir, 'bot.db.backup_*'))
     newest = max((os.path.getmtime(path) for path in backups), default=None)
     return None if newest is None else time.time() - newest
+
+
+async def prune_tombstones(state: BotState):
+    """Hourly: drop tombstones older than TOMBSTONE_RETENTION_SEC (see database.prune_tombstones)."""
+    from datetime import datetime, timedelta
+    from dasovbot.constants import DATETIME_FORMAT, TOMBSTONE_PRUNE_INTERVAL_SEC, TOMBSTONE_RETENTION_SEC
+    from dasovbot.database import prune_tombstones as prune
+
+    while True:
+        try:
+            cutoff = (datetime.now() - timedelta(seconds=TOMBSTONE_RETENTION_SEC)).strftime(DATETIME_FORMAT)
+            pruned = await prune(state.db, cutoff)
+            if pruned:
+                logger.info("prune_tombstones removed %d tombstone(s) older than %s", pruned, cutoff)
+            state.background_task_status['prune_tombstones'] = now()
+        except Exception:
+            logger.error("prune_tombstones error", exc_info=True)
+        await asyncio.sleep(TOMBSTONE_PRUNE_INTERVAL_SEC)
 
 
 async def monitor_backups(bot: Bot, state: BotState):
@@ -343,6 +361,9 @@ def start_background_tasks(bot: Bot, state: BotState):
         asyncio.create_task(
             run_forever(partial(monitor_disk_space, bot, state), 'monitor_disk_space'),
             name="monitor_disk_space"),
+        asyncio.create_task(
+            run_forever(partial(prune_tombstones, state), 'prune_tombstones'),
+            name="prune_tombstones"),
     ]
     for task in tasks:
         state.background_tasks.add(task)
