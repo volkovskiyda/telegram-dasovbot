@@ -142,17 +142,32 @@ class TestStandalone(ControllerTestCase):
 
 
 class TestColdStart(ControllerTestCase):
-    async def test_primary_alone_claims_after_one_probe(self):
+    async def test_primary_alone_claims_after_a_whole_lease(self):
+        # One missed probe is not "no peer in sight": a standby that was ACTIVE
+        # for hours answers the second or third probe, and a primary that had
+        # claimed after the first would have stranded everything it wrote
         self.peer.reply = None
         ctl = await self.started('primary')
         self.assertEqual(ctl.role, HA_ROLE_PASSIVE)
-        await self.tick(ctl, 5)
+        await self.tick(ctl)                         # t=10
+        await self.tick(ctl)                         # t=20
         self.assertEqual(ctl.role, HA_ROLE_PASSIVE)
-        await self.tick(ctl, 5)                      # t=10
+        await self.tick(ctl)                         # t=30 = LEASE_TTL
         self.assertEqual(ctl.role, HA_ROLE_ACTIVE)
         self.assertEqual(self.runner.calls, [('start', None)], 'never-seen peer: keep the whole backlog')
         self.assertIn('cold start', self.notifier.transitions[-1])
         self.assertEqual(await get_meta(self.state.db, META_HANDOFF_REV), 100)
+
+    async def test_primary_cold_start_defers_to_a_standby_that_answers_late(self):
+        self.peer.reply = None
+        ctl = await self.started('primary')
+        await self.tick(ctl)                         # first probe missed
+        self.peer.reply = self.active_reply(handoff_rev=90)
+        await self.tick(ctl)                         # the standby was there all along
+        self.assertEqual(ctl.role, HA_ROLE_PASSIVE)
+        self.assertEqual(self.peer.pull_calls, [90], 'it reconciles against the standby instead')
+        await self.tick(ctl)
+        self.assertEqual(ctl.role, HA_ROLE_PASSIVE)
 
     async def test_primary_alone_activates_even_when_never_synced(self):
         # A freshly deployed (or upgraded) primary has no sync history and no
@@ -160,7 +175,7 @@ class TestColdStart(ControllerTestCase):
         self.peer.reply = None
         self.peer.status['last_sync_at'] = None
         ctl = await self.started('primary')
-        await self.tick(ctl, 10)
+        await self.tick(ctl, 30)
         self.assertEqual(ctl.role, HA_ROLE_ACTIVE)
         self.assertEqual(self.notifier.errors, [])
 
@@ -510,6 +525,71 @@ class TestConflictAndTwoActives(ControllerTestCase):
         self.assertTrue(any('both nodes' in e for e in self.notifier.errors))
 
 
+class TestHandoffPointLifecycle(TestConflictAndTwoActives):
+    """The handoff point a node persists when it takes the lease is advertised
+    until the peer has pulled everything above it, then dropped."""
+
+    def passive_reply(self, **extra):
+        return {'node': 'other', 'role': HA_ROLE_PASSIVE, 'rev': 100, 'drained': False, **extra}
+
+    async def test_active_node_absorbs_a_passive_peers_handoff_point(self):
+        # The standby served alone, this primary came up and claimed the lease;
+        # the standby stepped down with rows nobody else has
+        primary = await self.activate('primary')
+        self.peer.reply = self.passive_reply(handoff_rev=120)
+        await self.tick(primary)
+        self.assertEqual(primary.role, HA_ROLE_ACTIVE)
+        self.assertEqual(self.peer.pull_calls, [120], 'pulls the peer feed from its handoff point')
+        self.assertEqual(primary.status()['reconciled_rev'], 120)
+        await self.tick(primary)
+        self.assertEqual(self.peer.pull_calls, [120], 'once per handoff point')
+
+    async def test_absorb_failure_is_reported_and_retried(self):
+        primary = await self.activate('primary')
+        self.peer.reply = self.passive_reply(handoff_rev=120)
+        self.peer.pull_error = SyncError('boom')
+        await self.tick(primary)
+        self.assertTrue(any('could not absorb' in e for e in self.notifier.errors))
+        self.assertIsNone(primary.status()['reconciled_rev'])
+        self.peer.pull_error = None
+        await self.tick(primary)
+        self.assertEqual(self.peer.pull_calls, [120, 120])
+
+    async def test_handoff_point_is_dropped_once_the_peer_reports_it_reconciled(self):
+        ctl = await self.activate('standby')
+        self.assertEqual(ctl.handoff_rev, 100)
+        self.peer.reply = self.passive_reply(reconciled_rev=99)
+        await self.tick(ctl)
+        self.assertEqual(ctl.handoff_rev, 100, 'an older point reconciled is not this one')
+        self.peer.reply = self.passive_reply(reconciled_rev=100)
+        await self.tick(ctl)
+        self.assertIsNone(ctl.handoff_rev)
+        self.assertIsNone(await get_meta(self.state.db, META_HANDOFF_REV))
+        self.assertEqual(ctl.role, HA_ROLE_ACTIVE)
+
+    async def test_step_down_keeps_the_handoff_point_until_absorbed(self):
+        standby = await self.activate('standby')
+        self.peer.reply = self.active_reply()
+        await self.tick(standby)
+        self.assertEqual(standby.role, HA_ROLE_PASSIVE)
+        self.assertEqual(standby.handoff_rev, 100, 'the primary did no final pull: our rows may be unseen')
+        self.assertEqual(await get_meta(self.state.db, META_HANDOFF_REV), 100)
+        self.assertEqual(standby.status()['handoff_rev'], 100, 'still advertised in heartbeats')
+        self.peer.reply = self.active_reply(reconciled_rev=100)
+        await self.tick(standby)
+        self.assertIsNone(standby.handoff_rev)
+
+    async def test_planned_handoff_still_clears_the_point(self):
+        standby = await self.activate('standby')
+        await standby.handoff_requested_by_peer(manual=False)
+        await asyncio.sleep(0)
+        self.assertEqual(standby.role, HA_ROLE_DRAINING)
+        self.peer.reply = self.active_reply()
+        await self.tick(standby)
+        self.assertEqual(standby.role, HA_ROLE_PASSIVE)
+        self.assertIsNone(standby.handoff_rev, 'the peer pulled our feed before it activated')
+
+
 class TestHoldDown(TestConflictAndTwoActives):
     async def stepped_down(self, times=1):
         """A standby that claimed the lease while the primary was alive, `times` times in a row."""
@@ -673,7 +753,7 @@ class TestStop(ControllerTestCase):
     async def test_stop_while_active_stops_all(self):
         self.peer.reply = None
         ctl = await self.started('primary')
-        await self.tick(ctl)
+        await self.tick(ctl, 30)
         self.assertEqual(ctl.role, HA_ROLE_ACTIVE)
         await ctl.stop()
         self.assertEqual(self.runner.names(), ['start', 'stop_all'])

@@ -250,15 +250,17 @@ class BotState:
         self.intent_retry_after.clear()
         self.transient_failures.clear()
 
-    async def apply_remote_page(self, page: dict, peer: str) -> dict:
+    async def apply_remote_page(self, page: dict, peer: str, force_tombstones: bool = False) -> dict:
         """Apply one change-feed page to the database and to memory.
 
         Returns the apply counts plus `touched`: the set of (table, key) pairs
         the page wrote or deleted, which the handoff reconcile uses to tell
-        local survivors apart from rows the peer overrode.
+        local survivors apart from rows the peer overrode. `force_tombstones`
+        (the reconcile pull) lets a tombstone delete a local row stamped
+        higher by this node's own counter.
         """
         from dasovbot.database import apply_changes
-        result = await apply_changes(self.db, page, peer)
+        result = await apply_changes(self.db, page, peer, force_tombstones=force_tombstones)
         touched = set()
         for key, data, _rev in result['rows']['videos']:
             self.videos[key] = VideoInfo.from_dict(json.loads(data))

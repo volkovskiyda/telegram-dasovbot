@@ -182,6 +182,23 @@ class TestApplyRemotePage(FeedTestCase):
         self.assertEqual((await load_videos(dst.db))['v'].title, 'new')
         self.assertEqual(dst.rev, 50, 'counter never lowered')
 
+    async def test_reconcile_tombstone_wins_over_a_higher_local_rev(self):
+        # Above the handoff point the two counters are unrelated: a row the
+        # returning primary stamped 50 and a tombstone the standby stamped 10
+        # for the same key both happened after the split, and the standby wins
+        dst = await self.make_state('dst')
+        await upsert_video(dst.db, 'v', VideoInfo(title='primary'), rev=50)
+        dst.videos['v'] = VideoInfo(title='primary')
+        dst.rev = 50
+        page = {'since': 0, 'until': 10, 'has_more': False, 'rows': {},
+                'tombstones': [['videos', 'v', 10, '20260101_000000']]}
+        result = await dst.apply_remote_page(page, 'peer', force_tombstones=True)
+        self.assertEqual((result['skipped'], result['tombstones']), (0, 1))
+        self.assertNotIn('v', dst.videos)
+        self.assertNotIn('v', await load_videos(dst.db))
+        self.assertEqual((await self.dump(dst))['tombstones'], [('videos', 'v', 10)])
+        self.assertIn(('videos', 'v'), result['touched'])
+
     async def test_recreated_key_clears_tombstone(self):
         src = await self.make_state('src')
         dst = await self.make_state('dst')

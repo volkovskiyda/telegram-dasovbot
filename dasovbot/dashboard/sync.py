@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 HEALTH_KEYS = ('role', 'node', 'node_url', 'lease_holder', 'last_sync_rev', 'last_sync_at', 'ready', 'peer',
                'peer_url', 'node_role', 'enabled', 'rev', 'manual_hold', 'handback_requested', 'drained')
 HEARTBEAT_KEYS = ('node', 'role', 'lease_until', 'rev', 'drained', 'manual_hold', 'handback_requested',
-                  'handoff_rev', 'peer_url')
+                  'handoff_rev', 'reconciled_rev', 'peer_url')
 SNAPSHOT_CHUNK = 1 << 20
 
 

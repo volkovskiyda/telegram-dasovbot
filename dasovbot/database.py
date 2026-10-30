@@ -487,14 +487,17 @@ async def read_changes(db: aiosqlite.Connection, since: int, limit: int) -> dict
     return {'since': since, 'until': until, 'has_more': has_more, 'rows': rows, 'tombstones': tombstones}
 
 
-async def apply_changes(db: aiosqlite.Connection, page: dict, peer: str) -> dict:
+async def apply_changes(db: aiosqlite.Connection, page: dict, peer: str, force_tombstones: bool = False) -> dict:
     """Apply one feed page in a single transaction; the caller updates memory.
 
     Rows overwrite the local copy with the remote rev and clear any tombstone
     for their key. A tombstone deletes the local row only when the row is
     absent or not newer than the tombstone ("tombstones win over older
-    rows"). `requests` rows are appended, duplicates ignored. Finally the
-    counter is raised to the page's `until` and the per-peer cursor stored.
+    rows") — unless `force_tombstones`: the handoff reconcile pulls the peer's
+    writes above a point where the two nodes' counters diverged, so a rev
+    comparison means nothing there and the peer's delete simply wins.
+    `requests` rows are appended, duplicates ignored. Finally the counter is
+    raised to the page's `until` and the per-peer cursor stored.
 
     Returns what changed so BotState can mirror it:
     {'rows': {table: [[key, data, rev], ...]}, 'deleted': [[tbl, key], ...],
@@ -528,7 +531,7 @@ async def apply_changes(db: aiosqlite.Connection, page: dict, peer: str) -> dict
             continue
         cursor = await db.execute(f"SELECT rev FROM {tbl} WHERE {column} = ?", (key,))
         row = await cursor.fetchone()
-        if row is not None and row[0] > rev:
+        if row is not None and row[0] > rev and not force_tombstones:
             skipped += 1  # local row is newer than the tombstone
             continue
         await db.execute(f"DELETE FROM {tbl} WHERE {column} = ?", (key,))

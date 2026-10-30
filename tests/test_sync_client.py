@@ -4,11 +4,10 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from dasovbot.dashboard.server import create_app
-from dasovbot.database import get_meta, last_applied_key
+from dasovbot.database import delete_video, get_meta, last_applied_key
 from dasovbot.models import VideoInfo, Subscription
 from dasovbot.services.sync import (
     SyncClient, SyncError, DeveloperNotifier, META_LAST_HEARTBEAT_AT, META_LAST_SYNC_AT, META_LAST_SYNC_REV,
@@ -103,6 +102,26 @@ class TestPullChanges(SyncClientTestCase):
             result = await self.client.pull_changes(since=1000)
         self.assertEqual(len(result['touched']), 100)
         self.assertIn(('videos', 'v1099'), result['touched'])
+
+    async def test_explicit_since_lets_peer_tombstones_delete_higher_local_rows(self):
+        # Reconcile pull: the peer deleted 'gone' at a low rev of its own
+        # counter while this node, writing on its own, stamped the same key
+        # far higher. The peer's view above the handoff point wins
+        await self.peer_state.set_video('gone', VideoInfo(title='peer'))
+        await self.peer_state.pop_intent('x')                     # no-op, keeps the counter moving
+        await delete_video(self.peer_state.db, 'gone', rev=self.peer_state.next_rev(), deleted_at='t')
+        await self.local.set_video('gone', VideoInfo(title='local'))
+        self.local.rev = 999
+        await self.local.set_video('gone', VideoInfo(title='local, stamped 1000'))
+        await self.client.heartbeat()
+        await self.client.pull_changes(since=0)
+        self.assertNotIn('gone', self.local.videos)
+        # The regular incremental pull keeps the old rule: a newer local row survives
+        await self.local.set_video('kept', VideoInfo(title='local'))
+        await self.peer_state.set_video('kept', VideoInfo(title='peer'))
+        await delete_video(self.peer_state.db, 'kept', rev=self.peer_state.next_rev(), deleted_at='t')
+        await self.client.pull_changes()
+        self.assertIn('kept', self.local.videos)
 
     async def test_bootstrap_snapshot_when_local_is_empty(self):
         await self.peer_state.set_video('v', VideoInfo(title='T'))

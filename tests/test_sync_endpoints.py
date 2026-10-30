@@ -1,6 +1,5 @@
 """/health and /sync/* endpoints (plan item 07)."""
 import hashlib
-import json
 import os
 import sqlite3
 import tempfile
@@ -90,7 +89,7 @@ class TestHealthWithController(SyncEndpointTestCase):
         self.assertEqual(resp.status, 200)
         body = await resp.json()
         self.assertEqual(set(body), {'node', 'role', 'lease_until', 'rev', 'drained', 'manual_hold',
-                                     'handback_requested', 'handoff_rev', 'peer_url'})
+                                     'handback_requested', 'handoff_rev', 'reconciled_rev', 'peer_url'})
         self.assertEqual((body['node'], body['rev'], body['handoff_rev']), ('me', 42, 40))
         self.assertEqual(body['peer_url'], 'http://192.168.1.10:8080', 'the peer learns its own node_url from it')
         self.assertIsNone(body['lease_until'], 'a passive node holds no lease')

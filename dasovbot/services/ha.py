@@ -18,7 +18,8 @@ import logging
 import math
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Awaitable, Callable, Protocol
+from typing import Protocol
+from collections.abc import Callable
 
 from telegram import Update
 
@@ -224,6 +225,7 @@ class RoleController:
             'manual_hold': self.manual_hold,
             'handback_requested': self.handback_requested,
             'handoff_rev': self.handoff_rev,
+            'reconciled_rev': self.reconciled_rev,
             'handoff_pending': self.handoff_pending,
             'peer_role': self.peer_status.get('role') if self.peer_status else None,
             'peer_seen_at': self._peer_seen_at(),
@@ -329,6 +331,13 @@ class RoleController:
                 self.last_active_seen = now
             if reply.get('role') == HA_ROLE_ACTIVE:
                 self.peer_active_wall_at = self.wall_clock()
+            if self.handoff_rev is not None and reply.get('reconciled_rev') == self.handoff_rev:
+                # The peer has pulled everything this node wrote since it took
+                # the lease: the handoff point has done its job. Clearing it
+                # keeps a later reconcile (next failback, a standby restart)
+                # from walking the feed from an ancient rev all over again
+                self.handoff_rev = None
+                await self._persist(META_HANDOFF_REV, None)
             if self.step_downs and now - self.healthy_since >= self.config.failback_stable_sec:
                 # The link has been stable for a whole failback window: forget the flapping
                 self.step_downs = 0
@@ -380,7 +389,14 @@ class RoleController:
             await self._activate('manual takeover')
             return
         if self.last_active_seen is None:
-            wait = self.config.heartbeat_interval_sec if self.config.is_primary \
+            # A cold start claims only after the peer stayed out of sight for a
+            # whole lease: one missed probe used to be enough for the primary,
+            # and a standby that had been serving for hours then lost every row
+            # it wrote (the stale primary activated, the standby stepped down,
+            # and the hourly snapshot floor deleted the orphaned rows). The
+            # standby still waits one interval longer so the primary wins a
+            # simultaneous cold start
+            wait = self.config.lease_ttl_sec if self.config.is_primary \
                 else self.config.lease_ttl_sec + self.config.heartbeat_interval_sec
             lost = now - self.started_at >= wait
             reason = 'cold start'
@@ -411,6 +427,18 @@ class RoleController:
                 await self.notifier.error(f"⚠️ both nodes are ACTIVE — {self.peer_name} should yield")
             else:
                 await self._step_down('peer active')
+            return
+        if reply is not None and reply.get('role') == HA_ROLE_PASSIVE:
+            # A passive peer that still advertises a handoff point held the
+            # lease without a clean handover (it stepped down when this node
+            # came up): the rows it wrote exist only there. Only passive nodes
+            # pull, so this node absorbs them itself — peer wins on the keys
+            # it touched, this node's own survivors are re-stamped — before the
+            # peer's hourly snapshot floor would discard them
+            try:
+                await self._reconcile_if_needed(reply)
+            except SyncError as e:
+                await self.notifier.error(f"⚠️ {self.node} could not absorb {self.peer_name}'s writes: {e}")
 
     async def _tick_draining(self, reply: dict | None, peer_active: bool, now: float):
         if not self.drained:
@@ -433,17 +461,33 @@ class RoleController:
 
     async def _pull(self, reply: dict):
         """Normal passive pull — or, once per handoff, the returning-node reconcile."""
-        handoff_rev = reply.get('handoff_rev')
-        if reply.get('role') == HA_ROLE_ACTIVE and handoff_rev is not None \
-                and self._reconciled_for != (self.peer_name, handoff_rev):
-            async def pull(since: int) -> set:
-                return (await self.peer.pull_changes(since=since))['touched']
-            result = await self.state.reconcile_after_return(int(handoff_rev), pull)
-            self._reconciled_for = (self.peer_name, handoff_rev)
-            if result['restamped']:
-                logger.info("reconciled after return: %s", result)
+        if reply.get('role') == HA_ROLE_ACTIVE and await self._reconcile_if_needed(reply):
             return
         await self.peer.pull_changes()
+
+    async def _reconcile_if_needed(self, reply: dict) -> bool:
+        """Once per handoff point the peer advertises: pull its feed from there (peer wins on
+        every key it touched) and re-stamp this node's survivors so they flow back.
+
+        The point reconciled is reported back in this node's heartbeat replies
+        as `reconciled_rev`, which lets the peer drop its handoff point.
+        """
+        handoff_rev = reply.get('handoff_rev')
+        if handoff_rev is None or self._reconciled_for == (self.peer_name, handoff_rev):
+            return False
+
+        async def pull(since: int) -> set:
+            return (await self.peer.pull_changes(since=since))['touched']
+        result = await self.state.reconcile_after_return(int(handoff_rev), pull)
+        self._reconciled_for = (self.peer_name, handoff_rev)
+        if result['restamped']:
+            logger.info("reconciled against %s handoff point %s: %s", self.peer_name, handoff_rev, result)
+        return True
+
+    @property
+    def reconciled_rev(self) -> int | None:
+        """The peer's handoff point this node has reconciled against (None until it has)."""
+        return self._reconciled_for[1] if self._reconciled_for else None
 
     # --- transitions --------------------------------------------------------
 
@@ -504,6 +548,11 @@ class RoleController:
         await self.notifier.transition(f"⚪ {self.node} handed over to {self.peer_name}, now PASSIVE", quiet=True)
 
     async def _step_down(self, reason: str):
+        # The handoff point is deliberately kept: unlike a planned handoff, the
+        # peer did no final pull of this node's feed, so the rows written since
+        # the point may exist only here. The ACTIVE peer sees the point in the
+        # heartbeat reply, absorbs those rows (_tick_active) and reports
+        # `reconciled_rev`, which is what clears it (tick)
         try:
             await self.runner.stop_all()
         finally:
@@ -511,9 +560,7 @@ class RoleController:
             self.drained = False
             self.handoff_pending = False
             self.handback_requested = False
-            self.handoff_rev = None
             self._stepping_down = False
-        await self._persist(META_HANDOFF_REV, None)
         await self.peer.on_handed_back()
         self.step_downs += 1
         hold = min(STEP_DOWN_HOLD_FACTOR * self.config.lease_ttl_sec * 2 ** (self.step_downs - 1),

@@ -38,6 +38,7 @@ META_LAST_SNAPSHOT_AT = 'sync:last_snapshot_at'
 MAX_PAGES_PER_TICK = 200          # bounds one passive tick; the next tick continues
 MAX_PAGES_PER_RECONCILE = 20_000  # an explicit `since` pulls to the end; this only stops a runaway feed
 SNAPSHOT_CHUNK = 1 << 20
+SOCK_READ_TIMEOUT_SEC = 30        # longest silence tolerated mid-response from the peer
 
 
 def _now() -> str:
@@ -168,7 +169,9 @@ class SyncClient:
             since = int(await get_meta(self.state.db, cursor_key, 0) or 0)
         cap = MAX_PAGES_PER_RECONCILE if explicit else MAX_PAGES_PER_TICK
         applied, touched, pages = 0, set(), 0
-        timeout = aiohttp.ClientTimeout(total=60)
+        # sock_read: a peer host that loses power mid-response sends no RST,
+        # and the controller's tick (hence the lease check) waits on this
+        timeout = aiohttp.ClientTimeout(total=60, sock_read=SOCK_READ_TIMEOUT_SEC)
         try:
             while pages < cap:
                 url = self._url(f'/sync/changes?since={int(since)}&limit={SYNC_PAGE_SIZE}')
@@ -176,7 +179,11 @@ class SyncClient:
                     if resp.status != 200:
                         raise SyncError(f'changes: HTTP {resp.status}')
                     page = await resp.json()
-                result = await self.state.apply_remote_page(page, self.peer_name)
+                # A reconcile pull is the peer's view of everything above the
+                # handoff point, and the peer wins there: its tombstones apply
+                # even to a local row stamped higher by this node's own counter
+                # (the two counters are not comparable above that point)
+                result = await self.state.apply_remote_page(page, self.peer_name, force_tombstones=explicit)
                 applied += result['rows'] + result['tombstones'] + result['requests']
                 touched |= result['touched']
                 pages += 1
@@ -199,7 +206,9 @@ class SyncClient:
         """Download the peer's snapshot into a temp file and reconcile the local database from it."""
         fd, path = mkstemp(prefix='dasovbot-snapshot-', suffix='.db')
         os.close(fd)
-        timeout = aiohttp.ClientTimeout(total=900)
+        # Without sock_read a stalled stream (peer host lost power, no RST)
+        # held the passive tick for the whole 15 min with nobody polling
+        timeout = aiohttp.ClientTimeout(total=900, sock_read=SOCK_READ_TIMEOUT_SEC)
         try:
             try:
                 async with self._session_or_open().get(self._url('/sync/snapshot'), timeout=timeout) as resp:
