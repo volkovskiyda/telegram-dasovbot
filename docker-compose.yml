@@ -58,7 +58,7 @@ services:
       ADMIN_TOKEN: $ADMIN_TOKEN
       BACKUP_CRON: ${BACKUP_CRON:-0 */12 * * *}
       BACKUP_MAX_COUNT: ${BACKUP_MAX_COUNT:-14}
-      # High availability (README "High availability"); blank PEER_URL and
+      # High availability (docs/ha.md); blank PEER_URL and
       # SYNC_SECRET = single node, exactly the behaviour without these lines.
       # PEER_URL is the peer's static LAN IP: hostnames do not resolve inside
       # gluetun, and a floating IP must never be used here
@@ -69,7 +69,7 @@ services:
       HEARTBEAT_INTERVAL_SEC: ${HEARTBEAT_INTERVAL_SEC:-10}
       LEASE_TTL_SEC: ${LEASE_TTL_SEC:-30}
       FAILBACK_STABLE_SEC: ${FAILBACK_STABLE_SEC:-180}
-      # VPN status in /api/status (README "JSON API"); blank key = off
+      # VPN status in /api/status (docs/api.md); blank key = off
       VPN_CONTROL_APIKEY: $VPN_CONTROL_APIKEY
       VPN_CONTROL_URL: ${VPN_CONTROL_URL:-http://127.0.0.1:8000}
       # Without a cap, glibc creates a malloc arena per executor thread and

@@ -27,7 +27,7 @@ class Config:
     upload_concurrency: int = 1
     # Free space (GB) below which a volume raises a health alert; 0 disables
     disk_free_min_gb: float = 20.0
-    # High availability (see README "High availability"). HA is enabled only
+    # High availability (see docs/ha.md). HA is enabled only
     # when peer_url and sync_secret are both set; otherwise the node is
     # standalone and behaves exactly as a single deployment
     node_role: str = 'primary'          # 'primary' | 'standby'

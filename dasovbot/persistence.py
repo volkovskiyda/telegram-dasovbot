@@ -22,7 +22,7 @@ def move_atomic(src: str, dst: str) -> None:
     would sync a truncated video. The data lands in '<dst>.partial' first
     (same directory, so the final step is a rename on every filesystem) and
     is renamed into place in one atomic os.replace. Syncthing ignores
-    '**/*.partial' (see README "High availability").
+    '**/*.partial' (see docs/ha.md "Syncthing").
 
     Runs blocking I/O; call it through run_in_executor. A failure after the
     partial was created removes it and re-raises, so nothing is left behind

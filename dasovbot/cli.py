@@ -1,4 +1,4 @@
-"""dasovbot CLI: a stdlib-only client for the admin API (README "CLI").
+"""dasovbot CLI: a stdlib-only client for the admin API (docs/api.md "CLI").
 
 Installed by `pipx install -e .` without the bot's dependencies, so this module
 imports nothing from the package and nothing outside the standard library.

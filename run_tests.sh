@@ -78,7 +78,7 @@ if [[ "$run_e2e" == 0 ]]; then
     echo "Skipped (--no-e2e)."
 elif [[ ! -t 0 ]]; then
     echo "Skipped: not an interactive terminal. Run ./run_tests.sh from a"
-    echo "terminal (or the E2E pytest command from the README) to include them."
+    echo "terminal (or the E2E pytest command from docs/testing.md) to include them."
 else
     echo "*** USER INTERACTION REQUIRED ***"
     echo "Open your Telegram chat with the test bot NOW. The bot will message"

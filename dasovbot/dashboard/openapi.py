@@ -1,7 +1,7 @@
 """Hand-written OpenAPI 3.1 description of every `/api` route, served at `/api/openapi.json`.
 
 `tests/test_openapi.py` keeps it honest: every `/api` route the app registers
-must be documented here and vice versa. The README stays the narrative; the
+must be documented here and vice versa. docs/api.md stays the narrative; the
 descriptions here are one sentence each.
 """
 from __future__ import annotations
