@@ -3,13 +3,12 @@
 Real temp-file databases: ATTACH and the backup API need files, and the
 paging cutoff must be exercised against the actual union query.
 """
-import json
 import os
 import tempfile
 import unittest
 
 from dasovbot.database import (
-    init_db, read_changes, apply_changes, write_snapshot, reconcile_from_snapshot,
+    init_db, read_changes, write_snapshot, reconcile_from_snapshot,
     keys_above_rev, load_rev, get_meta, set_meta, last_applied_key, upsert_video, delete_video,
     load_videos, prune_tombstones, KEYED_TABLES,
 )
@@ -198,6 +197,7 @@ class TestApplyRemotePage(FeedTestCase):
         self.assertNotIn('v', await load_videos(dst.db))
         self.assertEqual((await self.dump(dst))['tombstones'], [('videos', 'v', 10)])
         self.assertIn(('videos', 'v'), result['touched'])
+
     async def test_prune_tombstones_by_age(self):
         src = await self.make_state('src')
         for key, stamp in (('old', '20260101_000000'), ('edge', '20260201_000000'), ('new', '20260301_000000')):
@@ -206,7 +206,6 @@ class TestApplyRemotePage(FeedTestCase):
         pruned = await prune_tombstones(src.db, deleted_before='20260201_000000')
         self.assertEqual(pruned, 1)
         self.assertEqual([k for _t, k, _r in (await self.dump(src))['tombstones']], ['edge', 'new'])
-
 
     async def test_recreated_key_clears_tombstone(self):
         src = await self.make_state('src')

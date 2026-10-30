@@ -156,7 +156,7 @@ async def start_dashboard(state: BotState, ha=None):
         _restore_or_persist_secret(state, get_admin_token, 'admin_token.txt',
                                    'ADMIN_TOKEN', 'authorize admin /api/ requests')
 
-    port = int(os.getenv('DASHBOARD_PORT', '8080'))
+    port = int(os.getenv('DASHBOARD_PORT') or 8080)
     vpn = None
     if state.config is not None and state.config.vpn_control_apikey:
         vpn = VpnMonitor(state.config.vpn_control_url, state.config.vpn_control_apikey)

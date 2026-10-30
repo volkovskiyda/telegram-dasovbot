@@ -1,5 +1,4 @@
 import unittest
-from typing import Optional
 from unittest.mock import AsyncMock
 
 from dotenv import load_dotenv
@@ -87,7 +86,7 @@ class IntegrationTestBase(unittest.IsolatedAsyncioTestCase):
     application: Application
     bot: Bot
     state: BotState
-    bot_user: Optional[User] = None
+    bot_user: User | None = None
 
     @classmethod
     def setUpClass(cls):
@@ -165,7 +164,7 @@ class IntegrationTestBase(unittest.IsolatedAsyncioTestCase):
         """Simulate processing an update through the application"""
         await self.application.process_update(update)
 
-    async def send_command(self, command: str, chat_id: Optional[int] = None):
+    async def send_command(self, command: str, chat_id: int | None = None):
         """Send a command to the test chat"""
         if chat_id is None:
             chat_id = self.test_config.chat_id

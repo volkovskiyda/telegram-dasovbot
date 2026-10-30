@@ -8,7 +8,6 @@ To run these tests:
 3. Run: python -m pytest tests/integration/test_commands.py -v
 """
 import asyncio
-from unittest.mock import MagicMock
 
 from telegram import Update, Message, Chat, User
 

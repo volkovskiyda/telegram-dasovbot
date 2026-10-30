@@ -18,3 +18,22 @@ dasovbot = "dasovbot.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["dasovbot*"]
+
+# `ruff check .` runs in CI next to the unit tests. Correctness-oriented rule
+# set only (pyflakes, bugbear, pyupgrade); no style enforcement
+[tool.ruff]
+target-version = "py311"
+line-length = 160
+extend-exclude = ["internal", "config", "vpn"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "B", "UP"]
+ignore = [
+    "B008",  # function call in argument defaults (aiohttp AppKey etc.)
+    "B011",  # assert False in tests
+    "UP017", # datetime.UTC alias: the code targets 3.11 and reads the same with timezone.utc
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B", "F841"]
+"preview_dashboard.py" = ["B"]

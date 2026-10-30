@@ -94,7 +94,7 @@ def load_settings(env=None, path=None) -> Settings:
             with open(path, 'rb') as f:
                 data = tomllib.load(f)
         except (OSError, tomllib.TOMLDecodeError) as exc:
-            raise CliError({'error': 'bad config file', 'detail': f'{path}: {exc}'}, EXIT_CONFIG)
+            raise CliError({'error': 'bad config file', 'detail': f'{path}: {exc}'}, EXIT_CONFIG) from None
         urls = data.get('urls', [])
         file_urls = _split_urls(urls) if isinstance(urls, str) else [str(item).rstrip('/') for item in urls]
         file_token = str(data.get('admin_token') or '')
@@ -147,7 +147,7 @@ class Client:
         except urllib.error.HTTPError as exc:
             return exc.code, _decode(exc.read())
         except (urllib.error.URLError, OSError, ValueError) as exc:
-            raise Unreachable(base, str(getattr(exc, 'reason', None) or exc))
+            raise Unreachable(base, str(getattr(exc, 'reason', None) or exc)) from exc
 
 
 def probe(client: Client, urls: list[str]) -> list[Node]:
@@ -213,7 +213,7 @@ def _post(client: Client, base: str, path: str, body: dict) -> tuple[int, object
     try:
         return client.request(base, 'POST', path, body=body)
     except Unreachable as exc:
-        raise CliError({'error': 'node unreachable', 'url': base, 'detail': exc.detail}, EXIT_NO_NODE)
+        raise CliError({'error': 'node unreachable', 'url': base, 'detail': exc.detail}, EXIT_NO_NODE) from exc
 
 
 # --- commands ---

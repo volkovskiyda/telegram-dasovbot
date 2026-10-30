@@ -9,9 +9,8 @@ from backup import create_backup, main, prune_backups, node_is_active
 
 def active_health(role='active'):
     """A fake urlopen context manager answering /health with the given role."""
-    import io
     resp = MagicMock()
-    resp.read.return_value = ('{"role": "%s"}' % role).encode()
+    resp.read.return_value = f'{{"role": "{role}"}}'.encode()
     resp.__enter__.return_value = resp
     resp.__exit__.return_value = False
     return resp

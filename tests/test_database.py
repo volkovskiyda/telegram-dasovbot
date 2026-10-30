@@ -7,7 +7,7 @@ from unittest.mock import patch, MagicMock
 
 from tests.helpers import make_memory_db, make_config
 from dasovbot.database import (
-    migrate_schema_ha, get_meta, set_meta, load_rev, persist_rev, KEYED_TABLES, REV_TABLES,
+    get_meta, set_meta, load_rev, persist_rev, KEYED_TABLES, REV_TABLES,
     init_db, migrate_from_json, warn_if_data_missing,
     upsert_video, delete_video, load_videos,
     upsert_intent, delete_intent, load_intents,

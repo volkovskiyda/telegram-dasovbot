@@ -8,7 +8,7 @@ import dasovbot.dashboard.auth as auth_module
 from dasovbot.dashboard.auth import (
     check_sync_token, get_sync_secret,
     auth_middleware, login_page, login_post, logout,
-    create_session, check_token, client_ip, secure_cookie,
+    create_session, client_ip, secure_cookie,
     COOKIE_NAME, MAX_LOGIN_ATTEMPTS, MAX_LOGIN_ATTEMPTS_PER_REMOTE,
 )
 

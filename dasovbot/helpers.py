@@ -36,7 +36,9 @@ async def send_message_developer(bot: Bot, text: str, developer_id: str, notific
     try:
         await bot.send_message(chat_id=developer_id, text=text, disable_notification=not notification)
     except Exception:
-        pass
+        # Best effort by design, but an alert path that fails silently hides
+        # the very outage it reports; one line is enough
+        logger.warning("developer message failed: %s", text.splitlines()[0] if text else '', exc_info=True)
 
 
 # Telegram rejects messages longer than 4096 characters

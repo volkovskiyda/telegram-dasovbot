@@ -106,7 +106,6 @@ class TestInlineQueries(IntegrationTestBase):
         """Test that inline queries are cached"""
         from dasovbot.models import TemporaryInlineQuery
         from telegram import InlineQueryResultCachedVideo
-        from unittest.mock import MagicMock
 
         test_url = self.test_config.test_video_url
 
@@ -162,7 +161,6 @@ class TestInlineQueries(IntegrationTestBase):
         test_url = self.test_config.test_video_url
 
         from dasovbot.handlers.inline import chosen_query
-        from unittest.mock import MagicMock
 
         with patch('dasovbot.handlers.inline.append_intent') as mock_append:
             # Set up state with video info
@@ -197,7 +195,6 @@ class TestInlineQueries(IntegrationTestBase):
         test_url = self.test_config.test_video_url
 
         from dasovbot.handlers.inline import chosen_query
-        from unittest.mock import MagicMock, AsyncMock
 
         # Set up state with cached file
         video_info = VideoInfo(

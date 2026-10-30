@@ -2,6 +2,7 @@ import asyncio
 import logging
 import re
 import signal
+import sys
 from warnings import filterwarnings
 
 from telegram.ext import Application
@@ -121,8 +122,10 @@ def main():
     try:
         state = loop.run_until_complete(BotState.create(config))
     except Exception as e:
+        # Non-zero: a `restart: on-failure` policy and anyone reading $? must
+        # see a failed start, not a clean exit
         logging.error(f"Failed to initialize state: {e}")
-        return
+        sys.exit(1)
 
     from dasovbot.dashboard.server import start_dashboard
     from dasovbot.services.ha import RoleController, PtbRunner
@@ -146,7 +149,7 @@ def main():
         # the process lingers as a zombie (dashboard up, no bot) and Docker's
         # restart policy never fires
         loop.run_until_complete(state.close())
-        return
+        sys.exit(1)
 
     application = build_application(config)
 

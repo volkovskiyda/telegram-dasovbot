@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import ANY, AsyncMock, patch
 
 from tests.helpers import make_config, make_state
-from dasovbot.models import VideoInfo, Intent, IntentMessage, Subscription
+from dasovbot.models import VideoInfo, Intent, Subscription
 from dasovbot.state import BotState
 
 

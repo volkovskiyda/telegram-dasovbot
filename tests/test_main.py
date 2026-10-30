@@ -24,8 +24,12 @@ def make_builder(app):
 class TestMain(unittest.TestCase):
     def tearDown(self):
         # main() creates and sets an event loop but never closes it
-        loop = asyncio.get_event_loop_policy().get_event_loop()
-        loop.close()
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = None
+        if loop is not None:
+            loop.close()
         asyncio.set_event_loop(None)
 
     def _make_state(self):
@@ -70,7 +74,9 @@ class TestMain(unittest.TestCase):
         import logging
         httpx_logger = logging.getLogger('httpx')
         self.addCleanup(httpx_logger.filters.clear)
-        make_record = lambda msg, args=None: logging.LogRecord('httpx', logging.INFO, __file__, 1, msg, args, None)
+
+        def make_record(msg, args=None):
+            return logging.LogRecord('httpx', logging.INFO, __file__, 1, msg, args, None)
         self.assertFalse(httpx_logger.filter(make_record('HTTP Request: POST /bot/getUpdates')))
         self.assertTrue(httpx_logger.filter(make_record('HTTP Request: POST /bot/sendMessage')))
         # The token in a Bot API URL is redacted before any handler formats the record
@@ -104,7 +110,9 @@ class TestMain(unittest.TestCase):
         mock_load.return_value = make_config()
         mock_state_cls.create = AsyncMock(side_effect=RuntimeError('boom'))
 
-        main()
+        with self.assertRaises(SystemExit) as cm:
+            main()
+        self.assertEqual(cm.exception.code, 1, 'a failed start must not exit 0')
 
         mock_dashboard.assert_not_awaited()
         mock_app_cls.builder.assert_not_called()
@@ -117,7 +125,9 @@ class TestMain(unittest.TestCase):
         state.migrate_and_load.side_effect = RuntimeError('boom')
         mock_state_cls.create = AsyncMock(return_value=state)
 
-        main()
+        with self.assertRaises(SystemExit) as cm:
+            main()
+        self.assertEqual(cm.exception.code, 1)
 
         mock_dashboard.assert_awaited_once()
         mock_app_cls.builder.assert_not_called()

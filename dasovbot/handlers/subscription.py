@@ -1,7 +1,6 @@
 import asyncio
 import logging
 from functools import partial
-from uuid import uuid4
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 from telegram.constants import ParseMode
@@ -173,7 +172,6 @@ async def discover_playlists(query: str) -> dict:
 
 
 async def subscribe_url(update: Update, context) -> int:
-    state: BotState = context.bot_data['state']
     message = update.message
     user = message.from_user
     query = remove_command_prefix(message.text)

@@ -179,7 +179,7 @@ class TestRetryLowerQuality(unittest.IsolatedAsyncioTestCase):
     async def test_fallback_timeout_returns_false(self, mock_download, mock_send_dev):
         # download_with_opts bounds the fallback like the primary path; the
         # timeout must fail the fallback, not hang or kill the worker
-        mock_download.side_effect = asyncio.TimeoutError()
+        mock_download.side_effect = TimeoutError()
         result = await retry_lower_quality(AsyncMock(), 'q', make_video_info(), self._make_state())
         self.assertFalse(result)
 
@@ -384,7 +384,7 @@ class TestProcessIntents(unittest.IsolatedAsyncioTestCase):
             coro.close()
             timeouts.append(timeout)
             if len(timeouts) == 1:
-                raise asyncio.TimeoutError()
+                raise TimeoutError()
             raise asyncio.CancelledError()
 
         with patch('dasovbot.services.intent_processor.asyncio.wait_for', fake_wait_for):

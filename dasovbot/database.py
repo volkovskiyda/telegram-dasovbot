@@ -233,7 +233,7 @@ async def migrate_from_json(db: aiosqlite.Connection, config: Config, progress: 
         if not os.path.exists(filepath):
             continue
         try:
-            with open(filepath, 'r', encoding='utf8') as f:
+            with open(filepath, encoding='utf8') as f:
                 data = json.load(f)
             if not data:
                 continue

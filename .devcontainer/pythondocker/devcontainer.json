@@ -1,6 +1,6 @@
 {
 	"name": "Python 3 + Docker",
-	"image": "python:3.12-bookworm",
+	"image": "python:3.14-bookworm",
 	"features": {
 		"ghcr.io/devcontainers/features/docker-in-docker": {}
 	},

@@ -1,4 +1,3 @@
-import asyncio
 import unittest
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -9,7 +8,7 @@ from dasovbot.constants import DATETIME_FORMAT
 from dasovbot.dashboard.server import format_duration, safe_url
 from dasovbot.dashboard.views import parse_timestamp, relative_time, retry_ignored, remove_ignored, STATE_KEY
 from dasovbot.models import Intent, TemporaryInlineQuery
-from tests.helpers import make_state, make_config
+from tests.helpers import make_state
 
 
 class TestSafeUrl(unittest.TestCase):

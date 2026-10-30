@@ -11,6 +11,8 @@ __pycache__
 *.pyc
 *.pyo
 .pytest_cache
+.coverage
+skills/
 tests/
 conftest.py
 config/

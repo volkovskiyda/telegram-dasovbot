@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 
 from telegram.ext import ConversationHandler
 

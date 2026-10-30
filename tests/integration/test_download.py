@@ -9,7 +9,6 @@ from telegram import Update, Message, Chat, User
 from telegram.ext import ConversationHandler
 
 from dasovbot.constants import DAS_URL
-from dasovbot.models import VideoInfo
 from tests.integration.base import IntegrationTestBase
 
 
@@ -77,7 +76,6 @@ class TestDownloadConversation(IntegrationTestBase):
         from dasovbot.handlers.download import download, download_url
         from dasovbot.constants import DAS_URL
         from unittest.mock import MagicMock
-        from telegram.ext import ConversationHandler
 
         with patch('dasovbot.handlers.download.extract_info') as mock_extract, \
              patch('dasovbot.handlers.download.append_intent', new_callable=AsyncMock):

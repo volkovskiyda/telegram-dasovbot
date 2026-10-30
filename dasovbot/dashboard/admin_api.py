@@ -252,7 +252,7 @@ async def read_json(request: web.Request) -> dict:
     try:
         data = json.loads(text)
     except ValueError as exc:
-        raise _bad_request('invalid json', str(exc))
+        raise _bad_request('invalid json', str(exc)) from None
     if not isinstance(data, dict):
         raise _bad_request('invalid body', 'body must be a JSON object')
     return data
@@ -294,7 +294,7 @@ def _prefix_candidates(state: BotState, raw: str) -> list[dict]:
     """Known ids sharing the longest common prefix with a mistyped id, best first."""
     def common(a: str, b: str) -> int:
         n = 0
-        for x, y in zip(a, b):
+        for x, y in zip(a, b, strict=False):
             if x != y:
                 break
             n += 1

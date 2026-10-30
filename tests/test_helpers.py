@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock
 
 from dasovbot.helpers import (
     remove_command_prefix, user_subscriptions,

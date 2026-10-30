@@ -1,5 +1,4 @@
 import unittest
-from unittest.mock import patch
 
 from dasovbot.downloader import (
     extract_url, process_info, contains_text,

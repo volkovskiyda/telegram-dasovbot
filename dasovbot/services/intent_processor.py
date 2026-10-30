@@ -227,7 +227,7 @@ async def process_intents(bot: Bot, state: BotState):
                 delay = min(state.intent_retry_after.get(query, 0) for query in filtered_intents) - now_mono
                 try:
                     await asyncio.wait_for(state.download_queue.get(), timeout=max(delay, 1))
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass
             else:
                 # Nothing to do: block until a new request signals the queue, then

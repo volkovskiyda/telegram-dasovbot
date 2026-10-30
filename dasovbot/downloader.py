@@ -341,7 +341,7 @@ async def extract_info(query: str, download: bool, state: BotState) -> VideoInfo
                 await state.set_video(query, info_url)
                 return info_url
             info = process_info(raw_info)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("extract_info metadata timeout: %s", query)
             return None
         except Exception as e:
@@ -372,7 +372,7 @@ async def extract_info(query: str, download: bool, state: BotState) -> VideoInfo
                 logger.info("extract_info downloaded: %s", query)
                 info = process_info(raw_info)
                 state.transient_failures.pop(query, None)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             # The attempt was cancelled, but yt-dlp only stops at its next
             # callback (a merge or a stalled socket delays that). Hold the
             # intent back for a full timeout window so a retry does not write

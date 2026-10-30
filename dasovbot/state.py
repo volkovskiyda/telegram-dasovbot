@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 import aiosqlite
 

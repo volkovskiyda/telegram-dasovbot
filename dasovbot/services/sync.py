@@ -116,7 +116,7 @@ class SyncClient:
                     logger.warning("heartbeat to %s: HTTP %d", self.peer_name, resp.status)
                     return None
                 reply = await resp.json()
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as e:
+        except (TimeoutError, aiohttp.ClientError, ValueError) as e:
             logger.warning("heartbeat to %s failed: %s", self.peer_name, type(e).__name__)
             return None
         if not isinstance(reply, dict) or 'role' not in reply:
@@ -144,7 +144,7 @@ class SyncClient:
                         detail = ''
                 logger.warning("handoff request to %s refused: HTTP %d %s", self.peer_name, resp.status, detail)
                 return False
-        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+        except (TimeoutError, aiohttp.ClientError) as e:
             logger.warning("handoff request to %s failed: %s", self.peer_name, type(e).__name__)
             return False
 
@@ -193,7 +193,7 @@ class SyncClient:
             else:
                 if explicit:
                     raise SyncError(f'changes: feed did not end after {cap} pages')
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, TypeError) as e:
+        except (TimeoutError, aiohttp.ClientError, ValueError, KeyError, TypeError) as e:
             raise SyncError(f'changes: {type(e).__name__}: {e}') from e
         self.last_sync_at = _now()
         self.last_sync_rev = int(since)
@@ -223,7 +223,7 @@ class SyncClient:
                         async for chunk in resp.content.iter_chunked(SNAPSHOT_CHUNK):
                             digest.update(chunk)
                             await loop.run_in_executor(None, f.write, chunk)
-            except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as e:
+            except (TimeoutError, aiohttp.ClientError, OSError) as e:
                 raise SyncError(f'snapshot: {type(e).__name__}: {e}') from e
             if expected_sha and digest.hexdigest() != expected_sha.lower():
                 raise SyncError(f'snapshot rejected: checksum mismatch ({digest.hexdigest()[:12]} != {expected_sha[:12]})')

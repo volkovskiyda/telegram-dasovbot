@@ -453,7 +453,7 @@ async def _ha_action(request: web.Request, action: str) -> web.Response:
     try:
         await getattr(ha, action)()
     except HaError as e:
-        raise web.HTTPFound(f'/system?ha_error={quote(str(e))}')
+        raise web.HTTPFound(f'/system?ha_error={quote(str(e))}') from None
     raise web.HTTPFound('/system')
 
 
