@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 from aiohttp.test_utils import AioHTTPTestCase
 
+import dasovbot.dashboard.api as api_module
 import dasovbot.dashboard.auth as auth_module
 from dasovbot.dashboard.auth import check_api_token, get_api_token
 from dasovbot.dashboard.server import create_app
@@ -190,6 +191,21 @@ class TestApiVideos(DashboardApiTestCase):
         self.state.videos[other.webpage_url] = other
         resp = await self.client.get('/api/videos', headers={**AUTH, 'If-None-Match': etag})
         self.assertEqual(resp.status, 200)
+
+    async def test_body_is_rendered_once_per_revision(self):
+        video = make_video()
+        self.state.videos = {video.webpage_url: video}
+        with patch('dasovbot.dashboard.api.collect_entries', wraps=api_module.collect_entries) as spy:
+            for _ in range(3):
+                resp = await self.client.get('/api/videos', headers=AUTH)
+                self.assertEqual(resp.status, 200)
+            await self.client.get('/api/videos?exported=true', headers=AUTH)
+            await self.client.get('/api/videos/abc123def45', headers=AUTH)
+        self.assertEqual(spy.call_count, 1, 'entries built once; bodies and lookups come from the cache')
+        self.state.rev += 1                          # any write through BotState bumps the revision
+        with patch('dasovbot.dashboard.api.collect_entries', wraps=api_module.collect_entries) as spy:
+            await self.client.get('/api/videos', headers=AUTH)
+        self.assertEqual(spy.call_count, 1)
 
 
 class TestApiVideo(DashboardApiTestCase):

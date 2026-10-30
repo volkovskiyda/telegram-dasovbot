@@ -21,10 +21,10 @@ Operate dasovbot with the `dasovbot` CLI (repo `telegram-dasovbot`, `dasovbot/cl
 
 - **Reads before writes.** Look the target up (`users --search`, `subscriptions`, `intents --url`) and show the user what you found before changing anything.
 - **Every write is `--dry-run` first.** Show the dry-run JSON, then run the real call. Ban/unban/unsubscribe post an audit line to the developer chat; subscribe and send do not.
-- **Never `--force`** unless the user named the exact chat id. `--force` only exists to target a numeric chat id the bot has never seen; the normal answer to `unknown chat` is to pick one of the `candidates` with the user.
+- **Never `--force`** unless the user named the exact chat id, or asked to retry a dead video. `--force` targets a numeric chat id the bot has never seen (the normal answer to `unknown chat` is to pick one of the `candidates` with the user) and, for `send`, revives an intent the bot marked *ignored* (removed/private/age-gated video); confirm with the user before reviving one.
 - **Default target is the admin's own chat** (`DEVELOPER_CHAT_ID`) for `send`, `subscribe`, `unsubscribe`. Use `--to @user` / `--user @user` only when the user names the recipient.
 - **Report failures verbatim.** A non-zero exit prints the server's `{"error", "detail", ...}` on stderr; quote it, do not paraphrase. Exit `2` = no (active) node answered; check `status` and tell the user which node is down.
-- **What the API cannot do, say so:** it never deletes a subscription for every subscriber at once, never retries an ignored intent, and never changes HA roles (takeover/handback). Those stay on the dashboard.
+- **What the API cannot do, say so:** it never deletes a subscription for every subscriber at once and never changes HA roles (takeover/handback). Those stay on the dashboard.
 - Quote results with `--pretty`; the one-line default is for piping.
 
 ## Command reference
@@ -33,7 +33,6 @@ Generated from `dasovbot --help`; `tests/test_skill_doc.py` fails when it drifts
 `python -c "from dasovbot.cli import render_help; print(render_help())"` and paste the output between the markers.
 
 <!-- cli-help:start -->
-```
 usage: dasovbot [-h] [--pretty] COMMAND ...
 
 Operate dasovbot through its admin API: finds the active HA node, prints JSON.
@@ -120,7 +119,8 @@ options:
   -h, --help  show this help message and exit
   --pretty    indent the JSON output
   --dry-run   resolve and report, write nothing
-  --force     accept a numeric chat id the bot has never seen
+  --force     accept a numeric chat id the bot has never seen; send: also
+              retry an ignored intent
 
 usage: dasovbot unban [-h] [--pretty] [--dry-run] [--force] target
 
@@ -131,7 +131,8 @@ options:
   -h, --help  show this help message and exit
   --pretty    indent the JSON output
   --dry-run   resolve and report, write nothing
-  --force     accept a numeric chat id the bot has never seen
+  --force     accept a numeric chat id the bot has never seen; send: also
+              retry an ignored intent
 
 usage: dasovbot subscribe [-h] [--pretty] [--user USER] [--populate]
                           [--dry-run] [--force]
@@ -147,7 +148,8 @@ options:
   --user USER  chat id or @username; default DEVELOPER_CHAT_ID
   --populate   queue the feed's latest videos for that chat now
   --dry-run    resolve and report, write nothing
-  --force      accept a numeric chat id the bot has never seen
+  --force      accept a numeric chat id the bot has never seen; send: also
+               retry an ignored intent
 
 usage: dasovbot unsubscribe [-h] [--pretty] [--user USER] [--dry-run]
                             [--force]
@@ -161,7 +163,8 @@ options:
   --pretty     indent the JSON output
   --user USER  chat id or @username; default DEVELOPER_CHAT_ID
   --dry-run    resolve and report, write nothing
-  --force      accept a numeric chat id the bot has never seen
+  --force      accept a numeric chat id the bot has never seen; send: also
+               retry an ignored intent
 
 usage: dasovbot send [-h] [--pretty] [--to TO] [--wait [SECONDS]] [--dry-run]
                      [--force]
@@ -177,7 +180,8 @@ options:
   --wait [SECONDS]  poll every 5s until delivered, failed or ignored (default
                     600s)
   --dry-run         resolve and report, write nothing
-  --force           accept a numeric chat id the bot has never seen
+  --force           accept a numeric chat id the bot has never seen; send:
+                    also retry an ignored intent
 
 usage: dasovbot populate [-h] [--pretty] [url]
 
@@ -187,7 +191,6 @@ positional arguments:
 options:
   -h, --help  show this help message and exit
   --pretty    indent the JSON output
-```
 <!-- cli-help:end -->
 
 ## Playbooks
@@ -215,12 +218,12 @@ options:
 
 1. `dasovbot intents --pretty` — by priority; read `status`, `retries`, `retry_in_sec`, `source`, `chat_ids`.
 2. `retrying` with `retry_in_sec > 0` is backing off after a transient failure: no action, say when it retries.
-3. `ignored` is a dead video (removed, private, age-gated): tell the user; the dashboard's Ignored page can retry or drop it.
+3. `ignored` is a dead video (removed, private, age-gated): tell the user. If they want it retried anyway, `dasovbot send <url> --force --wait` revives it (the dashboard's Ignored page can also retry or drop it).
 4. `pending` for a long time with `queue_size` growing: check `status` (`role`, `tasks.monitor_process_intents`) — the worker only runs on the ACTIVE node.
 
 ### 5. Send me this video
 
-1. `dasovbot send <url> --wait` — queues it for the admin chat and polls until `result` is `delivered`, `failed` (the worker gave up), `ignored` (dead video) or `timeout` (10 min; the download continues, check `intents --url` later).
+1. `dasovbot send <url> --wait` — queues it for the admin chat and polls until `result` is `delivered`, `failed` (the worker gave up), `ignored` (dead video) or `timeout` (10 min; the download continues, check `intents --url` later). Exit 1 with `intent ignored` means the bot already gave the video up as dead: say so, and only with the user's go-ahead rerun with `--force`.
 2. `--to @user` only when the user names the recipient; `--dry-run` first when the target is not the admin.
 
 ### 6. Subscribe me to a channel

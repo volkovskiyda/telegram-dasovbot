@@ -75,24 +75,55 @@ def parse_bool(value: str) -> bool:
     return value.lower() in ('1', 'true', 'yes')
 
 
-async def api_videos(request: web.Request) -> web.Response:
+# Per-app cache of the entries and the rendered bodies, valid for one state
+# revision. Every write through BotState bumps `rev`, so at rest a client
+# polling with If-None-Match costs a dict lookup instead of serialising the
+# whole library on the event loop for each request
+VIDEOS_CACHE_KEY = web.AppKey('videos_cache', dict)
+
+
+def cached_entries(request: web.Request) -> dict[str, dict]:
     state = get_state(request)
-    items = list(collect_entries(state).values())
-    exported = request.query.get('exported')
-    if exported is not None:
-        want = parse_bool(exported)
-        items = [item for item in items if item['exported'] == want]
-    items.sort(key=lambda item: (item['uploadDate'] or '', item['id']), reverse=True)
-    body = json.dumps(items, ensure_ascii=False)
-    etag = f'"{hashlib.sha256(body.encode()).hexdigest()[:32]}"'
+    cache = request.app.get(VIDEOS_CACHE_KEY)
+    if cache is None:
+        return collect_entries(state)
+    # The row count guards against callers that put rows into state.videos
+    # without a rev bump (migration tooling, tests)
+    key = (state.rev, len(state.videos))
+    if cache.get('key') != key:
+        cache.clear()
+        cache['key'] = key
+        cache['entries'] = collect_entries(state)
+        cache['bodies'] = {}
+    return cache['entries']
+
+
+def videos_body(request: web.Request, exported: str | None) -> tuple[str, str]:
+    """(JSON body, ETag) for /api/videos with the given `exported` filter, cached per revision."""
+    entries = cached_entries(request)
+    cache = request.app.get(VIDEOS_CACHE_KEY)
+    bodies = cache['bodies'] if cache is not None else {}
+    if exported not in bodies:
+        items = list(entries.values())
+        if exported is not None:
+            want = parse_bool(exported)
+            items = [item for item in items if item['exported'] == want]
+        items.sort(key=lambda item: (item['uploadDate'] or '', item['id']), reverse=True)
+        body = json.dumps(items, ensure_ascii=False)
+        etag = f'"{hashlib.sha256(body.encode()).hexdigest()[:32]}"'
+        bodies[exported] = (body, etag)
+    return bodies[exported]
+
+
+async def api_videos(request: web.Request) -> web.Response:
+    body, etag = videos_body(request, request.query.get('exported'))
     if request.headers.get('If-None-Match') == etag:
         return web.Response(status=304, headers={'ETag': etag})
     return web.Response(text=body, content_type='application/json', headers={'ETag': etag})
 
 
 async def api_video(request: web.Request) -> web.Response:
-    state = get_state(request)
-    entry = collect_entries(state).get(request.match_info['video_id'])
+    entry = cached_entries(request).get(request.match_info['video_id'])
     if not entry:
         return web.json_response({'error': 'not found'}, status=404)
     return web.json_response(entry)

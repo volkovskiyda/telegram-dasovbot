@@ -164,7 +164,11 @@ async def clear_temporary_inline_queries(state: BotState):
 
 
 def newest_backup_age(backup_dir: str) -> float | None:
-    """Seconds since the most recent bot.db.backup_*, or None if there are none."""
+    """Seconds since the most recent bot.db.backup_*, or None if there are none.
+
+    Blocking (directory scan on a bind-mounted, Syncthing-churned volume):
+    call it through an executor from async code.
+    """
     backups = glob.glob(os.path.join(backup_dir, 'bot.db.backup_*'))
     newest = max((os.path.getmtime(path) for path in backups), default=None)
     return None if newest is None else time.time() - newest
@@ -184,7 +188,8 @@ async def monitor_backups(bot: Bot, state: BotState):
     alerted = False
     while True:
         try:
-            age = newest_backup_age(backup_dir)
+            loop = asyncio.get_running_loop()
+            age = await loop.run_in_executor(None, newest_backup_age, backup_dir)
             stale = age is None or age > BACKUP_STALE_SEC
             if stale:
                 if age is None:

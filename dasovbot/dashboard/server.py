@@ -10,7 +10,7 @@ import aiohttp_jinja2
 import jinja2
 from aiohttp import web
 
-from dasovbot.dashboard.api import api_video, api_videos
+from dasovbot.dashboard.api import VIDEOS_CACHE_KEY, api_video, api_videos
 from dasovbot.dashboard.admin_api import (
     api_alerts, api_intents, api_playlists, api_status, api_subscriptions, api_users,
     api_ban, api_unban, api_subscribe, api_unsubscribe, api_send, api_populate,
@@ -62,6 +62,7 @@ def create_app(state: BotState, ha=None, vpn: VpnMonitor | None = None) -> web.A
     # guard (a passive node answers POSTs with 409)
     app = web.Application(middlewares=[csrf_middleware, auth_middleware, role_guard_middleware])
     app[STATE_KEY] = state
+    app[VIDEOS_CACHE_KEY] = {}
     if ha is not None:
         app[HA_KEY] = ha
     if vpn is not None:

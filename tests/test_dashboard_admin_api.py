@@ -223,6 +223,17 @@ class TestApiSubscriptions(AdminApiTestCase):
         items = await self._get_json('/api/subscriptions?chat_id=1')
         self.assertEqual([item['title'] for item in items], ['Zed'])
 
+    async def test_filter_by_username(self):
+        self.state.users = {'1': {'first_name': 'Ann', 'username': 'ann'}}
+        self.state.subscriptions = {
+            'https://x/c/videos': Subscription(chat_ids=['1', '2'], title='Zed'),
+            'https://x/d/videos': Subscription(chat_ids=['2'], title='alpha'),
+        }
+        items = await self._get_json('/api/subscriptions?chat_id=@ann')
+        self.assertEqual([item['title'] for item in items], ['Zed'])
+        body = await self._get_json('/api/subscriptions?chat_id=@nobody', status=404)
+        self.assertEqual(body['error'], 'unknown user')
+
 
 class TestApiIntents(AdminApiTestCase):
     async def test_list_sorted_by_priority_with_ignored_filter(self):
@@ -644,6 +655,13 @@ class TestUnsubscribe(AdminWriteTestCase):
         self.assertEqual(self.state.subscriptions['https://x/c/videos'].chat_ids, ['123'])
         self.assertEqual(self.audit_lines(), ['API: unsubscribed Seven (7) from X'])
 
+    async def test_subscriber_without_a_user_row_is_a_known_chat(self):
+        # A group that subscribed has no entry in state.users; it must not need `force`
+        self.state.subscriptions = {'https://x/c/videos': Subscription(chat_ids=['-100777', '123'], title='X')}
+        body = await self._post_json('/api/subscriptions/remove', {'url': 'https://x/c/videos', 'chat_id': '-100777'})
+        self.assertEqual(body['action'], 'remove_subscriber')
+        self.assertEqual(self.state.subscriptions['https://x/c/videos'].chat_ids, ['123'])
+
     async def test_last_subscriber_removes_the_subscription(self):
         self.state.subscriptions = {'https://x/c/videos': Subscription(chat_ids=['123'], title='X')}
         body = await self._post_json('/api/subscriptions/remove', {'url': 'https://x/c/videos'})
@@ -680,13 +698,32 @@ class TestSend(AdminWriteTestCase):
         self.state.intents = {'https://x/v1': Intent(chat_ids=['7'], priority=1, source='download')}
         body = await self._post_json('/api/intents', {'url': 'https://x/v1', 'dry_run': True})
         self.assertEqual(body, {'dry_run': True, 'action': 'queue', 'url': 'https://x/v1', 'chat_id': '123',
-                                'cached': True, 'existing_intent': True})
+                                'cached': True, 'existing_intent': True, 'existing_intent_ignored': False})
         self.assertEqual(self.state.intents['https://x/v1'].chat_ids, ['7'])
         body = await self._post_json('/api/intents', {'url': 'https://x/v1'})
         self.assertTrue(body['cached'])
         self.assertEqual(body['intent']['chat_ids'], ['7', '123'])
         # The first requester's source is kept
         self.assertEqual(body['intent']['source'], 'download')
+
+    async def test_ignored_intent_is_409_until_forced(self):
+        self.state.intents = {'https://x/dead': Intent(chat_ids=['7'], ignored=True, title='Dead')}
+        self.state.intent_retry_after['https://x/dead'] = 1e12
+        body = await self._post_json('/api/intents', {'url': 'https://x/dead'}, status=409)
+        self.assertEqual(body['error'], 'intent ignored')
+        self.assertEqual(body['intent']['status'], 'ignored')
+        self.assertEqual(self.state.intents['https://x/dead'].chat_ids, ['7'], 'nothing appended')
+        body = await self._post_json('/api/intents', {'url': 'https://x/dead', 'force': True, 'dry_run': True})
+        self.assertEqual((body['action'], body['existing_intent_ignored']), ('retry', True))
+        self.assertTrue(self.state.intents['https://x/dead'].ignored)
+        body = await self._post_json('/api/intents', {'url': 'https://x/dead', 'force': True})
+        self.assertEqual(body['action'], 'retry')
+        self.assertEqual(body['intent']['status'], 'pending')
+        intent = self.state.intents['https://x/dead']
+        self.assertFalse(intent.ignored)
+        self.assertEqual(intent.chat_ids, ['7', '123'])
+        self.assertNotIn('https://x/dead', self.state.intent_retry_after)
+        self.assertEqual(self.state.download_queue.qsize(), 1)
 
     async def test_banned_chat_is_403(self):
         self.state.banned_users = {'123': {'banned_at': 'x', 'name': ''}}

@@ -343,7 +343,8 @@ COMMANDS = {
 
 def _write_flags(parser: argparse.ArgumentParser):
     parser.add_argument('--dry-run', action='store_true', help='resolve and report, write nothing')
-    parser.add_argument('--force', action='store_true', help='accept a numeric chat id the bot has never seen')
+    parser.add_argument('--force', action='store_true',
+                        help='accept a numeric chat id the bot has never seen; send: also retry an ignored intent')
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -48,6 +48,7 @@ _CHAT_ID = {'type': ['string', 'integer'],
             'description': 'Numeric chat id or @username; defaults to DEVELOPER_CHAT_ID.'}
 _DRY_RUN = {'type': 'boolean', 'description': 'Resolve everything and report, write nothing.'}
 _FORCE = {'type': 'boolean', 'description': 'Accept a numeric chat_id the bot has never seen.'}
+_SEND_FORCE = {'type': 'boolean', 'description': 'Accept a numeric chat_id the bot has never seen; also retry an ignored intent.'}
 
 UNAUTHORIZED = _error('Missing or wrong bearer token.')
 PASSIVE = _error('This node is passive; `active` carries the peer URL to retry against.')
@@ -268,11 +269,13 @@ SCHEMAS = {
         'type': 'object',
         'properties': {
             'dry_run': {'type': 'boolean'},
-            'action': {'type': 'string', 'enum': ['queue']},
+            'action': {'type': 'string', 'enum': ['queue', 'retry'],
+                       'description': '`retry` when an ignored intent was revived with `force`.'},
             'url': {'type': 'string'},
             'chat_id': {'type': 'string'},
             'cached': {'type': 'boolean', 'description': 'A file_id exists, delivery needs no download.'},
             'existing_intent': {'type': 'boolean', 'description': 'Dry run only.'},
+            'existing_intent_ignored': {'type': 'boolean', 'description': 'Dry run only.'},
             'intent': _ref('Intent'),
         },
     },
@@ -356,8 +359,9 @@ PATHS = {
         'get': {
             'summary': 'Subscriptions with their subscribers, by title.',
             'security': ADMIN,
-            'parameters': [_query('chat_id', 'Only subscriptions this chat is subscribed to.')],
-            'responses': {'200': _ok(_array(_ref('Subscription'))), '401': UNAUTHORIZED},
+            'parameters': [_query('chat_id', 'Only subscriptions this chat (numeric id or @username) is subscribed to.')],
+            'responses': {'200': _ok(_array(_ref('Subscription'))), '401': UNAUTHORIZED,
+                          '404': _error('Unknown @username (`candidates`).'), '409': _error('Ambiguous @username.')},
         },
         'post': {
             'summary': 'Subscribe a chat to a channel feed or playlist (no audit line).',
@@ -407,11 +411,13 @@ PATHS = {
                 'url': {'type': 'string', 'description': 'The raw video URL; it is the intent key.'},
                 'chat_id': _CHAT_ID,
                 'dry_run': _DRY_RUN,
-                'force': _FORCE,
+                'force': _SEND_FORCE,
             }, required=['url']),
             'responses': {'200': _ok(_ref('SendResult')), '400': _error('Bad url, body or chat_id.'),
                           '401': UNAUTHORIZED, '403': _error('The chat is banned.'),
-                          '404': _error('Unknown chat_id (`candidates`); pass force.'), '409': PASSIVE},
+                          '404': _error('Unknown chat_id (`candidates`); pass force.'),
+                          '409': _error('This node is passive (`active` carries the peer URL), or the intent is '
+                                        'ignored: a dead video (`intent`), pass force to retry it.')},
         },
     },
     '/api/alerts': {

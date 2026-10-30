@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from aiohttp import web
 
 from dasovbot.constants import SOURCE_API
-from dasovbot.dashboard.api import collect_entries, parse_bool
+from dasovbot.dashboard.api import cached_entries, parse_bool
 from dasovbot.dashboard.sync import health_body
 from dasovbot.dashboard.views import VPN_KEY, get_ha, get_state, user_label, user_name
 from dasovbot.handlers.subscription import discover_playlists, resolve_subscription
@@ -96,11 +96,12 @@ def subscription_entry(state: BotState, url: str, sub: Subscription) -> dict:
     }
 
 
-def backup_status(state: BotState) -> dict | None:
+async def backup_status(state: BotState) -> dict | None:
     if state.config is None:
         return None
     backup_dir = os.path.dirname(state.config.db_file) or '.'
-    age = newest_backup_age(backup_dir)
+    # Directory scan off the event loop: /data is a bind mount that Syncthing keeps busy
+    age = await asyncio.get_running_loop().run_in_executor(None, newest_backup_age, backup_dir)
     return {'dir': backup_dir, 'newest_age_sec': None if age is None else round(age)}
 
 
@@ -115,7 +116,7 @@ async def api_status(request: web.Request) -> web.Response:
         'users': len(state.users),
         'banned': len(state.banned_users),
         # Deduplicated, delivered videos: the number the videos API serves
-        'videos': len(collect_entries(state)),
+        'videos': len(cached_entries(request)),
         'videos_rows': len(state.videos),
         'subscriptions': len(state.subscriptions),
         'subscribers': sum(len(sub.chat_ids) for sub in state.subscriptions.values()),
@@ -124,7 +125,7 @@ async def api_status(request: web.Request) -> web.Response:
         'alerts': len(state.health_alerts),
     }
     body['tasks'] = {name: state.background_task_status.get(name) or None for name in BACKGROUND_TASK_NAMES}
-    body['backup'] = backup_status(state)
+    body['backup'] = await backup_status(state)
     body['migration'] = state.migration_progress
     body['queue_size'] = state.download_queue.qsize()
     monitor = request.app.get(VPN_KEY)
@@ -160,6 +161,11 @@ async def api_users(request: web.Request) -> web.Response:
 async def api_subscriptions(request: web.Request) -> web.Response:
     state = get_state(request)
     chat_id = request.query.get('chat_id', '').strip()
+    if chat_id.startswith('@'):
+        # The CLI promises `--user @name`; a raw string compare answered [] for it
+        chat_id, failure = resolve_user(state, chat_id)
+        if failure is not None:
+            return failure
     items = [
         subscription_entry(state, url, sub)
         for url, sub in sorted(state.subscriptions.items(), key=lambda item: item[1].title.lower())
@@ -274,6 +280,9 @@ def _candidates(state: BotState, user_ids, needle: str = '') -> list[dict]:
 
 def _known_ids(state: BotState) -> set[str]:
     known = set(state.users) | set(state.user_requests) | set(state.banned_users)
+    # A group or channel that subscribed is known even when no user row exists for it
+    for sub in state.subscriptions.values():
+        known.update(sub.chat_ids)
     developer = getattr(state.config, 'developer_chat_id', '') if state.config else ''
     if developer:
         # The default target is a valid explicit one too
@@ -512,12 +521,26 @@ async def api_send(request: web.Request) -> web.Response:
         return error(403, 'chat banned', f'{chat_id} is banned and would never receive the video')
     video = state.videos.get(url)
     cached = bool(video is not None and video.file_id)
+    existing = state.intents.get(url)
+    ignored = bool(existing is not None and existing.ignored)
+    force = parse_flag(data, 'force')
+    if ignored and not force:
+        # append_intent would add the chat to a dead intent and nothing would
+        # ever happen; say so instead of answering "queued"
+        return error(409, 'intent ignored',
+                     'the video is marked unavailable (removed, private, age-gated); pass force: true to retry it',
+                     intent=intent_entry(state, url, existing))
     if parse_flag(data, 'dry_run'):
-        return web.json_response({'dry_run': True, 'action': 'queue', 'url': url, 'chat_id': chat_id,
-                                  'cached': cached, 'existing_intent': url in state.intents})
+        return web.json_response({'dry_run': True, 'action': 'retry' if ignored else 'queue', 'url': url,
+                                  'chat_id': chat_id, 'cached': cached, 'existing_intent': existing is not None,
+                                  'existing_intent_ignored': ignored})
+    if ignored:
+        # Same as the dashboard's Ignored → Retry: live again, backoff skipped
+        existing.ignored = False
+        state.intent_retry_after.pop(url, None)
     await append_intent(url, state, chat_ids=[chat_id], source=SOURCE_API)
-    return web.json_response({'action': 'queue', 'url': url, 'chat_id': chat_id, 'cached': cached,
-                              'intent': intent_entry(state, url, state.intents[url])})
+    return web.json_response({'action': 'retry' if ignored else 'queue', 'url': url, 'chat_id': chat_id,
+                              'cached': cached, 'intent': intent_entry(state, url, state.intents[url])})
 
 
 async def api_populate(request: web.Request) -> web.Response:
