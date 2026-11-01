@@ -19,6 +19,7 @@ from dasovbot.downloader import extract_info, extract_url, process_info, get_ydl
 from dasovbot.handlers.inline import inline_video, inline_query_handler, chosen_query
 from dasovbot.helpers import now
 from dasovbot.models import VideoInfo, TemporaryInlineQuery
+from tests.helpers import make_user
 from tests.integration.base import IntegrationTestBase
 
 
@@ -224,7 +225,7 @@ class TestChosenQuery(IntegrationTestBase):
         result_id = str(uuid4())
         inline_result = MagicMock()
         inline_result.result_id = result_id
-        inline_result.from_user = MagicMock(id=self.test_config.user_id)
+        inline_result.from_user = make_user(id=self.test_config.user_id)
         inline_result.inline_message_id = 'test_inline_msg'
 
         update = MagicMock()
@@ -261,7 +262,7 @@ class TestChosenQuery(IntegrationTestBase):
 
         inline_result = MagicMock()
         inline_result.result_id = result_id
-        inline_result.from_user = MagicMock(id=self.test_config.user_id)
+        inline_result.from_user = make_user(id=self.test_config.user_id)
         inline_result.inline_message_id = 'test_inline_msg'
 
         update = MagicMock()

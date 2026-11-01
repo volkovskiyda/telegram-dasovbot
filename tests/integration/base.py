@@ -1,5 +1,4 @@
 import unittest
-from unittest.mock import AsyncMock
 
 from dotenv import load_dotenv
 from telegram import Bot, Chat, Message, Update, User
@@ -9,6 +8,7 @@ from dasovbot.config import Config
 from dasovbot.downloader import init_downloader
 from dasovbot.handlers import register_handlers
 from dasovbot.state import BotState
+from tests.helpers import make_state
 
 import os
 
@@ -107,9 +107,9 @@ class IntegrationTestBase(unittest.IsolatedAsyncioTestCase):
         init_downloader(config)
 
         # Create a fresh state for each test. Handlers write through to the
-        # database; there is no real DB here, so absorb the writes like the
-        # unit-test helpers do
-        self.state = BotState(db=AsyncMock())
+        # database; there is no real DB here, so absorb the writes with the
+        # unit-test helper (its mocked connection also answers rowcount)
+        self.state = make_state()
         self.state.config = config
 
         # Build application
