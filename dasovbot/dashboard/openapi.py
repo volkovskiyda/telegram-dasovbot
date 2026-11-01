@@ -89,6 +89,9 @@ SCHEMAS = {
             'uploader': {'type': 'string'},
             'uploader_videos': {'type': 'string'},
             'chat_ids': _array(_ref('Subscriber')),
+            'failures': {'type': 'integer', 'description': 'Consecutive polls on which the feed was not found; 0 after a successful poll.'},
+            'last_error': {'type': 'string', 'description': "yt-dlp's message from the last failed poll."},
+            'dead_since': {**_NULLABLE_STRING, 'description': 'Set once the hourly poll gave up on the feed (SUBSCRIPTION_DEAD_AFTER failures); POST /api/populate {url} retries it.'},
         },
     },
     'SubscriptionWrite': {
@@ -100,6 +103,9 @@ SCHEMAS = {
             'uploader': {'type': 'string'},
             'uploader_videos': {'type': 'string'},
             'chat_ids': _array({'type': 'string'}),
+            'failures': {'type': 'integer'},
+            'last_error': {'type': 'string'},
+            'dead_since': _NULLABLE_STRING,
         },
     },
     'Intent': {
@@ -176,6 +182,7 @@ SCHEMAS = {
                     'videos': {'type': 'integer', 'description': 'Delivered videos, deduplicated as /api/videos serves them.'},
                     'videos_rows': {'type': 'integer'},
                     'subscriptions': {'type': 'integer'},
+                    'subscriptions_dead': {'type': 'integer', 'description': 'Subscriptions the hourly poll gave up on.'},
                     'subscribers': {'type': 'integer'},
                     'intents': {
                         'type': 'object',
@@ -438,7 +445,7 @@ PATHS = {
     },
     '/api/populate': {
         'post': {
-            'summary': 'Run the subscription poll now, for every subscription or one key.',
+            'summary': 'Run the subscription poll now, for every subscription or one key; with a key it also retries a feed the hourly poll gave up on (dead_since).',
             'security': ADMIN,
             'requestBody': _body({'url': {'type': 'string', 'description': 'A stored subscription key; omit for all.'}}),
             'responses': {'200': _ok(_ref('PopulateResult')), '400': _error('Bad body.'), '401': UNAUTHORIZED,

@@ -155,6 +155,7 @@ def main():
 
     application.bot_data['state'] = state
     application.bot_data['ha'] = controller
+    state.bot = application.bot
 
     register_handlers(application)
 

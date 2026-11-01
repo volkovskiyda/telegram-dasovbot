@@ -12,7 +12,7 @@
     </div>
     <div class="stat">
         <div class="value">{{ subscription_count }}</div>
-        <div class="label">Subscriptions</div>
+        <div class="label">Subscriptions{% if dead_subscription_count %} <a href="/subscriptions" style="color: #f9c74f;">({{ dead_subscription_count }} dead)</a>{% endif %}</div>
     </div>
     <div class="stat">
         <div class="value">{{ intent_count }}</div>

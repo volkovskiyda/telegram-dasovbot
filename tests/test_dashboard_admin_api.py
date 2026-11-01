@@ -126,6 +126,7 @@ class TestApiStatus(AdminApiTestCase):
         self.assertEqual(body['counts']['videos'], 1)
         self.assertEqual(body['counts']['videos_rows'], 2)
         self.assertEqual(body['counts']['subscriptions'], 2)
+        self.assertEqual(body['counts']['subscriptions_dead'], 0)
         self.assertEqual(body['counts']['subscribers'], 3)
         self.assertEqual(body['counts']['intents'], {'pending': 1, 'retrying': 2, 'ignored': 1, 'total': 4})
         self.assertEqual(body['counts']['alerts'], 1)
@@ -222,6 +223,18 @@ class TestApiSubscriptions(AdminApiTestCase):
         self.assertEqual(zed['chat_ids'], [{'id': '1', 'name': 'Ann @ann'}, {'id': '2', 'name': ''}])
         items = await self._get_json('/api/subscriptions?chat_id=1')
         self.assertEqual([item['title'] for item in items], ['Zed'])
+
+    async def test_failure_fields(self):
+        self.state.subscriptions = {
+            'https://x/c/videos': Subscription(chat_ids=['1'], title='Alive'),
+            'https://x/d/videos': Subscription(chat_ids=['1'], title='Dead', failures=3, last_error='HTTP Error 404',
+                                                dead_since='20261101_120000'),
+        }
+        alive, dead = await self._get_json('/api/subscriptions')
+        self.assertEqual((alive['failures'], alive['last_error'], alive['dead_since']), (0, '', None))
+        self.assertEqual((dead['failures'], dead['last_error'], dead['dead_since']), (3, 'HTTP Error 404', '20261101_120000'))
+        body = await self._get_json('/api/status')
+        self.assertEqual(body['counts']['subscriptions_dead'], 1)
 
     async def test_filter_by_username(self):
         self.state.users = {'1': {'first_name': 'Ann', 'username': 'ann'}}

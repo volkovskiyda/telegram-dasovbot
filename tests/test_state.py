@@ -135,6 +135,42 @@ class TestSetSubscription(unittest.IsolatedAsyncioTestCase):
         mock_upsert.assert_awaited_once_with(state.db, 'url', sub, 1)
 
 
+class TestSubscriptionFailures(unittest.IsolatedAsyncioTestCase):
+    @patch('dasovbot.database.upsert_subscription', new_callable=AsyncMock)
+    async def test_third_gone_poll_marks_dead_once(self, mock_upsert):
+        from dasovbot.constants import SUBSCRIPTION_DEAD_AFTER
+        sub = Subscription(chat_ids=['1'], title='Ch')
+        state = make_state(subscriptions={'url': sub})
+        outcomes = [await state.record_subscription_failure('url', 'ERROR: HTTP Error 404') for _ in range(SUBSCRIPTION_DEAD_AFTER + 1)]
+        self.assertEqual(outcomes, [False] * (SUBSCRIPTION_DEAD_AFTER - 1) + [True, False])
+        self.assertEqual(sub.failures, SUBSCRIPTION_DEAD_AFTER + 1)
+        self.assertTrue(sub.dead)
+        self.assertEqual(sub.last_error, 'ERROR: HTTP Error 404')
+        # Every count is a write: the standby mirrors the counter through the feed
+        self.assertEqual(mock_upsert.await_count, SUBSCRIPTION_DEAD_AFTER + 1)
+
+    @patch('dasovbot.database.upsert_subscription', new_callable=AsyncMock)
+    async def test_unknown_key_is_ignored(self, mock_upsert):
+        state = make_state()
+        self.assertFalse(await state.record_subscription_failure('url', 'x'))
+        self.assertFalse(await state.clear_subscription_failures('url'))
+        mock_upsert.assert_not_awaited()
+
+    @patch('dasovbot.database.upsert_subscription', new_callable=AsyncMock)
+    async def test_clear_resets_and_reports_revival(self, mock_upsert):
+        dead = Subscription(chat_ids=['1'], failures=3, last_error='404', dead_since='20261101_120000')
+        counting = Subscription(chat_ids=['1'], failures=1, last_error='404')
+        clean = Subscription(chat_ids=['1'])
+        state = make_state(subscriptions={'dead': dead, 'counting': counting, 'clean': clean})
+        self.assertTrue(await state.clear_subscription_failures('dead'))
+        self.assertFalse(await state.clear_subscription_failures('counting'))
+        self.assertFalse(await state.clear_subscription_failures('clean'))
+        for sub in (dead, counting):
+            self.assertEqual((sub.failures, sub.last_error, sub.dead_since), (0, '', ''))
+        # The untouched subscription is not rewritten on every hourly poll
+        self.assertEqual(mock_upsert.await_count, 2)
+
+
 class TestPopSubscription(unittest.IsolatedAsyncioTestCase):
     @patch('dasovbot.database.delete_subscription', new_callable=AsyncMock)
     async def test_removes_and_returns(self, mock_delete):

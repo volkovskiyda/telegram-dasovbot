@@ -141,6 +141,18 @@ class TestSubscription(unittest.TestCase):
         restored = Subscription.from_dict(d)
         self.assertEqual(sub, restored)
 
+    def test_round_trip_dead_feed(self):
+        sub = Subscription(chat_ids=['1'], title='Gone', failures=3, last_error='HTTP Error 404', dead_since='20261101_120000')
+        restored = Subscription.from_dict(sub.to_dict())
+        self.assertEqual(sub, restored)
+        self.assertTrue(restored.dead)
+
+    def test_from_dict_without_failure_fields_is_alive(self):
+        # Rows written before the fields existed, and nulls from an older peer
+        sub = Subscription.from_dict({'chat_ids': ['1'], 'title': 'Old', 'failures': None, 'dead_since': None})
+        self.assertEqual((sub.failures, sub.last_error, sub.dead_since), (0, '', ''))
+        self.assertFalse(sub.dead)
+
 
 class TestTemporaryInlineQuery(unittest.TestCase):
     def test_defaults(self):

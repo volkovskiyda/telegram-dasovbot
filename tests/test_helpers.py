@@ -45,6 +45,11 @@ class TestUserSubscriptions(unittest.TestCase):
         result = user_subscriptions('1', {})
         self.assertEqual(result, {})
 
+    def test_dead_feed_is_flagged(self):
+        subs = {'url1': Subscription(chat_ids=['1'], title='Title', dead_since='20261101_120000')}
+        entry = list(user_subscriptions('1', subs).values())[0]
+        self.assertEqual(entry['title'], 'Title ⚠️')
+
     def test_result_structure(self):
         subs = {'url1': Subscription(chat_ids=['1'], title='Title')}
         result = user_subscriptions('1', subs)

@@ -9,11 +9,12 @@ import time
 from functools import partial
 from typing import TYPE_CHECKING
 
+import yt_dlp
 from telegram import Bot
 
-from dasovbot.constants import SOURCE_SUBSCRIPTION
-from dasovbot.downloader import extract_info, extract_url, filter_entries, get_ydl
-from dasovbot.helpers import now
+from dasovbot.constants import PLAYLIST_GONE_MESSAGES, SOURCE_SUBSCRIPTION, SUBSCRIPTION_DEAD_AFTER
+from dasovbot.downloader import contains_text, extract_info, extract_url, filter_entries, get_ydl
+from dasovbot.helpers import now, send_message_developer
 from dasovbot.services.intent_processor import append_intent, post_process
 
 if TYPE_CHECKING:
@@ -47,10 +48,13 @@ async def run_populate_subscriptions(state: BotState):
             if not subscription:
                 continue
             chat_ids = subscription.chat_ids
-            if chat_ids:
-                await populate_playlist(url, chat_ids, state)
-            else:
+            if not chat_ids:
                 await state.pop_subscription(url)
+            elif subscription.dead:
+                # Given up on (see populate_playlist); only a manual check retries it
+                continue
+            else:
+                await populate_playlist(url, chat_ids, state)
         state.background_task_status['populate_subscriptions'] = now()
 
 
@@ -71,13 +75,64 @@ def _playlist_info_sync(channel: str) -> dict:
         ydl.close()
 
 
+def feed_gone(error: Exception) -> bool:
+    """yt-dlp says the channel or playlist itself is not there (not a network or extractor hiccup)."""
+    return isinstance(error, yt_dlp.utils.DownloadError) and contains_text(str(error), PLAYLIST_GONE_MESSAGES)
+
+
+def _short_error(error: Exception) -> str:
+    text = str(error).replace('\n', ' ').strip()
+    return text[7:] if text.startswith('ERROR: ') else text
+
+
+async def _notify_chats(state: BotState, chat_ids: list, text: str):
+    if state.bot is None:
+        return
+    for chat_id in chat_ids:
+        try:
+            await state.bot.send_message(chat_id=chat_id, text=text)
+        except Exception:
+            logger.warning("subscription notice to %s failed", chat_id, exc_info=True)
+
+
+async def _playlist_failed(channel: str, state: BotState, error: Exception):
+    message = _short_error(error)
+    if not feed_gone(error):
+        # The feed may well be fine: log one line for yt-dlp's own errors, the
+        # traceback only for anything unexpected
+        logger.error("populate_playlist error: %s: %s", channel, message,
+                     exc_info=not isinstance(error, yt_dlp.utils.DownloadError))
+        return
+    died = await state.record_subscription_failure(channel, message)
+    sub = state.subscriptions.get(channel)
+    failures = sub.failures if sub else 0
+    logger.warning("populate_playlist feed gone (%d/%d): %s: %s", failures, SUBSCRIPTION_DEAD_AFTER, channel, message)
+    if not died:
+        return
+    title = sub.title or sub.uploader or channel
+    logger.warning("populate_playlist gave up on %s after %d polls", channel, failures)
+    await _notify_chats(state, sub.chat_ids,
+                        f"⚠️ Subscription «{title}» is no longer available: the channel or playlist was not found "
+                        f"{failures} times in a row, so it is not checked anymore.\n"
+                        f"Use /unsubscribe to drop it, or subscribe again once it is back.\n{channel}")
+    if state.bot is not None and state.config is not None:
+        await send_message_developer(
+            state.bot, f"Subscription dead: {title}\n{channel}\n{message}\nsubscribers: {', '.join(sub.chat_ids)}",
+            state.config.developer_chat_id, notification=False)
+
+
 async def populate_playlist(channel: str, chat_ids: list, state: BotState):
     try:
         loop = asyncio.get_running_loop()
         info = await loop.run_in_executor(None, partial(_playlist_info_sync, channel))
-    except Exception:
-        logger.error("populate_playlist error: %s", channel, exc_info=True)
+    except Exception as e:
+        await _playlist_failed(channel, state, e)
         return
+    if await state.clear_subscription_failures(channel):
+        sub = state.subscriptions.get(channel)
+        title = sub.title or sub.uploader or channel
+        logger.info("populate_playlist feed is back: %s", channel)
+        await _notify_chats(state, sub.chat_ids, f"✅ Subscription «{title}» is available again and is checked hourly as before.\n{channel}")
     entries = info.get('entries')
     if not entries:
         logger.info("populate_playlist no entries: %s", channel)

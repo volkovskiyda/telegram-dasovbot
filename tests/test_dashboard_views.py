@@ -265,6 +265,37 @@ class TestSubscriptions(DashboardViewTestCase):
         self.assertIn('My Channel', text)
         self.assertIn('Ann (1)', text)
 
+    async def test_dead_feed_listed_first_with_badge_and_check(self):
+        self.state.subscriptions = {
+            'https://example.com/alive': Subscription(chat_ids=['1'], title='Alive'),
+            'https://example.com/gone': Subscription(chat_ids=['1'], title='Zombie', failures=3,
+                                                      last_error='HTTP Error 404: Not Found', dead_since='20261101_120000'),
+        }
+        resp = await self.client.get('/subscriptions')
+        text = await resp.text()
+        self.assertLess(text.index('Zombie'), text.index('Alive'))
+        self.assertIn('dead-badge', text)
+        self.assertIn('not found 3× in a row', text)
+        self.assertIn('HTTP Error 404: Not Found', text)
+        self.assertEqual(text.count('action="/subscriptions/check"'), 1)
+
+    async def test_check_polls_one_feed_now(self):
+        self.state.subscriptions = {
+            'https://example.com/gone': Subscription(chat_ids=['1', '2'], title='Zombie', dead_since='20261101_120000'),
+        }
+        with patch('dasovbot.dashboard.views.populate_playlist', new_callable=AsyncMock) as mock_populate:
+            resp = await self.client.post('/subscriptions/check', data={'url': 'https://example.com/gone'}, allow_redirects=False)
+            self.assertEqual(resp.status, 302)
+            self.assertEqual(resp.headers['Location'], '/subscriptions')
+            await asyncio.gather(*self.state.background_tasks)
+        mock_populate.assert_awaited_once_with('https://example.com/gone', ['1', '2'], self.state)
+
+    async def test_check_unknown_url_just_redirects(self):
+        with patch('dasovbot.dashboard.views.populate_playlist', new_callable=AsyncMock) as mock_populate:
+            resp = await self.client.post('/subscriptions/check', data={'url': 'https://example.com/nope'}, allow_redirects=False)
+        self.assertEqual(resp.status, 302)
+        mock_populate.assert_not_awaited()
+
     async def test_remove_last_subscriber_drops_subscription(self):
         self.state.subscriptions = {
             'https://example.com/channel': Subscription(chat_ids=['1'], title='My Channel'),

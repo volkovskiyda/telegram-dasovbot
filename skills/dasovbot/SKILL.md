@@ -209,7 +209,7 @@ options:
 
 ### 3. A subscription stopped delivering
 
-1. `dasovbot subscriptions --pretty` — find the subscription `url` (the stored key) and its `chat_ids`.
+1. `dasovbot subscriptions --pretty` — find the subscription `url` (the stored key) and its `chat_ids`. A non-null `dead_since` means the hourly poll gave up on the feed after `failures` polls that found it gone (`last_error` has yt-dlp's words, usually a 404: the channel was deleted, renamed or terminated); the subscribers were told. Try `dasovbot populate <url>` once: success revives it and tells them it is back; the same error again means the channel is really gone, so `dasovbot playlists <channel-url>` for its new address or `unsubscribe`.
 2. `dasovbot intents --url <a recent video url>` — `pending`/`retrying` = queued, `delivered` = done, `absent` = never queued or dropped, `ignored` = dead video.
 3. `dasovbot populate <subscription-url>` — polls that feed now (`already_running` means the hourly run is mid-way; wait).
 4. Re-check `intents` and `status` (`counts.intents`). Still nothing: `dasovbot playlists <channel-url>` to see whether the channel's feeds moved, then `subscribe <new-url> --dry-run` / `subscribe <new-url>` and `unsubscribe <old-url>`.

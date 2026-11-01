@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from collections.abc import Awaitable, Callable
 
 import aiosqlite
+from telegram import Bot
 
 from dasovbot.config import Config
 from dasovbot.models import VideoInfo, Intent, Subscription, TemporaryInlineQuery
@@ -40,6 +41,10 @@ class BotState:
     # sends multiply peak memory/IO
     upload_semaphore: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(1))
     config: Config = field(default=None)
+    # The running application's bot, attached at startup; background work that
+    # has no handler context (the subscription poll, dashboard-triggered runs)
+    # messages users through it. None in tests and before the bot is built
+    bot: Bot | None = None
     animation_file_id: str | None = None
     background_task_status: dict[str, str] = field(default_factory=dict)
     # Strong references: the event loop only keeps weak refs to tasks
@@ -223,6 +228,33 @@ class BotState:
             await delete_subscription(self.db, key, self.next_rev(), now())
         else:
             await upsert_subscription(self.db, key, sub, self.next_rev())
+
+    async def record_subscription_failure(self, key: str, error: str) -> bool:
+        """Count one poll that found the feed gone; True when this one marked it dead."""
+        from dasovbot.constants import SUBSCRIPTION_DEAD_AFTER
+        from dasovbot.database import upsert_subscription
+        from dasovbot.helpers import now
+        sub = self.subscriptions.get(key)
+        if sub is None:
+            return False
+        sub.failures += 1
+        sub.last_error = error[:300]
+        died = not sub.dead and sub.failures >= SUBSCRIPTION_DEAD_AFTER
+        if died:
+            sub.dead_since = now()
+        await upsert_subscription(self.db, key, sub, self.next_rev())
+        return died
+
+    async def clear_subscription_failures(self, key: str) -> bool:
+        """Forget earlier failures after a successful poll; True when the feed had been given up on."""
+        from dasovbot.database import upsert_subscription
+        sub = self.subscriptions.get(key)
+        if sub is None or not (sub.failures or sub.last_error or sub.dead):
+            return False
+        was_dead = sub.dead
+        sub.failures, sub.last_error, sub.dead_since = 0, '', ''
+        await upsert_subscription(self.db, key, sub, self.next_rev())
+        return was_dead
 
     # --- HA: applying the peer's data (passive node only) ---
     #

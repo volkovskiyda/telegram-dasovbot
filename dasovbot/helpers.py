@@ -65,7 +65,9 @@ def user_subscriptions(chat_id: str, subscriptions: dict) -> dict:
     result = {}
     for url, subscription in subscriptions.copy().items():
         if str(chat_id) in subscription.chat_ids:
-            result[str(uuid4())] = {'title': subscription.title, 'url': url}
+            # A feed the poll gave up on is flagged in the lists and keyboards
+            title = f"{subscription.title} ⚠️" if subscription.dead else subscription.title
+            result[str(uuid4())] = {'title': title, 'url': url}
     return result
 
 

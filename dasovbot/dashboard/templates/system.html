@@ -137,7 +137,7 @@
     </thead>
     <tbody>
         <tr><td>Videos</td><td>{{ video_count }}</td></tr>
-        <tr><td>Subscriptions</td><td>{{ subscription_count }}</td></tr>
+        <tr><td>Subscriptions</td><td>{{ subscription_count }}{% if dead_subscription_count %} <span style="color: #f9c74f;">({{ dead_subscription_count }} dead)</span>{% endif %}</td></tr>
         <tr><td>Users</td><td>{{ user_count }}</td></tr>
         <tr><td>Intents</td><td>{{ intent_count }}</td></tr>
         <tr><td>Temporary Inline Queries</td><td>{{ tiq_count }}</td></tr>

@@ -21,7 +21,7 @@ from dasovbot.dashboard.auth import (
 )
 from dasovbot.dashboard.openapi import api_openapi
 from dasovbot.dashboard.sync import health, sync_heartbeat, sync_changes, sync_snapshot, sync_handoff
-from dasovbot.dashboard.views import index, videos, ignored, retry_ignored, remove_ignored, remove_intent, force_populate, subscriptions, remove_subscription, users, ban_user, unban_user, system, takeover, handback, health_alerts_processor, ha_processor, role_guard_middleware, STATE_KEY, HA_KEY, VPN_KEY
+from dasovbot.dashboard.views import index, videos, ignored, retry_ignored, remove_ignored, remove_intent, force_populate, subscriptions, check_subscription, remove_subscription, users, ban_user, unban_user, system, takeover, handback, health_alerts_processor, ha_processor, role_guard_middleware, STATE_KEY, HA_KEY, VPN_KEY
 from dasovbot.services.background import run_forever
 from dasovbot.services.vpn import VpnMonitor
 
@@ -87,6 +87,7 @@ def create_app(state: BotState, ha=None, vpn: VpnMonitor | None = None) -> web.A
     app.router.add_post('/ignored/remove', remove_ignored)
     app.router.add_post('/intent/remove', remove_intent)
     app.router.add_get('/subscriptions', subscriptions)
+    app.router.add_post('/subscriptions/check', check_subscription)
     app.router.add_post('/subscriptions/remove', remove_subscription)
     app.router.add_get('/users', users)
     app.router.add_post('/users/ban', ban_user)

@@ -4,10 +4,12 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import yt_dlp
+
 from dasovbot.models import Subscription, TemporaryInlineQuery, VideoInfo
-from dasovbot.constants import RESTART_DELAY_SEC
+from dasovbot.constants import RESTART_DELAY_SEC, SUBSCRIPTION_DEAD_AFTER
 from dasovbot.services.background import (
-    populate_animation, populate_video, populate_playlist, run_populate_subscriptions,
+    feed_gone, populate_animation, populate_video, populate_playlist, run_populate_subscriptions,
     populate_subscriptions, clear_temporary_inline_queries, sweep_temporary_inline_queries,
     monitor_backups, newest_backup_age, sweep_media_folder, check_disk_space, monitor_disk_space,
     start_background_tasks, stop_background_tasks, run_forever, _on_task_done,
@@ -165,6 +167,134 @@ class TestPopulatePlaylist(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first_populated, 'https://example.com/v4')
 
 
+GONE = yt_dlp.utils.DownloadError(
+    'ERROR: [youtube:tab] @gone/videos: Unable to download API page: HTTP Error 404: Not Found (caused by <HTTPError 404: Not Found>)')
+
+
+class TestFeedGone(unittest.TestCase):
+    def test_classifies_yt_dlp_not_found_messages(self):
+        self.assertTrue(feed_gone(GONE))
+        self.assertTrue(feed_gone(yt_dlp.utils.DownloadError('ERROR: [youtube:tab] x: This channel does not exist.')))
+        self.assertTrue(feed_gone(yt_dlp.utils.DownloadError('ERROR: This account has been terminated')))
+        self.assertFalse(feed_gone(yt_dlp.utils.DownloadError('ERROR: HTTP Error 429: Too Many Requests')))
+        # A plain exception with 404 in it is not yt-dlp's verdict on the feed
+        self.assertFalse(feed_gone(Exception('HTTP Error 404')))
+
+
+class TestDeadSubscriptions(unittest.IsolatedAsyncioTestCase):
+    def make(self, failures=0, dead_since=''):
+        self.sub = Subscription(chat_ids=['100', '200'], title='Gone Channel', uploader='Gone',
+                                uploader_videos='https://x/@gone/videos', failures=failures, dead_since=dead_since)
+        state = make_state(subscriptions={'https://x/@gone/videos': self.sub}, config=make_config(developer_chat_id='7'))
+        state.bot = AsyncMock()
+        return state
+
+    @patch('dasovbot.state.BotState.record_subscription_failure', new_callable=AsyncMock, return_value=False)
+    @patch('dasovbot.services.background.get_ydl')
+    async def test_gone_error_counts_without_a_traceback(self, mock_get_ydl, mock_record):
+        ydl = MagicMock()
+        ydl.extract_info.side_effect = GONE
+        mock_get_ydl.return_value = ydl
+        state = self.make()
+        with self.assertLogs('dasovbot.services.background', level='WARNING') as logs:
+            await populate_playlist('https://x/@gone/videos', ['100'], state)
+        mock_record.assert_awaited_once()
+        self.assertEqual(mock_record.await_args.args[0], 'https://x/@gone/videos')
+        self.assertIn('HTTP Error 404', mock_record.await_args.args[1])
+        self.assertNotIn('ERROR: ', mock_record.await_args.args[1])
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn('feed gone', logs.output[0])
+        self.assertNotIn('Traceback', logs.output[0])
+        state.bot.send_message.assert_not_awaited()
+
+    @patch('dasovbot.state.BotState.record_subscription_failure', new_callable=AsyncMock)
+    @patch('dasovbot.services.background.get_ydl')
+    async def test_other_yt_dlp_errors_do_not_count(self, mock_get_ydl, mock_record):
+        ydl = MagicMock()
+        ydl.extract_info.side_effect = yt_dlp.utils.DownloadError('ERROR: HTTP Error 429: Too Many Requests')
+        mock_get_ydl.return_value = ydl
+        with self.assertLogs('dasovbot.services.background', level='ERROR') as logs:
+            await populate_playlist('https://x/@gone/videos', ['100'], self.make())
+        mock_record.assert_not_awaited()
+        self.assertNotIn('Traceback', logs.output[0])
+
+    @patch('dasovbot.database.upsert_subscription', new_callable=AsyncMock)
+    @patch('dasovbot.services.background.get_ydl')
+    async def test_last_straw_marks_dead_and_tells_everyone_once(self, mock_get_ydl, mock_upsert):
+        ydl = MagicMock()
+        ydl.extract_info.side_effect = GONE
+        mock_get_ydl.return_value = ydl
+        state = self.make(failures=SUBSCRIPTION_DEAD_AFTER - 1)
+        with self.assertLogs('dasovbot.services.background', level='WARNING'):
+            await populate_playlist('https://x/@gone/videos', ['100', '200'], state)
+        self.assertTrue(self.sub.dead)
+        self.assertEqual(self.sub.failures, SUBSCRIPTION_DEAD_AFTER)
+        chats = [call.kwargs['chat_id'] for call in state.bot.send_message.await_args_list]
+        self.assertEqual(chats, ['100', '200', '7'])
+        text = state.bot.send_message.await_args_list[0].kwargs['text']
+        self.assertIn('Gone Channel', text)
+        self.assertIn('not checked anymore', text)
+        self.assertIn('https://x/@gone/videos', text)
+        self.assertIn('HTTP Error 404', state.bot.send_message.await_args_list[2].kwargs['text'])
+        # One more failed poll (a manual Check) stays quiet
+        state.bot.send_message.reset_mock()
+        with self.assertLogs('dasovbot.services.background', level='WARNING'):
+            await populate_playlist('https://x/@gone/videos', ['100', '200'], state)
+        state.bot.send_message.assert_not_awaited()
+
+    @patch('dasovbot.database.upsert_subscription', new_callable=AsyncMock)
+    @patch('dasovbot.services.background.get_ydl')
+    async def test_notice_failure_for_one_chat_does_not_block_the_rest(self, mock_get_ydl, mock_upsert):
+        ydl = MagicMock()
+        ydl.extract_info.side_effect = GONE
+        mock_get_ydl.return_value = ydl
+        state = self.make(failures=SUBSCRIPTION_DEAD_AFTER - 1)
+        state.bot.send_message.side_effect = [Exception('blocked'), None, None]
+        with self.assertLogs('dasovbot.services.background', level='WARNING'):
+            await populate_playlist('https://x/@gone/videos', ['100', '200'], state)
+        self.assertEqual(state.bot.send_message.await_count, 3)
+
+    @patch('dasovbot.database.upsert_subscription', new_callable=AsyncMock)
+    @patch('dasovbot.services.background.get_ydl')
+    async def test_without_a_bot_the_marking_still_happens(self, mock_get_ydl, mock_upsert):
+        ydl = MagicMock()
+        ydl.extract_info.side_effect = GONE
+        mock_get_ydl.return_value = ydl
+        state = self.make(failures=SUBSCRIPTION_DEAD_AFTER - 1)
+        state.bot = None
+        with self.assertLogs('dasovbot.services.background', level='WARNING'):
+            await populate_playlist('https://x/@gone/videos', ['100'], state)
+        self.assertTrue(self.sub.dead)
+
+    @patch('dasovbot.database.upsert_subscription', new_callable=AsyncMock)
+    @patch('dasovbot.services.background.populate_video', new_callable=AsyncMock)
+    @patch('dasovbot.services.background.get_ydl')
+    async def test_successful_poll_revives_and_tells_subscribers(self, mock_get_ydl, mock_populate, mock_upsert):
+        ydl = MagicMock()
+        ydl.extract_info.return_value = {'entries': [{'url': 'https://x/v1', 'title': 't', 'duration': 10}]}
+        mock_get_ydl.return_value = ydl
+        state = self.make(failures=SUBSCRIPTION_DEAD_AFTER, dead_since='20261101_120000')
+        await populate_playlist('https://x/@gone/videos', ['100', '200'], state)
+        self.assertFalse(self.sub.dead)
+        self.assertEqual(self.sub.failures, 0)
+        chats = [call.kwargs['chat_id'] for call in state.bot.send_message.await_args_list]
+        self.assertEqual(chats, ['100', '200'])
+        self.assertIn('available again', state.bot.send_message.await_args_list[0].kwargs['text'])
+        mock_populate.assert_awaited_once()
+
+    @patch('dasovbot.database.upsert_subscription', new_callable=AsyncMock)
+    @patch('dasovbot.services.background.populate_video', new_callable=AsyncMock)
+    @patch('dasovbot.services.background.get_ydl')
+    async def test_healthy_poll_writes_nothing_and_says_nothing(self, mock_get_ydl, mock_populate, mock_upsert):
+        ydl = MagicMock()
+        ydl.extract_info.return_value = {'entries': []}
+        mock_get_ydl.return_value = ydl
+        state = self.make()
+        await populate_playlist('https://x/@gone/videos', ['100'], state)
+        mock_upsert.assert_not_awaited()
+        state.bot.send_message.assert_not_awaited()
+
+
 class TestRunPopulateSubscriptions(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         # The module-level lock binds to the first event loop that acquires it;
@@ -194,6 +324,15 @@ class TestRunPopulateSubscriptions(unittest.IsolatedAsyncioTestCase):
         await run_populate_subscriptions(state)
         mock_populate.assert_awaited_once_with('url1', ['100'], state)
         state.pop_subscription.assert_awaited_once_with('url2')
+        self.assertIn('populate_subscriptions', state.background_task_status)
+
+    @patch('dasovbot.services.background.populate_playlist', new_callable=AsyncMock)
+    async def test_skips_dead_subscriptions(self, mock_populate):
+        alive = Subscription(chat_ids=['100'], title='a')
+        dead = Subscription(chat_ids=['100'], title='b', failures=3, dead_since='20261101_120000')
+        state = make_state(subscriptions={'alive': alive, 'dead': dead})
+        await run_populate_subscriptions(state)
+        mock_populate.assert_awaited_once_with('alive', ['100'], state)
         self.assertIn('populate_subscriptions', state.background_task_status)
 
 

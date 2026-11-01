@@ -93,6 +93,9 @@ def subscription_entry(state: BotState, url: str, sub: Subscription) -> dict:
         'uploader': sub.uploader,
         'uploader_videos': sub.uploader_videos,
         'chat_ids': [{'id': chat_id, 'name': user_name(state, chat_id)} for chat_id in sub.chat_ids],
+        'failures': sub.failures,
+        'last_error': sub.last_error,
+        'dead_since': sub.dead_since or None,
     }
 
 
@@ -119,6 +122,7 @@ async def api_status(request: web.Request) -> web.Response:
         'videos': len(cached_entries(request)),
         'videos_rows': len(state.videos),
         'subscriptions': len(state.subscriptions),
+        'subscriptions_dead': sum(1 for sub in state.subscriptions.values() if sub.dead),
         'subscribers': sum(len(sub.chat_ids) for sub in state.subscriptions.values()),
         'intents': intents,
         'inline_queries': len(state.temporary_inline_queries),
@@ -426,7 +430,8 @@ async def _plan_subscription(url: str) -> tuple[str, Subscription] | web.Respons
 
 def _subscription_body(url: str, sub: Subscription) -> dict:
     return {'url': url, 'title': sub.title, 'uploader': sub.uploader, 'uploader_videos': sub.uploader_videos,
-            'chat_ids': list(sub.chat_ids)}
+            'chat_ids': list(sub.chat_ids), 'failures': sub.failures, 'last_error': sub.last_error,
+            'dead_since': sub.dead_since or None}
 
 
 async def api_subscribe(request: web.Request) -> web.Response:

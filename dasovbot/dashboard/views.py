@@ -10,7 +10,7 @@ import aiohttp_jinja2
 from aiohttp import web
 
 from dasovbot.constants import DATETIME_FORMAT
-from dasovbot.services.background import BACKGROUND_TASK_NAMES, run_populate_subscriptions
+from dasovbot.services.background import BACKGROUND_TASK_NAMES, populate_playlist, run_populate_subscriptions
 from dasovbot.services.intent_processor import filter_intents
 
 if TYPE_CHECKING:
@@ -182,6 +182,7 @@ async def index(request: web.Request) -> web.Response:
     context = {
         'video_count': len(state.videos),
         'subscription_count': len(state.subscriptions),
+        'dead_subscription_count': sum(1 for sub in state.subscriptions.values() if sub.dead),
         'intent_count': len(filtered),
         'user_count': len(state.users),
         'intents': intents,
@@ -380,12 +381,17 @@ async def subscriptions(request: web.Request) -> web.Response:
         users.append({'id': cid, 'color': color_map[cid], 'label': label})
 
     items = []
-    for url, sub in sorted(state.subscriptions.items(), key=lambda x: x[1].title.lower()):
+    # Dead feeds first: they are the ones that need a decision (check again or remove)
+    for url, sub in sorted(state.subscriptions.items(), key=lambda x: (not x[1].dead, x[1].title.lower())):
         items.append({
             'url': url,
             'title': sub.title or sub.uploader or url,
             'uploader': sub.uploader,
             'chat_ids': sub.chat_ids,
+            'dead': sub.dead,
+            'dead_since': relative_time(sub.dead_since) if sub.dead else '',
+            'failures': sub.failures,
+            'last_error': sub.last_error,
         })
 
     user_labels = {u['id']: u['label'] for u in users}
@@ -397,6 +403,19 @@ async def subscriptions(request: web.Request) -> web.Response:
         'user_labels': user_labels,
     }
     return aiohttp_jinja2.render_template('subscriptions.html', request, context)
+
+
+async def check_subscription(request: web.Request) -> web.Response:
+    """Poll one feed now; the way to retry a subscription the hourly poll gave up on."""
+    state = get_state(request)
+    data = await request.post()
+    url = data.get('url', '')
+    sub = state.subscriptions.get(url)
+    if sub is not None:
+        task = asyncio.create_task(populate_playlist(url, list(sub.chat_ids), state))
+        state.background_tasks.add(task)
+        task.add_done_callback(state.background_tasks.discard)
+    raise web.HTTPFound('/subscriptions')
 
 
 async def remove_subscription(request: web.Request) -> web.Response:
@@ -491,6 +510,7 @@ async def system(request: web.Request) -> web.Response:
         'tasks': tasks,
         'video_count': len(state.videos),
         'subscription_count': len(state.subscriptions),
+        'dead_subscription_count': sum(1 for sub in state.subscriptions.values() if sub.dead),
         'user_count': len(state.users),
         'intent_count': len(state.intents),
         'tiq_count': len(state.temporary_inline_queries),

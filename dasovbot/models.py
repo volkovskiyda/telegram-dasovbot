@@ -224,6 +224,16 @@ class Subscription:
     title: str = ""
     uploader: str = ""
     uploader_videos: str = ""
+    # Consecutive polls on which yt-dlp reported the feed gone (constants
+    # PLAYLIST_GONE_MESSAGES); any successful poll resets it. At
+    # SUBSCRIPTION_DEAD_AFTER the hourly poll gives up and dead_since is set
+    failures: int = 0
+    last_error: str = ""
+    dead_since: str = ""  # "" while the feed is alive
+
+    @property
+    def dead(self) -> bool:
+        return bool(self.dead_since)
 
     def to_dict(self) -> dict:
         return {
@@ -231,6 +241,9 @@ class Subscription:
             'title': self.title,
             'uploader': self.uploader,
             'uploader_videos': self.uploader_videos,
+            'failures': self.failures,
+            'last_error': self.last_error,
+            'dead_since': self.dead_since,
         }
 
     @classmethod
@@ -242,6 +255,9 @@ class Subscription:
             title=data.get('title') or '',
             uploader=data.get('uploader') or '',
             uploader_videos=data.get('uploader_videos') or '',
+            failures=int(data.get('failures') or 0),
+            last_error=data.get('last_error') or '',
+            dead_since=data.get('dead_since') or '',
         )
 
 

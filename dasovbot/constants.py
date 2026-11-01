@@ -26,6 +26,20 @@ TRANSIENT_ERROR_MESSAGES = [
     'HTTP Error 50',  # 500, 502, 503, 504
 ]
 
+# A subscription whose feed yt-dlp reports gone (PLAYLIST_GONE_MESSAGES) on
+# this many consecutive polls is marked dead: the hourly poll skips it, every
+# subscriber and the developer hear about it once, and only a manual check
+# (dashboard Check, `dasovbot populate <url>`) tries it again. Three polls =
+# three hours, enough to ride out a YouTube hiccup that answers 404 for a while
+SUBSCRIPTION_DEAD_AFTER = 3
+PLAYLIST_GONE_MESSAGES = [
+    'HTTP Error 404',
+    'Requested entity was not found',
+    'does not exist',  # "This channel does not exist", "The playlist does not exist"
+    'has been terminated',  # "This account has been terminated"
+    'has been removed',
+]
+
 # Intervals
 INTERVAL_SEC = 60 * 60  # an hour
 TIMEOUT_SEC = 60 * 10  # 10 minutes
