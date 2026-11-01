@@ -1,3 +1,6 @@
+# Direct dependencies, exact except yt-dlp: CI rebuilds the image on every
+# yt-dlp release. Transitive versions live in constraints.txt
+-c constraints.txt
 yt-dlp[default,deno,curl-cffi]
 python-telegram-bot[job-queue]==22.8
 python-dotenv==1.2.4

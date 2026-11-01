@@ -1,0 +1,42 @@
+# Exact versions of the transitive dependencies of requirements.txt and
+# requirements-test.txt. requirements.txt applies this file with `-c`, so it
+# only constrains packages that something else pulls in; an entry for a package
+# that is no longer needed is ignored.
+#
+# Left out on purpose: yt-dlp and everything it pulls in (brotli, certifi, cffi,
+# charset-normalizer, curl-cffi, deno, idna, mutagen, pycparser, pycryptodomex,
+# requests, urllib3, websockets, yt-dlp-ejs). CI rebuilds and releases the image
+# unattended on every yt-dlp release, and yt-dlp raises its own floors
+# (certifi, deno) and pins yt-dlp-ejs exactly, so a pin here would make that
+# rebuild fail to resolve. Those packages float within yt-dlp's ranges and pick
+# up security releases with the next build. yt-dlp's own `pin` extras are not
+# used either: they trail upstream fixes (websockets 17.3 lacks 17.4's DoS fix).
+#
+# Refresh after changing requirements*.txt: in a clean Python 3.14 environment,
+# install requirements-test.txt with this file emptied, then copy the versions
+# `pip freeze` reports for the packages below.
+
+# python-telegram-bot[job-queue]
+anyio==4.16.0
+APScheduler==3.11.3
+h11==0.16.0
+httpcore==1.0.9
+httpx==0.28.1
+typing_extensions==4.16.0
+tzlocal==5.4.5
+
+# aiohttp, aiohttp-jinja2, jinja2
+aiohappyeyeballs==2.7.1
+aiosignal==1.4.0
+attrs==26.1.0
+frozenlist==1.8.0
+MarkupSafe==3.0.4
+multidict==7.2.1
+propcache==0.5.4
+yarl==1.25.1
+
+# pytest, pytest-asyncio (requirements-test.txt)
+iniconfig==2.3.1
+packaging==26.3
+pluggy==1.7.0
+Pygments==2.21.0

@@ -18,7 +18,7 @@ ENV MALLOC_ARENA_MAX=2
 
 WORKDIR /project
 
-COPY requirements.txt ./
+COPY requirements.txt constraints.txt ./
 # --no-cache-dir: the wheel cache would only bloat the layer
 RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r requirements.txt
 

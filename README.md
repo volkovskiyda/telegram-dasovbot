@@ -165,6 +165,8 @@ docs/                  # api.md, ha.md, testing.md
 skills/dasovbot/       # Claude Code skill: CLI reference (generated from --help) + operator playbooks
 main.py                # Thin wrapper entry point
 pyproject.toml         # Packaging for the CLI only (`pipx install -e .`) and the ruff config; the bot installs requirements.txt
+requirements.txt       # Bot dependencies, exact except yt-dlp; requirements-test.txt adds pytest, pytest-asyncio, ruff
+constraints.txt        # Exact transitive versions (applied by requirements.txt); yt-dlp's own dependencies float on purpose
 info.py                # CLI: video info lookup
 subscriptions.py       # CLI: bulk subscription import straight into bot.db (superseded by `dasovbot subscribe`)
 empty_media_folder.py  # CLI: clear media folder
