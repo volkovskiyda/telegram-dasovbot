@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import shutil
@@ -40,6 +41,25 @@ def move_atomic(src: str, dst: str) -> None:
             shutil.copy2(src, partial)
             os.remove(src)
         os.replace(partial, dst)
+    except Exception:
+        remove(partial)
+        raise
+
+
+def write_json_atomic(path: str, payload: dict) -> None:
+    """Write payload as JSON to path so that path never exists half-written.
+
+    Same contract as move_atomic, for the metadata sidecar that accompanies an
+    exported video into the Syncthing share: the bytes land in '<path>.partial'
+    (ignored by Syncthing) and are renamed into place with one os.replace.
+    Runs blocking I/O; call it through run_in_executor. A failure removes the
+    partial and re-raises.
+    """
+    partial = path + '.partial'
+    try:
+        with open(partial, 'w', encoding='utf-8') as f:
+            json.dump(payload, f, ensure_ascii=False)
+        os.replace(partial, path)
     except Exception:
         remove(partial)
         raise

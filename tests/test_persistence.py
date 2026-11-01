@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from dasovbot.persistence import (
     remove, empty_media_folder_files, remove_stale_media_files, remove_unfinished_downloads, move_atomic,
+    write_json_atomic,
 )
 
 
@@ -142,3 +143,28 @@ class TestRemoveUnfinishedDownloads(unittest.TestCase):
     def test_missing_folder(self):
         self.assertEqual(remove_unfinished_downloads('/nonexistent/media'), [])
 
+
+
+class TestWriteJsonAtomic(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = os.path.join(self.tmp.name, 'v.info.json')
+
+    def test_writes_json_without_leftover_partial(self):
+        write_json_atomic(self.path, {'id': 'abc', 'title': 'Тест', 'tags': []})
+        with open(self.path, encoding='utf-8') as f:
+            self.assertEqual(f.read(), '{"id": "abc", "title": "Тест", "tags": []}')
+        self.assertEqual(os.listdir(self.tmp.name), ['v.info.json'])
+
+    def test_replaces_existing_file(self):
+        write_json_atomic(self.path, {'v': 1})
+        write_json_atomic(self.path, {'v': 2})
+        with open(self.path, encoding='utf-8') as f:
+            self.assertEqual(f.read(), '{"v": 2}')
+
+    def test_failed_replace_removes_partial_and_reraises(self):
+        with patch('dasovbot.persistence.os.replace', side_effect=OSError('disk full')):
+            with self.assertRaises(OSError):
+                write_json_atomic(self.path, {'v': 1})
+        self.assertEqual(os.listdir(self.tmp.name), [])

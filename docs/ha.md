@@ -89,8 +89,8 @@ api_token.txt
 admin_token.txt
 ```
 ```
-# .stignore for the Telegram folder (/export): exported videos land as <name>.partial
-# and are renamed into place atomically
+# .stignore for the Telegram folder (/export): exported videos and their .info.json
+# sidecars land as <name>.partial and are renamed into place atomically
 **/*.partial
 ```
 

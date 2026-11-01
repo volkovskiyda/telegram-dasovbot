@@ -74,7 +74,7 @@ docker compose up -d
 docker exec dasovbot python backup.py      # manual database backup (cron does it on BACKUP_CRON)
 ```
 
-Both containers mount `./config/media/` at `/media`: the bot hands uploads to the server as `file:///media/...` paths, so a multi-GB video never passes through bot memory. `./config/data/` holds the SQLite database and the generated secrets; `./config/export/` is the media library the developer's downloads are moved into.
+Both containers mount `./config/media/` at `/media`: the bot hands uploads to the server as `file:///media/...` paths, so a multi-GB video never passes through bot memory. `./config/data/` holds the SQLite database and the generated secrets; `./config/export/` is the media library the developer's downloads are moved into. Each exported video gets a slim yt-dlp-style `<name>.info.json` sidecar next to it (`VideoInfo.to_sidecar()`: id, title, channel, duration, upload date, tags, categories, description, thumbnail, chapters), so a library index can be built from the folder without fetching the metadata again.
 
 ### Plain docker
 

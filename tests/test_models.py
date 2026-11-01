@@ -173,3 +173,29 @@ class TestNullValuesFromDict(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestVideoInfoSidecar(unittest.TestCase):
+    def test_to_sidecar_uses_ytdlp_keys(self):
+        info = VideoInfo(
+            title='Test Video', description='A test description', webpage_url='https://www.youtube.com/watch?v=abc123def45',
+            upload_date='20240101', upload_timestamp=1704110400, duration=120, uploader_url='https://example.com/user',
+            video_id='abc123def45', channel='Test Channel', channel_id='UCxyz', tags=['one'], categories=['Entertainment'],
+            chapters=[{'start_time': 0.0, 'title': 'Intro'}], thumbnail_url='https://i.ytimg.com/vi/abc123def45/maxresdefault.webp',
+            epoch=1750750807,
+        )
+        self.assertEqual(info.to_sidecar(), {
+            'id': 'abc123def45', 'title': 'Test Video', 'description': 'A test description',
+            'channel': 'Test Channel', 'channel_id': 'UCxyz', 'duration': 120,
+            'upload_date': '20240101', 'timestamp': 1704110400, 'tags': ['one'], 'categories': ['Entertainment'],
+            'thumbnail': 'https://i.ytimg.com/vi/abc123def45/maxresdefault.webp',
+            'chapters': [{'start_time': 0.0, 'title': 'Intro'}], 'epoch': 1750750807,
+            'webpage_url': 'https://www.youtube.com/watch?v=abc123def45', 'uploader_url': 'https://example.com/user',
+        })
+
+    def test_to_sidecar_minimal(self):
+        d = VideoInfo(title='T', video_id='abc123def45').to_sidecar()
+        self.assertEqual(d['tags'], [])
+        self.assertEqual(d['categories'], [])
+        self.assertEqual(d['chapters'], [])
+        self.assertIsNone(d['timestamp'])

@@ -99,6 +99,33 @@ class VideoInfo:
             d['origin'] = self.origin.to_dict()
         return d
 
+    def to_sidecar(self) -> dict:
+        """The video as a slim yt-dlp-style ``*.info.json`` sidecar.
+
+        Written next to an exported video so a media library can index it
+        without asking the site again. Keys and value shapes are yt-dlp's
+        (``channel_id``, ``upload_date``, ``timestamp`` in epoch seconds,
+        ``chapters`` as ``[{start_time, title}]``, ``epoch`` = when the
+        metadata was fetched), limited to what an index reads.
+        """
+        return {
+            'id': self.video_id,
+            'title': self.title,
+            'description': self.description,
+            'channel': self.channel,
+            'channel_id': self.channel_id,
+            'duration': self.duration,
+            'upload_date': self.upload_date,
+            'timestamp': self.upload_timestamp,
+            'tags': self.tags or [],
+            'categories': self.categories or [],
+            'thumbnail': self.thumbnail_url,
+            'chapters': self.chapters or [],
+            'epoch': self.epoch,
+            'webpage_url': self.webpage_url,
+            'uploader_url': self.uploader_url,
+        }
+
     @classmethod
     def from_dict(cls, data: dict) -> 'VideoInfo':
         origin_data = data.get('origin')

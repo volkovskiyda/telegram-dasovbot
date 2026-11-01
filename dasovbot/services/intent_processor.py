@@ -16,7 +16,7 @@ from dasovbot.downloader import (
 )
 from dasovbot.helpers import send_message_developer, now
 from dasovbot.models import VideoInfo, VideoOrigin, Intent, IntentMessage
-from dasovbot.persistence import remove, move_atomic
+from dasovbot.persistence import remove, move_atomic, write_json_atomic
 
 if TYPE_CHECKING:
     from dasovbot.state import BotState
@@ -196,6 +196,16 @@ async def post_process(query: str, info: VideoInfo, message: Message, state: Bot
                 info.exported = True
                 await state.set_video(query, info)
                 await state.set_video(extract_url(info), info)
+                if info.video_id:
+                    # The library indexes videos by a sidecar with the video's
+                    # stem; writing it here spares the library host a second
+                    # metadata fetch of the same video. Best effort: the
+                    # export itself is already done
+                    sidecar_path = os.path.splitext(export_path)[0] + '.info.json'
+                    try:
+                        await loop.run_in_executor(None, write_json_atomic, sidecar_path, info.to_sidecar())
+                    except Exception:
+                        logger.error("write_sidecar error: %s", query, exc_info=True)
         else:
             # A path outside the media folder cannot be mapped to /export/;
             # moving it onto itself would silently leak the file on disk
