@@ -37,3 +37,9 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["B", "F841"]
 "preview_dashboard.py" = ["B"]
+
+# The tests run on unittest's IsolatedAsyncioTestCase and define no
+# pytest-asyncio fixtures; this only pins the default pytest-asyncio warns
+# about on every run until it changes it in a future release
+[tool.pytest.ini_options]
+asyncio_default_fixture_loop_scope = "function"
