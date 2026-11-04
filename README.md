@@ -46,7 +46,7 @@ Every state-changing dashboard form is a POST that must come from the dashboard'
 
 ### System dependencies
 
-- Python 3.11+ (yt-dlp 2026.10.26 dropped 3.10). The Docker image and CI run **3.14**
+- Python 3.11+ (yt-dlp 2026.10.26 dropped 3.10). The Docker image and CI run **3.15**
 - [ffmpeg](https://ffmpeg.org/) — video conversion and yt-dlp post-processing
 - [Deno](https://deno.com/) — JavaScript runtime yt-dlp needs for YouTube extraction (`brew install deno`)
 
@@ -221,4 +221,4 @@ python -m pytest tests --ignore=tests/integration   # unit tests: no token, no n
 ./run_tests.sh                                      # unit + integration + LOCAL_MODE + manual E2E (needs .env.test)
 ```
 
-CI (`.github/workflows/docker.yml`) runs ruff and the unit suite on Python 3.14 before every image build. Integration tests, the test bot setup and the E2E stage are described in [docs/testing.md](docs/testing.md).
+CI (`.github/workflows/docker.yml`) runs ruff and the unit suite on Python 3.15 before every image build. Integration tests, the test bot setup and the E2E stage are described in [docs/testing.md](docs/testing.md).

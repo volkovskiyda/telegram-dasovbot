@@ -12,7 +12,7 @@
 # up security releases with the next build. yt-dlp's own `pin` extras are not
 # used either: they trail upstream fixes (websockets 17.3 lacks 17.4's DoS fix).
 #
-# Refresh after changing requirements*.txt: in a clean Python 3.14 environment,
+# Refresh after changing requirements*.txt: in a clean Python 3.15 environment,
 # install requirements-test.txt with this file emptied, then copy the versions
 # `pip freeze` reports for the packages below.
 
@@ -22,7 +22,6 @@ APScheduler==3.11.3
 h11==0.16.0
 httpcore==1.0.9
 httpx==0.28.1
-typing_extensions==4.16.0
 tzlocal==5.4.5
 
 # aiohttp, aiohttp-jinja2, jinja2

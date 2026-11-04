@@ -1,4 +1,4 @@
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 LABEL maintainer="volkovskiyda@gmail.com"
 LABEL description="Telegram bot for downloading and sharing online videos"

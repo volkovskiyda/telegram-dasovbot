@@ -6,7 +6,7 @@ pip install -r requirements-test.txt     # pytest, pytest-asyncio, ruff on top o
 
 ## Unit tests
 
-No bot token, no network, about 8 seconds. This is what CI runs (together with `ruff check .`) on Python 3.14 before every image build.
+No bot token, no network, about 8 seconds. This is what CI runs (together with `ruff check .`) on Python 3.15 before every image build.
 
 ```bash
 ruff check .
