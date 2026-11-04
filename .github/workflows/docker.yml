@@ -23,7 +23,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      # Same interpreter as the image (Dockerfile FROM python:3.15-slim)
+      # Same interpreter as the image (Dockerfile FROM python:3.15-slim);
+      # tests/test_python_version.py fails when the two drift apart
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
