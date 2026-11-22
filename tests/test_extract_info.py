@@ -152,6 +152,51 @@ class TestExtractInfo(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('q', state.transient_failures)
 
     @patch('dasovbot.downloader.get_ydl')
+    async def test_post_live_recording_is_not_downloaded(self, mock_get_ydl):
+        # An unprocessed stream recording only downloads fragment by fragment,
+        # far slower than TIMEOUT_SEC: the worker waits instead
+        mock_get_ydl.return_value.extract_info.return_value = make_raw_info(live_status='post_live')
+        state = self._make_state(intents={'q': Intent()}, transient_failures={'q': 2})
+        self.assertIsNone(await extract_info('q', download=True, state=state))
+        mock_get_ydl.return_value.extract_info.assert_called_once_with('q', download=False)
+        self.assertEqual(state.post_live_waits['q'], 1)
+        self.assertNotIn('q', state.transient_failures)
+        self.assertIsNone(await extract_info('q', download=True, state=state))
+        self.assertEqual(state.post_live_waits['q'], 2)
+
+    @patch('dasovbot.downloader.get_ydl')
+    async def test_post_live_without_intent_is_not_counted(self, mock_get_ydl):
+        mock_get_ydl.return_value.extract_info.return_value = make_raw_info(live_status='post_live')
+        state = self._make_state()
+        self.assertIsNone(await extract_info('q', download=True, state=state))
+        self.assertEqual(state.post_live_waits, {})
+
+    @patch('dasovbot.downloader.get_ydl')
+    async def test_post_live_metadata_lookup_still_answers(self, mock_get_ydl):
+        # Handlers and inline queries only need the metadata, which is fine
+        mock_get_ydl.return_value.extract_info.return_value = make_raw_info(live_status='post_live')
+        state = self._make_state(intents={'q': Intent()}, post_live_waits={'q': 3})
+        result = await extract_info('q', download=False, state=state)
+        self.assertEqual(result.title, 'Raw Title')
+        self.assertEqual(state.post_live_waits, {'q': 3})
+
+    @patch('dasovbot.downloader.get_ydl')
+    async def test_processed_recording_downloads_and_clears_the_wait(self, mock_get_ydl):
+        mock_get_ydl.return_value.extract_info.return_value = make_raw_info(
+            live_status='was_live', requested_downloads=[{'filepath': '/tmp/v.mp4', 'filename': 'v.mp4'}])
+        state = self._make_state(intents={'q': Intent()}, post_live_waits={'q': 5})
+        result = await extract_info('q', download=True, state=state)
+        self.assertEqual(result.filepath, '/tmp/v.mp4')
+        self.assertNotIn('q', state.post_live_waits)
+
+    @patch('dasovbot.downloader.get_ydl')
+    async def test_other_error_clears_the_post_live_wait(self, mock_get_ydl):
+        mock_get_ydl.return_value.extract_info.side_effect = yt_dlp.DownloadError('ERROR: network timeout')
+        state = self._make_state(intents={'q': Intent()}, post_live_waits={'q': 5})
+        self.assertIsNone(await extract_info('q', download=True, state=state))
+        self.assertNotIn('q', state.post_live_waits)
+
+    @patch('dasovbot.downloader.get_ydl')
     async def test_generic_error_returns_none(self, mock_get_ydl):
         mock_get_ydl.return_value.extract_info.side_effect = ValueError('boom')
         state = self._make_state()

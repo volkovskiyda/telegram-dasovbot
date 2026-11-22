@@ -43,6 +43,28 @@ class TestProcessQuery(unittest.IsolatedAsyncioTestCase):
         await process_query(AsyncMock(), 'q', state)
         self.assertNotIn('q', state.intents)
 
+    @patch('dasovbot.services.intent_processor.send_message_developer', new_callable=AsyncMock)
+    @patch('dasovbot.downloader.get_ydl')
+    async def test_post_live_recording_waits_quietly(self, mock_get_ydl, mock_send_dev):
+        # Nov 2026: an unprocessed stream recording failed every attempt
+        # (timeout / "The downloaded file is empty"), pinged the developer
+        # each time and came back hourly through the subscription poll
+        from dasovbot.constants import POST_LIVE_BACKOFF_SEC
+        mock_get_ydl.return_value.extract_info.return_value = {
+            'webpage_url': 'https://www.youtube.com/watch?v=1', 'title': 't', 'duration': 5706,
+            'live_status': 'post_live',
+        }
+        intent = Intent(chat_ids=['1'])
+        state = self._make_state(intents={'q': intent})
+        bot = AsyncMock()
+        await process_query(bot, 'q', state)
+        mock_get_ydl.return_value.extract_info.assert_called_once_with('q', download=False)
+        mock_send_dev.assert_not_awaited()
+        bot.send_video.assert_not_awaited()
+        self.assertIn('q', state.intents)
+        self.assertEqual(intent.retries, 0)
+        self.assertGreater(state.intent_retry_after['q'], time.monotonic() + POST_LIVE_BACKOFF_SEC - 60)
+
     @patch('dasovbot.services.intent_processor.extract_info', new_callable=AsyncMock, return_value=None)
     async def test_no_info_keeps_ignored_intent(self, mock_extract):
         intent = Intent(ignored=True)
@@ -446,6 +468,31 @@ class TestRetryBackoff(unittest.IsolatedAsyncioTestCase):
                            transient_failures={'q': MAX_TRANSIENT_RETRIES + 1})
         await drop_or_retry_intent(AsyncMock(), 'q', state)
         self.assertEqual(intent.retries, 1)
+
+    async def test_post_live_waits_long_without_spending_a_retry(self):
+        from dasovbot.constants import POST_LIVE_BACKOFF_SEC
+        intent = Intent(priority=7, chat_ids=['1'], inline_message_ids=['im1'])
+        bot = AsyncMock()
+        state = make_state(config=make_config(), intents={'q': intent}, post_live_waits={'q': 1})
+        await drop_or_retry_intent(bot, 'q', state)
+        self.assertEqual(intent.retries, 0)
+        self.assertEqual(intent.priority, 0)
+        self.assertIn('q', state.intents)
+        self.assertGreater(state.intent_retry_after['q'], time.monotonic() + POST_LIVE_BACKOFF_SEC - 60)
+        bot.edit_message_caption.assert_not_awaited()  # requesters are not told it failed
+
+    async def test_post_live_waits_beyond_the_cap_count_as_real(self):
+        from dasovbot.constants import MAX_POST_LIVE_WAITS
+        intent = Intent(chat_ids=['1'])
+        state = make_state(config=make_config(), intents={'q': intent},
+                           post_live_waits={'q': MAX_POST_LIVE_WAITS + 1})
+        await drop_or_retry_intent(AsyncMock(), 'q', state)
+        self.assertEqual(intent.retries, 1)
+
+    async def test_pop_intent_forgets_the_post_live_count(self):
+        state = make_state(config=make_config(), intents={'q': Intent()}, post_live_waits={'q': 2})
+        await state.pop_intent('q')
+        self.assertNotIn('q', state.post_live_waits)
 
     async def test_pop_intent_forgets_the_transient_count(self):
         state = make_state(config=make_config(), intents={'q': Intent()}, transient_failures={'q': 2})

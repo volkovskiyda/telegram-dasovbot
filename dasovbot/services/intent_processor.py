@@ -61,6 +61,7 @@ async def notify_intent_failed(bot: Bot, query: str, intent: Intent, reason: str
 async def drop_or_retry_intent(bot: Bot, query: str, state: BotState):
     from dasovbot.constants import (
         MAX_INTENT_RETRIES, INTENT_RETRY_BACKOFF_SEC, INTENT_TRANSIENT_BACKOFF_SEC, MAX_TRANSIENT_RETRIES,
+        POST_LIVE_BACKOFF_SEC, MAX_POST_LIVE_WAITS,
     )
     intent = state.intents.get(query)
     if not intent:
@@ -89,6 +90,20 @@ async def drop_or_retry_intent(bot: Bot, query: str, state: BotState):
         await state.save_intent(query)
         logger.warning("intent backing off %d min after transient failure %d/%d: %s",
                        INTENT_TRANSIENT_BACKOFF_SEC // 60, transient, MAX_TRANSIENT_RETRIES, query)
+        return
+    post_live = state.post_live_waits.get(query, 0)
+    if 0 < post_live <= MAX_POST_LIVE_WAITS:
+        # A stream recording YouTube has not processed yet: nothing failed and
+        # nothing was downloaded, so requesters and the developer hear nothing.
+        # Check back later; the processed video downloads like any other
+        intent.priority = 0
+        state.intent_retry_after[query] = max(
+            state.intent_retry_after.get(query, 0),
+            time.monotonic() + POST_LIVE_BACKOFF_SEC,
+        )
+        await state.save_intent(query)
+        logger.info("intent waiting %d min for YouTube to process the stream recording, check %d/%d: %s",
+                    POST_LIVE_BACKOFF_SEC // 60, post_live, MAX_POST_LIVE_WAITS, query)
         return
     intent.retries += 1
     if intent.retries >= MAX_INTENT_RETRIES:

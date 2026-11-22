@@ -66,6 +66,18 @@ MAX_INTENT_RETRIES = 3
 INTENT_TRANSIENT_BACKOFF_SEC = 15 * 60
 MAX_TRANSIENT_RETRIES = 8
 
+# A YouTube live stream that has ended but is not processed yet reports
+# live_status 'post_live'. yt-dlp can then only fetch it one 2-second
+# fragment at a time (a 1.5 h stream is ~2,900 fragments per track, ~15 min
+# for the video alone through the VPN), which overruns TIMEOUT_SEC or ends
+# in "The downloaded file is empty". Such an intent is not downloaded: it is
+# checked again every POST_LIVE_BACKOFF_SEC without spending a retry, and
+# downloads normally once YouTube has processed the recording. After
+# MAX_POST_LIVE_WAITS checks in a row (30 min x 48 = a day) it is an
+# ordinary failure
+POST_LIVE_BACKOFF_SEC = 30 * 60
+MAX_POST_LIVE_WAITS = 48
+
 # Minimum delay before a failed intent becomes eligible again (it is also
 # demoted to priority 0 so it cannot head-of-line-block fresh requests).
 # A timed-out download backs off for a full TIMEOUT_SEC instead: it is only

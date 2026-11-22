@@ -331,6 +331,9 @@ async def extract_info(query: str, download: bool, state: BotState) -> VideoInfo
         return info
 
     if not info:
+        # Only consecutive post_live checks count: any other outcome of this
+        # one ends the wait. Metadata-only lookups leave the count alone
+        post_live_waits = state.post_live_waits.pop(query, 0) if download else 0
         try:
             loop = asyncio.get_running_loop()
             future = loop.run_in_executor(None, partial(extract_info_sync, query, download=False))
@@ -340,6 +343,16 @@ async def extract_info(query: str, download: bool, state: BotState) -> VideoInfo
             if info_url:
                 await state.set_video(query, info_url)
                 return info_url
+            if download and raw_info.get('live_status') == 'post_live':
+                # An ended stream YouTube has not processed yet: yt-dlp would
+                # fetch it fragment by fragment, far slower than TIMEOUT_SEC
+                # allows. Skip the download; the worker checks back later
+                # (POST_LIVE_BACKOFF_SEC). Only intents are counted
+                state.transient_failures.pop(query, None)
+                if query in state.intents:
+                    state.post_live_waits[query] = post_live_waits + 1
+                logger.info("extract_info post_live, waiting for YouTube to process the recording: %s", query)
+                return None
             info = process_info(raw_info)
         except TimeoutError:
             logger.warning("extract_info metadata timeout: %s", query)
