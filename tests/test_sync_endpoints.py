@@ -1,4 +1,5 @@
 """/health and /sync/* endpoints (plan item 07)."""
+import asyncio
 import hashlib
 import os
 import sqlite3
@@ -144,6 +145,12 @@ class TestSnapshot(SyncEndpointTestCase):
             data = await resp.read()
         self.assertEqual(len(data), int(resp.headers['Content-Length']))
         self.assertEqual(resp.headers['X-Dasovbot-Sha256'], hashlib.sha256(data).hexdigest())
+        # The handler removes the file in its finally, after write_eof(): the client can hold
+        # the whole body before the server task resumes, so give the handler time to finish
+        for _ in range(200):
+            if not os.path.exists(known):
+                break
+            await asyncio.sleep(0.01)
         self.assertFalse(os.path.exists(known), 'temp file removed after streaming')
         out = os.path.join(tmp, 'received.db')
         with open(out, 'wb') as f:
