@@ -11,7 +11,8 @@ from dasovbot.constants import RESTART_DELAY_SEC, SUBSCRIPTION_DEAD_AFTER
 from dasovbot.services.background import (
     feed_gone, populate_animation, populate_video, populate_playlist, run_populate_subscriptions,
     populate_subscriptions, clear_temporary_inline_queries, sweep_temporary_inline_queries,
-    monitor_backups, newest_backup_age, sweep_media_folder, check_disk_space, monitor_disk_space,
+    monitor_backups, newest_backup_age, newest_corrupt_backup, sweep_media_folder, check_disk_space,
+    monitor_disk_space,
     start_background_tasks, stop_background_tasks, run_forever, _on_task_done,
 )
 from tests.helpers import make_state, make_config
@@ -384,6 +385,76 @@ class TestNewestBackupAge(unittest.TestCase):
             age = newest_backup_age(tmp)
             self.assertIsNotNone(age)
             self.assertGreaterEqual(age, 0)
+
+
+def _touch(path: str, mtime: float):
+    with open(path, 'w') as f:
+        f.write('not a database')
+    os.utime(path, (mtime, mtime))
+
+
+class TestNewestCorruptBackup(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def path(self, name):
+        return os.path.join(self.tmp, name)
+
+    def test_none_without_corrupt_backups(self):
+        _touch(self.path('bot.db.backup_20261124_000001'), 1000)
+        self.assertIsNone(newest_corrupt_backup(self.tmp))
+
+    def test_corrupt_backup_newer_than_every_good_one(self):
+        _touch(self.path('bot.db.backup_20261124_000001'), 1000)
+        _touch(self.path('bot.db.corrupt_20261124_120001'), 2000)
+        _touch(self.path('bot.db.corrupt_20261124_120001-shm'), 3000)   # not a backup name: ignored
+        self.assertEqual(newest_corrupt_backup(self.tmp), self.path('bot.db.corrupt_20261124_120001'))
+
+    def test_a_newer_good_backup_supersedes_it(self):
+        _touch(self.path('bot.db.corrupt_20261124_120001'), 2000)
+        _touch(self.path('bot.db.backup_20261125_000001'), 3000)
+        self.assertIsNone(newest_corrupt_backup(self.tmp))
+
+
+class TestMonitorCorruptBackups(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.root = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.root, 'data'))
+        self.state = make_state(config=make_config(config_folder=self.root, developer_chat_id='999',
+                                                   node_name='dasovbot'))
+        self.corrupt = os.path.join(self.root, 'data', 'bot.db.corrupt_20261124_120001')
+        _touch(self.corrupt, 2000)
+
+    async def run_monitor(self, bot, cycles=1):
+        with patch('dasovbot.services.background.newest_backup_age', return_value=100), \
+                patch('dasovbot.services.background.asyncio.sleep', new_callable=AsyncMock) as sleep:
+            sleep.side_effect = [None] * (cycles - 1) + [asyncio.CancelledError()]
+            with self.assertRaises(asyncio.CancelledError):
+                await monitor_backups(bot, self.state)
+
+    async def test_alerts_once_and_keeps_the_dashboard_alert(self):
+        bot = AsyncMock()
+        await self.run_monitor(bot, cycles=3)
+        bot.send_message.assert_awaited_once()
+        text = bot.send_message.await_args.kwargs['text']
+        self.assertTrue(text.startswith('⚠️ dasovbot: database backup bot.db.corrupt_20261124_120001 failed '
+                                        'validation and was set aside: '), text)
+        self.assertEqual(bot.send_message.await_args.kwargs['chat_id'], '999')
+        self.assertEqual(self.state.health_alerts['backup_corrupt']['level'], 'error')
+
+    async def test_cleared_once_a_newer_good_backup_exists(self):
+        self.state.set_alert('backup_corrupt', 'old', level='error')
+        _touch(os.path.join(self.root, 'data', 'bot.db.backup_20261125_000001'), 3000)
+        bot = AsyncMock()
+        await self.run_monitor(bot)
+        bot.send_message.assert_not_awaited()
+        self.assertNotIn('backup_corrupt', self.state.health_alerts)
+
+    async def test_failed_send_retries_next_cycle(self):
+        bot = AsyncMock()
+        bot.send_message.side_effect = [RuntimeError('telegram down'), None]
+        await self.run_monitor(bot, cycles=3)
+        self.assertEqual(bot.send_message.await_count, 2)
 
 
 class TestSweepMediaFolder(unittest.IsolatedAsyncioTestCase):

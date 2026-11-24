@@ -243,7 +243,7 @@ class SyncClient:
             self._snapshot_retry_at = self.clock() + delay
             logger.warning("snapshot from %s failed (%d in a row), next try in %s: %s",
                            self.peer_name, self.snapshot_failures, fmt_span(delay), e)
-            raise SyncError(f'{e}; next try in {fmt_span(delay)}') from e
+            raise SyncError(f'{e}; next try in {fmt_span(delay)}', peer_alerted=e.peer_alerted) from e
         self.snapshot_failures = 0
         self._snapshot_retry_at = None
 
@@ -257,7 +257,7 @@ class SyncClient:
             try:
                 async with self._session_or_open().get(self._url('/sync/snapshot'), timeout=timeout) as resp:
                     if resp.status != 200:
-                        raise SyncError(f'snapshot: HTTP {resp.status}')
+                        raise await self._snapshot_http_error(resp)
                     header_rev = resp.headers.get('X-Dasovbot-Rev')
                     # Absent on a peer that predates the checksum: accepted, the row check still runs
                     expected_sha = resp.headers.get('X-Dasovbot-Sha256')
@@ -292,6 +292,19 @@ class SyncClient:
         await self._persist(**{META_LAST_SNAPSHOT_AT: self.last_snapshot_at, META_LAST_SYNC_AT: self.last_sync_at,
                                META_LAST_SYNC_REV: self.last_sync_rev})
         logger.info("snapshot from %s applied: %s", self.peer_name, result['changed'])
+
+    @staticmethod
+    async def _snapshot_http_error(resp: aiohttp.ClientResponse) -> SyncError:
+        """`snapshot: HTTP 500: <the peer's reason>`, flagged when the peer has alerted the developer itself."""
+        detail, alerted = '', False
+        try:
+            body = await resp.json(content_type=None)
+            if isinstance(body, dict):
+                detail, alerted = str(body.get('error') or ''), bool(body.get('alerted'))
+        except (ValueError, aiohttp.ClientError):
+            pass
+        message = f'snapshot: HTTP {resp.status}' + (f': {detail}' if detail else '')
+        return SyncError(message, peer_alerted=alerted)
 
     async def maybe_snapshot(self) -> bool:
         """Hourly self-healing floor; the first call only arms the timer. After a failure the

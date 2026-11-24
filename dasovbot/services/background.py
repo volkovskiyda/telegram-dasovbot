@@ -4,7 +4,9 @@ import asyncio
 import glob
 import logging
 import os
+import re
 import shutil
+import sqlite3
 import time
 from functools import partial
 from typing import TYPE_CHECKING
@@ -229,6 +231,33 @@ def newest_backup_age(backup_dir: str) -> float | None:
     return None if newest is None else time.time() - newest
 
 
+CORRUPT_BACKUP_RE = re.compile(r'bot\.db\.corrupt_\d{8}_\d{6}')
+
+
+def newest_corrupt_backup(backup_dir: str) -> str | None:
+    """The newest backup that backup.py set aside as damaged (bot.db.corrupt_*), unless a good one is newer.
+
+    Blocking (directory scan): call it through an executor from async code.
+    """
+    corrupt = [p for p in glob.glob(os.path.join(backup_dir, 'bot.db.corrupt_*'))
+               if CORRUPT_BACKUP_RE.fullmatch(os.path.basename(p))]
+    if not corrupt:
+        return None
+    newest = max(corrupt, key=os.path.getmtime)
+    good = max((os.path.getmtime(p) for p in glob.glob(os.path.join(backup_dir, 'bot.db.backup_*'))), default=None)
+    return newest if good is None or os.path.getmtime(newest) > good else None
+
+
+def describe_corrupt_backup(path: str) -> str:
+    """Why `path` fails validation now (blocking). The damage may have been in the page cache only."""
+    from dasovbot.database import validate_snapshot
+    try:
+        validate_snapshot(path)
+    except (ValueError, sqlite3.DatabaseError) as e:
+        return str(e)
+    return 'it failed when written but passes now (the damage was in memory, not on disk)'
+
+
 async def prune_tombstones(state: BotState):
     """Hourly: drop tombstones older than TOMBSTONE_RETENTION_SEC (see database.prune_tombstones)."""
     from datetime import datetime, timedelta
@@ -253,12 +282,15 @@ async def monitor_backups(bot: Bot, state: BotState):
     Covers every failure mode at once — cron not running, the backup script
     erroring, or a misrouted path producing no fresh files — by watching the
     age of the newest backup rather than the job itself. Alerts once per stale
-    episode and re-arms when a fresh backup reappears.
+    episode and re-arms when a fresh backup reappears. Also alerts once per
+    backup that backup.py rejected as damaged (see _check_corrupt_backup): the
+    job ran, but what it copied out of this node's database was broken.
     """
     from dasovbot.constants import BACKUP_CHECK_INTERVAL_SEC, BACKUP_STALE_SEC
 
     backup_dir = os.path.dirname(state.config.db_file) or '.'
     alerted = False
+    corrupt_seen: dict = {}
     while True:
         try:
             loop = asyncio.get_running_loop()
@@ -282,10 +314,40 @@ async def monitor_backups(bot: Bot, state: BotState):
             else:
                 state.clear_alert('backup_stale')
                 alerted = False
+            await _check_corrupt_backup(bot, state, backup_dir, corrupt_seen)
             state.background_task_status['monitor_backups'] = now()
         except Exception:
             logger.error("monitor_backups error", exc_info=True)
         await asyncio.sleep(BACKUP_CHECK_INTERVAL_SEC)
+
+
+async def _check_corrupt_backup(bot: Bot, state: BotState, backup_dir: str, seen: dict):
+    """Alert once per backup that backup.py set aside as damaged (bot.db.corrupt_*).
+
+    The dashboard alert stays until a newer good backup exists. `seen` keeps
+    the file already described and whether the developer has been told.
+    """
+    loop = asyncio.get_running_loop()
+    corrupt = await loop.run_in_executor(None, newest_corrupt_backup, backup_dir)
+    if corrupt is None:
+        state.clear_alert('backup_corrupt')
+        seen.clear()
+        return
+    if seen.get('path') != corrupt:
+        seen.clear()
+        seen['path'] = corrupt
+        seen['reason'] = await loop.run_in_executor(None, describe_corrupt_backup, corrupt)
+    text = (f"{state.config.node_name}: database backup {os.path.basename(corrupt)} failed validation and was "
+            f"set aside: {seen['reason']}. Check this node's database and its RAM/disk before the next restart.")
+    state.set_alert('backup_corrupt', text, level='error')
+    if seen.get('alerted'):
+        return
+    try:
+        await bot.send_message(chat_id=state.config.developer_chat_id, text=f"⚠️ {text}")
+        logger.error(text)
+        seen['alerted'] = True  # latch only after a successful send, so a failed alert retries
+    except Exception:
+        logger.error("monitor_backups: failed to alert developer", exc_info=True)
 
 
 def check_disk_space(paths: dict[str, str], min_free_bytes: int) -> list[dict]:

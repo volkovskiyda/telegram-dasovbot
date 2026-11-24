@@ -2,9 +2,11 @@ import os
 import sqlite3
 import tempfile
 import unittest
+from contextlib import closing
 from unittest.mock import MagicMock, patch
 
 from backup import create_backup, main, prune_backups, node_is_active
+from dasovbot.database import SCHEMA
 
 
 def active_health(role='active'):
@@ -102,8 +104,12 @@ class TestMain(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.db_path = os.path.join(self.tmp.name, 'bot.db')
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute('CREATE TABLE videos (url TEXT PRIMARY KEY, data TEXT)')
+        # The real schema in WAL mode, like the live database: every backup is validated
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            conn.execute('PRAGMA journal_mode=WAL')
+            conn.executescript(SCHEMA)
+            conn.execute("INSERT INTO videos (key, data) VALUES ('v', '{\"title\": \"T\"}')")
+            conn.commit()
         # Default: this node is ACTIVE (the pre-HA behaviour)
         patcher = patch('backup.urllib.request.urlopen', return_value=active_health('active'))
         self.urlopen = patcher.start()
@@ -178,6 +184,55 @@ class TestMain(unittest.TestCase):
                 with self.assertRaises(SystemExit) as ctx:
                     main()
         self.assertEqual(ctx.exception.code, 1)
+
+    def test_valid_backup_leaves_no_partial_or_wal_files(self):
+        with patch.dict(os.environ, self._env()):
+            main()
+        names = set(os.listdir(self.tmp.name))
+        self.assertEqual(len(self._backups()), 1)
+        self.assertFalse([n for n in names if n.startswith(('bot.db.partial_', 'bot.db.corrupt_'))], names)
+        self.assertFalse([n for n in names if n.startswith('bot.db.backup_') and n.endswith(('-wal', '-shm'))],
+                         'validation opens the WAL-mode copy immutable: nothing lands in the Syncthing folder')
+
+    def corrupt_live_row(self):
+        # Nov 2026: a bad RAM frame flipped bits in a cached page of the live database
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            conn.execute("UPDATE videos SET data = ? WHERE key = 'v'", ('{"title" "T"}',))
+            conn.commit()
+
+    def test_damaged_backup_is_set_aside_and_exits_1(self):
+        self.corrupt_live_row()
+        with patch.dict(os.environ, self._env()):
+            with self.assertRaises(SystemExit) as ctx:
+                main()
+        self.assertEqual(ctx.exception.code, 1)
+        self.assertEqual(self._backups(), [], 'a damaged copy never carries the backup name')
+        names = os.listdir(self.tmp.name)
+        corrupt = [n for n in names if n.startswith('bot.db.corrupt_')]
+        self.assertEqual(len(corrupt), 1, names)
+        self.assertFalse([n for n in names if n.startswith('bot.db.partial_')])
+
+    def test_only_the_newest_damaged_backup_is_kept(self):
+        old = os.path.join(self.tmp.name, 'bot.db.corrupt_20200101_000000')
+        with open(old, 'w') as f:
+            f.write('x')
+        self.corrupt_live_row()
+        with patch.dict(os.environ, self._env()):
+            with self.assertRaises(SystemExit):
+                main()
+        corrupt = [n for n in os.listdir(self.tmp.name) if n.startswith('bot.db.corrupt_')]
+        self.assertEqual(len(corrupt), 1)
+        self.assertNotIn('bot.db.corrupt_20200101_000000', corrupt)
+
+    def test_good_backups_are_untouched_by_a_rejected_one(self):
+        good = os.path.join(self.tmp.name, 'bot.db.backup_20200101_000000')
+        with open(good, 'w') as f:
+            f.write('x')
+        self.corrupt_live_row()
+        with patch.dict(os.environ, self._env()):
+            with self.assertRaises(SystemExit):
+                main()
+        self.assertEqual(self._backups(), ['bot.db.backup_20200101_000000'])
 
 
 if __name__ == '__main__':

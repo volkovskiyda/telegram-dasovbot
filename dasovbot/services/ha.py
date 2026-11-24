@@ -44,7 +44,15 @@ class HaError(Exception):
 
 
 class SyncError(Exception):
-    """Pulling the peer's data failed; the caller keeps the node PASSIVE."""
+    """Pulling the peer's data failed; the caller keeps the node PASSIVE.
+
+    `peer_alerted`: the peer reported the failure as its own fault and has
+    told the developer itself, so this node only logs it.
+    """
+
+    def __init__(self, message: str = '', *, peer_alerted: bool = False):
+        super().__init__(message)
+        self.peer_alerted = peer_alerted
 
 
 class PeerClient(Protocol):
@@ -437,6 +445,10 @@ class RoleController:
         try:
             applied = await self.peer.maybe_snapshot()
         except SyncError as e:
+            if e.peer_alerted:
+                logger.warning("snapshot from %s failed and %s alerted the developer itself: %s",
+                               self.peer_name, self.peer_name, e)
+                return
             await self.notifier.error(f"⚠️ {self.node} sync error: {e}", key='snapshot')
             return
         if applied:

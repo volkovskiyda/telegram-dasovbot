@@ -275,6 +275,16 @@ class TestPassiveFollowing(ControllerTestCase):
         await self.tick(ctl)
         self.assertEqual(self.notifier.resolutions[-1], ('snapshot', '✅ me snapshot from other applied again'))
 
+    async def test_snapshot_failure_the_peer_alerted_about_is_only_logged(self):
+        self.peer.reply = self.active_reply()
+        self.peer.snapshot_error = SyncError('snapshot: HTTP 500: snapshot failed validation on other',
+                                             peer_alerted=True)
+        ctl = await self.started('standby')
+        with self.assertLogs('dasovbot.services.ha', level='WARNING') as cm:
+            await self.tick(ctl)
+        self.assertEqual(self.notifier.errors, [])
+        self.assertIn('alerted the developer itself', '\n'.join(cm.output))
+
     async def test_returning_node_reconciles_once_per_handoff(self):
         self.peer.reply = self.active_reply(handoff_rev=90)
         self.peer.touched = {('videos', 'B')}

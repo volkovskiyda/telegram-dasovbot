@@ -170,7 +170,7 @@ constraints.txt        # Exact transitive versions (applied by requirements.txt)
 info.py                # CLI: video info lookup
 subscriptions.py       # CLI: bulk subscription import straight into bot.db (superseded by `dasovbot subscribe`)
 empty_media_folder.py  # CLI: clear media folder
-backup.py              # CLI: SQLite online backup
+backup.py              # CLI: SQLite online backup, validated before it gets the backup name
 preview_dashboard.py   # CLI: start the dashboard with mock data
 conftest.py            # Pytest config (silences PTB warnings)
 run_tests.sh           # Full test suite runner (unit + integration + E2E)
@@ -192,7 +192,7 @@ entrypoint.sh          # Docker entrypoint (cron + bot; backup schedule from BAC
 - Subscription polling (hourly)
 - Intent queue processing
 - Inline query cache cleanup (10 min)
-- Backup freshness monitoring (hourly; alerts the developer if backups stop)
+- Backup monitoring (hourly; alerts the developer if backups stop, or once per backup that `backup.py` rejected as damaged)
 - Media folder sweep (hourly; removes leftover files older than 6 hours)
 - Disk space monitoring (hourly; a dashboard alert and one developer message per episode when the media, export or data volume has less than `DISK_FREE_MIN_GB` free)
 - Tombstone pruning (hourly; change-feed tombstones older than 30 days)

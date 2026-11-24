@@ -5,6 +5,7 @@ import logging
 import os
 import sqlite3
 import time
+import urllib.parse
 from contextlib import closing
 
 import aiosqlite
@@ -574,14 +575,20 @@ def file_sha256(path: str) -> str:
 
 
 def validate_snapshot(path: str):
-    """Raise ValueError when a downloaded snapshot is damaged (blocking: run it in an executor).
+    """Raise ValueError (or sqlite3.DatabaseError) when a snapshot or backup file is damaged.
 
-    The checksum only covers the transfer: a bit flip on the serving host
-    lands before the hash is taken. A row whose JSON no longer parses would
-    otherwise be reconciled into the live database and only fail later, in
-    reload_from_db.
+    Blocking: run it in an executor. The checksum only covers the transfer: a
+    bit flip on the serving host lands before the hash is taken. A row whose
+    JSON no longer parses would otherwise be reconciled into the live
+    database and only fail later, in reload_from_db. The serving node checks
+    its own snapshot before streaming it, and backup.py every backup.
+
+    The file is opened read-only and immutable: a backup-API copy of a WAL
+    database is itself in WAL mode, and a normal open would create -wal/-shm
+    files next to it (in the Syncthing folder, for a backup).
     """
-    with closing(sqlite3.connect(path)) as conn:
+    uri = f'file:{urllib.parse.quote(os.path.abspath(path))}?mode=ro&immutable=1'
+    with closing(sqlite3.connect(uri, uri=True)) as conn:
         result = conn.execute("PRAGMA quick_check").fetchone()[0]
         if result != 'ok':
             raise ValueError(f'quick_check: {result}')

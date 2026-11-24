@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Create a timestamped backup of bot.db using SQLite's online backup API."""
+"""Create a timestamped backup of bot.db using SQLite's online backup API.
+
+The copy is written as bot.db.partial_<ts>, validated (quick_check + every
+row's JSON, as for an HA snapshot) and only then renamed to
+bot.db.backup_<ts>. A copy that fails is set aside as bot.db.corrupt_<ts>
+(the newest one is kept) and the script exits 1; the bot's hourly backup
+monitor alerts the developer about it. Neither name matches bot.db.backup_*,
+so retention, the freshness monitor and the data-missing check never take a
+partial or damaged file for a backup.
+"""
 
 import glob
 import json
@@ -10,6 +19,13 @@ import urllib.error
 import urllib.request
 from contextlib import closing
 from datetime import datetime
+
+from dasovbot.database import validate_snapshot
+
+BACKUP_PREFIX = 'bot.db.backup_'
+PARTIAL_PREFIX = 'bot.db.partial_'
+CORRUPT_PREFIX = 'bot.db.corrupt_'
+CORRUPT_KEPT = 1
 
 
 def create_backup(db_path: str, backup_path: str):
@@ -30,12 +46,12 @@ def create_backup(db_path: str, backup_path: str):
         raise
 
 
-def prune_backups(backup_dir: str, max_count: int):
+def prune_backups(backup_dir: str, max_count: int, prefix: str = BACKUP_PREFIX):
     backups = []
-    for path in glob.glob(os.path.join(backup_dir, 'bot.db.backup_*')):
+    for path in glob.glob(os.path.join(backup_dir, f'{prefix}*')):
         name = os.path.basename(path)
         try:
-            backup_time = datetime.strptime(name, 'bot.db.backup_%Y%m%d_%H%M%S')
+            backup_time = datetime.strptime(name, f'{prefix}%Y%m%d_%H%M%S')
         except ValueError:
             continue
         backups.append((backup_time, path))
@@ -86,13 +102,24 @@ def main():
         sys.exit(1)
 
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    backup_path = os.path.join(backup_dir, f'bot.db.backup_{timestamp}')
+    backup_path = os.path.join(backup_dir, f'{BACKUP_PREFIX}{timestamp}')
+    partial_path = os.path.join(backup_dir, f'{PARTIAL_PREFIX}{timestamp}')
 
     try:
-        create_backup(db_path, backup_path)
+        create_backup(db_path, partial_path)
     except Exception as e:
         print(f"Backup failed: {e}", file=sys.stderr)
         sys.exit(1)
+
+    try:
+        validate_snapshot(partial_path)
+    except (ValueError, sqlite3.DatabaseError) as e:
+        corrupt_path = os.path.join(backup_dir, f'{CORRUPT_PREFIX}{timestamp}')
+        os.replace(partial_path, corrupt_path)
+        prune_backups(backup_dir, CORRUPT_KEPT, prefix=CORRUPT_PREFIX)
+        print(f"Backup rejected, set aside as {corrupt_path}: {e}", file=sys.stderr)
+        sys.exit(1)
+    os.replace(partial_path, backup_path)
 
     size = os.path.getsize(backup_path)
     print(f"Backup created: {backup_path} ({size} bytes)")

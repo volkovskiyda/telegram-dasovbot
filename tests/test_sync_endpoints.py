@@ -32,6 +32,8 @@ def make_controller(role='active', **status):
         'last_heartbeat_at': '20261007_120005', 'last_snapshot_at': None, **status,
     }
     ha.handoff_requested_by_peer = AsyncMock(return_value={'accepted': True, 'role': 'draining', 'drained': False})
+    ha.notifier.error = AsyncMock()
+    ha.notifier.resolved = AsyncMock()
     return ha
 
 
@@ -161,6 +163,43 @@ class TestSnapshot(SyncEndpointTestCase):
 
     async def test_snapshot_requires_secret(self):
         self.assertEqual((await self.client.get('/sync/snapshot')).status, 401)
+
+
+class TestSnapshotValidation(SyncEndpointTestCase):
+    def setUp(self):
+        self.controller = make_controller(role='active')
+        super().setUp()
+
+    async def test_damaged_copy_is_refused_with_one_alert_from_this_node(self):
+        # Nov 2026: a bad RAM frame on the primary's host flipped bits in a cached
+        # page of bot.db; the standby rejected the download every 20 s for 7 hours
+        await self.state.set_video('v', VideoInfo(title='T'))
+        await self.state.db.execute("UPDATE videos SET data = ? WHERE key = 'v'", ('{"title" "T"}',))
+        await self.state.db.commit()
+        tmp = tempfile.mkdtemp()
+        known = os.path.join(tmp, 'snap.db')
+        fd = os.open(known, os.O_CREAT | os.O_WRONLY)
+        with patch('dasovbot.dashboard.sync.mkstemp', return_value=(fd, known)):
+            resp = await self.client.get('/sync/snapshot', headers=AUTH)
+        self.assertEqual(resp.status, 500)
+        body = await resp.json()
+        self.assertTrue(body['alerted'])
+        self.assertIn("snapshot failed validation on me: videos 'v': bad JSON", body['error'])
+        self.assertFalse(os.path.exists(known), 'temp file removed')
+        self.controller.notifier.error.assert_awaited_once()
+        text = self.controller.notifier.error.await_args.args[0]
+        self.assertTrue(text.startswith("⚠️ me refused to serve its snapshot: videos 'v': bad JSON"), text)
+        self.assertEqual(self.controller.notifier.error.await_args.kwargs, {'key': 'snapshot_serve'})
+        self.controller.notifier.resolved.assert_not_awaited()
+
+    async def test_valid_copy_ends_an_open_serve_episode(self):
+        await self.state.set_video('v', VideoInfo(title='T'))
+        resp = await self.client.get('/sync/snapshot', headers=AUTH)
+        self.assertEqual(resp.status, 200)
+        await resp.read()
+        self.controller.notifier.resolved.assert_awaited_once_with(
+            'snapshot_serve', '✅ me serves a valid snapshot again')
+        self.controller.notifier.error.assert_not_awaited()
 
 
 class TestHandoff(SyncEndpointTestCase):

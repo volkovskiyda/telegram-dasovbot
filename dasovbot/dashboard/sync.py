@@ -5,6 +5,7 @@ import asyncio
 import logging
 import os
 import socket
+import sqlite3
 from tempfile import mkstemp
 from datetime import datetime, timedelta
 
@@ -12,7 +13,7 @@ from aiohttp import web
 
 from dasovbot.constants import DATETIME_FORMAT, HA_ROLE_ACTIVE, HA_ROLE_DRAINING, SYNC_PAGE_SIZE
 from dasovbot.dashboard.views import get_ha, get_state
-from dasovbot.database import file_sha256, read_changes, write_snapshot
+from dasovbot.database import file_sha256, read_changes, validate_snapshot, write_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -80,16 +81,48 @@ async def sync_changes(request: web.Request) -> web.Response:
     return web.json_response(page)
 
 
+async def _refuse_snapshot(state, notifier, error: Exception) -> web.Response:
+    """The copy of this node's own database failed validation: tell the developer, not the peer's data.
+
+    A damaged row here was read through this node's page cache (Nov 2026: a
+    bad RAM frame on the primary's host flipped bits in a cached page while
+    the file on disk stayed intact), so a restart of this node may fail to
+    load it too. The 500 body carries `alerted` so the puller only logs it.
+    """
+    node = _node_name(state)
+    text = (f"⚠️ {node} refused to serve its snapshot: {error}. The database this node reads is damaged "
+            f"(bad RAM or disk); a restart may fail to load it")
+    alerted = notifier is not None
+    if alerted:
+        await notifier.error(text, key='snapshot_serve')
+    else:
+        logger.error(text)
+    return web.json_response({'error': f'snapshot failed validation on {node}: {error}', 'alerted': alerted},
+                             status=500)
+
+
 async def sync_snapshot(request: web.Request) -> web.StreamResponse:
-    """Stream a consistent SQLite copy of the live database (backup API into a temp file)."""
+    """Stream a consistent SQLite copy of the live database (backup API into a temp file).
+
+    The copy is validated first (validate_snapshot, as the puller does): a
+    damaged one is refused here, with one alert from this node, instead of
+    being downloaded and rejected by the peer on every retry.
+    """
     state = get_state(request)
     # System temp dir, never under /data: Syncthing would ship the file
     fd, path = mkstemp(prefix='dasovbot-snapshot-', suffix='.db')
     os.close(fd)
     try:
         await write_snapshot(state.db, path)
-        size = os.path.getsize(path)
         loop = asyncio.get_running_loop()
+        notifier = getattr(get_ha(request), 'notifier', None)
+        try:
+            await loop.run_in_executor(None, validate_snapshot, path)
+        except (ValueError, sqlite3.DatabaseError) as e:
+            return await _refuse_snapshot(state, notifier, e)
+        if notifier is not None:
+            await notifier.resolved('snapshot_serve', f"✅ {_node_name(state)} serves a valid snapshot again")
+        size = os.path.getsize(path)
         response = web.StreamResponse(headers={
             'Content-Type': 'application/x-sqlite3',
             'Content-Length': str(size),

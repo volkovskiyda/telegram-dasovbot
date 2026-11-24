@@ -217,13 +217,34 @@ class TestSnapshot(SyncClientTestCase):
         self.assertEqual([r[0] for r in await cursor.fetchall()], ['stale'])
         self.assertIsNone(self.client.last_snapshot_at)
 
-    async def test_snapshot_with_bad_json_row_is_rejected_before_reconcile(self):
-        # Oct 2026: a bit flip on the serving host broke one videos row; it was
-        # reconciled in and reload_from_db failed afterwards
+    async def damage_peer_row(self):
         await self.peer_state.set_video('v', VideoInfo(title='T'))
         await self.peer_state.db.execute("UPDATE videos SET data = ? WHERE key = 'v'", ('{"title" "T"}',))
         await self.peer_state.db.commit()
-        await self.assert_rejected_untouched("videos 'v': bad JSON")
+
+    async def test_snapshot_with_bad_json_row_is_rejected_before_reconcile(self):
+        # Oct 2026: a bit flip on the serving host broke one videos row; it was
+        # reconciled in and reload_from_db failed afterwards. A peer that
+        # predates its own check (or a flip after it) still sends such a file
+        await self.damage_peer_row()
+        with patch('dasovbot.dashboard.sync.validate_snapshot'):
+            await self.assert_rejected_untouched("videos 'v': bad JSON")
+
+    async def test_peer_refuses_its_own_damaged_snapshot_and_alerts_itself(self):
+        # Nov 2026: the damaged row sat in the serving node's page cache; the
+        # standby downloaded and rejected it every tick for 7 hours
+        await self.damage_peer_row()
+        await self.local.set_video('stale', VideoInfo(title='old'))
+        await self.client.heartbeat()
+        with self.assertRaises(SyncError) as ctx:
+            await self.client.pull_snapshot()
+        self.assertTrue(ctx.exception.peer_alerted)
+        self.assertIn("snapshot: HTTP 500: snapshot failed validation on other: videos 'v': bad JSON",
+                      str(ctx.exception))
+        self.assertEqual(set(self.local.videos), {'stale'})
+        self.peer_ctl.notifier.error.assert_awaited_once()
+        self.assertEqual(self.peer_ctl.notifier.error.await_args.kwargs, {'key': 'snapshot_serve'})
+        self.assertIn('refused to serve its snapshot', self.peer_ctl.notifier.error.await_args.args[0])
 
     async def test_failed_snapshot_backs_off_5_min_doubling_to_the_hour(self):
         await self.client.heartbeat()
