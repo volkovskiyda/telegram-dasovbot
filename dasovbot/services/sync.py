@@ -22,7 +22,8 @@ import aiohttp
 
 from dasovbot.config import Config
 from dasovbot.constants import (
-    DATETIME_FORMAT, SNAPSHOT_INTERVAL_SEC, SYNC_ERROR_NOTIFY_INTERVAL_SEC, SYNC_PAGE_SIZE, TRANSITION_COLLAPSE_SEC,
+    DATETIME_FORMAT, SNAPSHOT_INTERVAL_SEC, SNAPSHOT_RETRY_MIN_SEC, SYNC_ERROR_NOTIFY_INTERVAL_SEC, SYNC_PAGE_SIZE,
+    TRANSITION_COLLAPSE_SEC,
 )
 from dasovbot.database import get_meta, set_meta, last_applied_key, reconcile_from_snapshot, validate_snapshot
 from dasovbot.services.ha import SyncError  # noqa: F401 — re-exported: the port's contract lives in ha.py
@@ -45,6 +46,17 @@ def _now() -> str:
     return datetime.now().strftime(DATETIME_FORMAT)
 
 
+def fmt_span(seconds: float) -> str:
+    """`45 s`, `12 min`, `7 h 24 min`."""
+    seconds = int(round(seconds))
+    if seconds < 60:
+        return f'{seconds} s'
+    hours, minutes = divmod(seconds // 60, 60)
+    if not hours:
+        return f'{minutes} min'
+    return f'{hours} h {minutes} min' if minutes else f'{hours} h'
+
+
 class SyncClient:
     def __init__(self, config: Config, state: BotState, notifier=None,
                  session_factory=aiohttp.ClientSession, clock=time.monotonic):
@@ -60,6 +72,8 @@ class SyncClient:
         self.last_sync_rev: int | None = None
         self.last_snapshot_at: str | None = None
         self._last_snapshot_mono: float | None = None
+        self.snapshot_failures = 0                    # consecutive; cleared by an applied snapshot
+        self._snapshot_retry_at: float | None = None  # monotonic: no new snapshot download before this
 
     # --- lifecycle ----------------------------------------------------------
 
@@ -162,6 +176,10 @@ class SyncClient:
             # when the controller asked for a reconcile pull from a given rev
             # (a fresh node has no survivors, but a partial feed would leave
             # it "ready" with a near-empty database)
+            wait = self.snapshot_retry_in()
+            if wait is not None:
+                raise SyncError(f'bootstrap snapshot failed {self.snapshot_failures}× in a row; '
+                                f'next try in {fmt_span(wait)}')
             await self.pull_snapshot()
             cursor = int(await get_meta(self.state.db, cursor_key, 0) or 0)
             since = cursor if since is None else max(int(since), cursor)
@@ -202,8 +220,34 @@ class SyncClient:
             logger.info("synced %d changes from %s (rev %s, %d pages)", applied, self.peer_name, since, pages)
         return {'applied': applied, 'touched': touched}
 
+    def snapshot_retry_in(self) -> float | None:
+        """Seconds until a failed snapshot may be downloaded again, None when nothing holds it back."""
+        if self._snapshot_retry_at is None:
+            return None
+        remaining = self._snapshot_retry_at - self.clock()
+        return remaining if remaining > 0 else None
+
     async def pull_snapshot(self):
-        """Download the peer's snapshot into a temp file and reconcile the local database from it."""
+        """Download the peer's snapshot into a temp file and reconcile the local database from it.
+
+        A failure arms the retry backoff (SNAPSHOT_RETRY_MIN_SEC doubling per
+        consecutive failure, capped at SNAPSHOT_INTERVAL_SEC) that
+        maybe_snapshot and the bootstrap honour; the SyncError says when the
+        next try is due. An applied snapshot clears it.
+        """
+        try:
+            await self._download_and_apply_snapshot()
+        except SyncError as e:
+            self.snapshot_failures += 1
+            delay = min(SNAPSHOT_RETRY_MIN_SEC * 2 ** (self.snapshot_failures - 1), SNAPSHOT_INTERVAL_SEC)
+            self._snapshot_retry_at = self.clock() + delay
+            logger.warning("snapshot from %s failed (%d in a row), next try in %s: %s",
+                           self.peer_name, self.snapshot_failures, fmt_span(delay), e)
+            raise SyncError(f'{e}; next try in {fmt_span(delay)}') from e
+        self.snapshot_failures = 0
+        self._snapshot_retry_at = None
+
+    async def _download_and_apply_snapshot(self):
         fd, path = mkstemp(prefix='dasovbot-snapshot-', suffix='.db')
         os.close(fd)
         # Without sock_read a stalled stream (peer host lost power, no RST)
@@ -249,14 +293,20 @@ class SyncClient:
                                META_LAST_SYNC_REV: self.last_sync_rev})
         logger.info("snapshot from %s applied: %s", self.peer_name, result['changed'])
 
-    async def maybe_snapshot(self):
-        """Hourly self-healing floor; the first call only arms the timer."""
+    async def maybe_snapshot(self) -> bool:
+        """Hourly self-healing floor; the first call only arms the timer. After a failure the
+        next try waits for the backoff instead of the hour. True when a snapshot was applied."""
         now = self.clock()
-        if self._last_snapshot_mono is None:
+        if self._snapshot_retry_at is not None:
+            if now < self._snapshot_retry_at:
+                return False
+        elif self._last_snapshot_mono is None:
             self._last_snapshot_mono = now
-            return
-        if now - self._last_snapshot_mono >= SNAPSHOT_INTERVAL_SEC:
-            await self.pull_snapshot()
+            return False
+        elif now - self._last_snapshot_mono < SNAPSHOT_INTERVAL_SEC:
+            return False
+        await self.pull_snapshot()
+        return True
 
     async def on_handed_back(self):
         """This node just stopped being ACTIVE: its data is current as of now.

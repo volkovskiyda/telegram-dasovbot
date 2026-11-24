@@ -105,6 +105,10 @@ MAX_CONCURRENT_UPDATES = 16
 # FAILBACK_STABLE_SEC are env-tunable per node)
 SYNC_PAGE_SIZE = 500  # rows per /sync/changes page
 SNAPSHOT_INTERVAL_SEC = 60 * 60  # passive node pulls a full snapshot hourly (self-healing floor)
+# A failed snapshot is retried after SNAPSHOT_RETRY_MIN_SEC, doubling per
+# consecutive failure up to SNAPSHOT_INTERVAL_SEC: a damaged row on the peer
+# used to be re-downloaded (83 MB) on every 20 s tick
+SNAPSHOT_RETRY_MIN_SEC = 5 * 60
 SYNC_ERROR_NOTIFY_INTERVAL_SEC = 10 * 60  # developer hears about sync errors at most this often
 
 # VPN status poller against the gluetun control server (services/vpn.py)

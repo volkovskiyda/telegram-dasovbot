@@ -61,8 +61,9 @@ class PeerClient(Protocol):
 
     async def pull_snapshot(self) -> None: ...
 
-    async def maybe_snapshot(self) -> None:
-        """Called after each passive pull: the hourly snapshot reconcile, when due. Raises SyncError."""
+    async def maybe_snapshot(self) -> bool:
+        """Called after each passive pull: the hourly snapshot reconcile, when due (after a failure:
+        when its backoff is over). True when a snapshot was applied. Raises SyncError."""
 
     async def on_handed_back(self) -> None:
         """This node just left ACTIVE: its data is current, move the cursors accordingly."""

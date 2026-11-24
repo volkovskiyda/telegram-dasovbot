@@ -225,6 +225,54 @@ class TestSnapshot(SyncClientTestCase):
         await self.peer_state.db.commit()
         await self.assert_rejected_untouched("videos 'v': bad JSON")
 
+    async def test_failed_snapshot_backs_off_5_min_doubling_to_the_hour(self):
+        await self.client.heartbeat()
+        attempts = []
+
+        async def fail():
+            attempts.append(self.t)
+            raise SyncError('snapshot rejected: boom')
+        with patch.object(self.client, '_download_and_apply_snapshot', side_effect=fail):
+            await self.client.maybe_snapshot()          # arms the timer
+            self.t += 3600
+            with self.assertRaises(SyncError) as ctx:
+                await self.client.maybe_snapshot()
+            self.assertEqual(str(ctx.exception), 'snapshot rejected: boom; next try in 5 min')
+            for wait in (300, 600, 1200, 2400, 3600, 3600):
+                self.t += wait - 1
+                self.assertFalse(await self.client.maybe_snapshot(), 'no download before the backoff is over')
+                self.t += 1
+                with self.assertRaises(SyncError):
+                    await self.client.maybe_snapshot()
+        self.assertEqual(attempts, [3600, 3900, 4500, 5700, 8100, 11700, 15300])
+        self.assertEqual(self.client.snapshot_failures, 7)
+
+    async def test_applied_snapshot_clears_the_backoff(self):
+        await self.peer_state.set_video('v', VideoInfo(title='T'))
+        await self.client.heartbeat()
+        with patch.object(self.client, '_download_and_apply_snapshot', side_effect=SyncError('boom')):
+            with self.assertRaises(SyncError):
+                await self.client.pull_snapshot()
+        self.assertEqual(self.client.snapshot_retry_in(), 300)
+        self.t += 300
+        self.assertTrue(await self.client.maybe_snapshot())
+        self.assertEqual((self.client.snapshot_failures, self.client.snapshot_retry_in()), (0, None))
+        self.t += 3599
+        with patch.object(self.client, 'pull_snapshot', new_callable=AsyncMock) as spy:
+            self.assertFalse(await self.client.maybe_snapshot(), 'back on the hourly schedule')
+            spy.assert_not_awaited()
+
+    async def test_bootstrap_honours_the_backoff(self):
+        await self.peer_state.set_video('v', VideoInfo(title='T'))
+        await self.client.heartbeat()
+        with patch.object(self.client, '_download_and_apply_snapshot', side_effect=SyncError('boom')) as download:
+            with self.assertRaises(SyncError):
+                await self.client.pull_changes()
+            with self.assertRaises(SyncError) as ctx:
+                await self.client.pull_changes()
+        self.assertEqual(download.await_count, 1, 'an empty node does not re-download every tick either')
+        self.assertEqual(str(ctx.exception), 'bootstrap snapshot failed 1× in a row; next try in 5 min')
+
     async def test_snapshot_checksum_mismatch_is_rejected(self):
         await self.peer_state.set_video('v', VideoInfo(title='T'))
         with patch('dasovbot.dashboard.sync.file_sha256', return_value='0' * 64):
