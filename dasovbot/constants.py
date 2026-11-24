@@ -109,7 +109,13 @@ SNAPSHOT_INTERVAL_SEC = 60 * 60  # passive node pulls a full snapshot hourly (se
 # consecutive failure up to SNAPSHOT_INTERVAL_SEC: a damaged row on the peer
 # used to be re-downloaded (83 MB) on every 20 s tick
 SNAPSHOT_RETRY_MIN_SEC = 5 * 60
-SYNC_ERROR_NOTIFY_INTERVAL_SEC = 10 * 60  # developer hears about sync errors at most this often
+# Developer error alerts come in episodes per kind: the first failure is sent
+# at once, repeats only as an hourly "still failing" reminder, the recovery as
+# one message. An episode nobody resolves ends after ERROR_EPISODE_IDLE_SEC
+# without a repeat (longer than the slowest snapshot retry)
+ERROR_REMIND_INTERVAL_SEC = 60 * 60
+ERROR_EPISODE_IDLE_SEC = 2 * 60 * 60
+SYNC_RECOVERY_CONFIRM_SEC = 60  # the feed must pull cleanly this long before "syncing again" is sent
 
 # VPN status poller against the gluetun control server (services/vpn.py)
 VPN_POLL_INTERVAL_SEC = 60

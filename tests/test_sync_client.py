@@ -416,16 +416,83 @@ class TestDeveloperNotifier(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([(e['kind'], e['text']) for e in state.ha_events], [('transition', '🟡 me drained')])
         self.bot.send_message.assert_not_awaited()
 
-    async def test_errors_rate_limited_to_one_per_interval(self):
+    def sent(self):
+        return [(c.kwargs['text'], c.kwargs.get('disable_notification', False))
+                for c in self.bot.send_message.await_args_list]
+
+    async def test_error_episode_first_sent_then_one_silent_reminder_per_hour(self):
+        # Nov 2026: one rejected snapshot every 20 s became a message every 10 min for 7 hours
         self.notifier.attach_bot(self.bot)
-        await self.notifier.error('a')
-        self.t += 599
-        await self.notifier.error('b')
-        self.assertEqual(self.bot.send_message.await_count, 1)
+        await self.notifier.error('⚠️ a', key='snapshot')
+        self.t += 1800
+        await self.notifier.error('⚠️ b', key='snapshot')
+        self.t += 1799
+        await self.notifier.error('⚠️ c', key='snapshot')
+        self.assertEqual(self.sent(), [('⚠️ a', False)])
         self.t += 1
-        await self.notifier.error('c')
-        self.assertEqual(self.bot.send_message.await_count, 2)
-        self.bot.send_message.assert_awaited_with(chat_id='42', text='c')
+        await self.notifier.error('⚠️ d', key='snapshot')
+        self.assertEqual(self.sent()[1], ('⚠️ d\n⏳ still failing after 1 h (4 tries)', True))
+
+    async def test_episodes_are_per_key_and_the_default_key_is_shared(self):
+        self.notifier.attach_bot(self.bot)
+        await self.notifier.error('feed', key='sync')
+        await self.notifier.error('snap', key='snapshot')
+        await self.notifier.error('x')
+        await self.notifier.error('y')
+        self.assertEqual([text for text, _ in self.sent()], ['feed', 'snap', 'x'])
+
+    async def test_resolved_sends_one_silent_recovery_then_the_next_failure_alerts_again(self):
+        self.notifier.attach_bot(self.bot)
+        await self.notifier.error('⚠️ snap', key='snapshot')
+        self.t += 600
+        await self.notifier.error('⚠️ snap', key='snapshot')
+        self.t += 600
+        await self.notifier.resolved('snapshot', '✅ snapshot applied again')
+        await self.notifier.resolved('snapshot', '✅ snapshot applied again')       # nothing open: no-op
+        await self.notifier.error('⚠️ snap', key='snapshot')
+        self.assertEqual(self.sent(), [('⚠️ snap', False),
+                                       ('✅ snapshot applied again (after 20 min, 2 failed tries)', True),
+                                       ('⚠️ snap', False)])
+
+    async def test_resolved_without_text_ends_the_episode_quietly(self):
+        self.notifier.attach_bot(self.bot)
+        await self.notifier.error('⚠️ cannot take over', key='cannot_take_over')
+        await self.notifier.resolved('cannot_take_over')
+        await self.notifier.error('⚠️ cannot take over', key='cannot_take_over')
+        self.assertEqual(self.sent(), [('⚠️ cannot take over', False), ('⚠️ cannot take over', False)])
+
+    async def test_confirmed_recovery_needs_a_clean_period(self):
+        self.notifier.attach_bot(self.bot)
+        await self.notifier.error('⚠️ feed', key='sync')
+        for step, fails in ((10, False), (30, True), (10, False), (50, False)):
+            self.t += step
+            if fails:
+                await self.notifier.error('⚠️ feed', key='sync')
+            else:
+                await self.notifier.resolved('sync', '✅ syncing again', confirm_sec=60)
+        self.assertEqual(len(self.sent()), 1, 'a flapping feed does not announce a recovery')
+        self.t += 10
+        await self.notifier.resolved('sync', '✅ syncing again', confirm_sec=60)
+        self.assertEqual(self.sent()[1], ('✅ syncing again (after 1 min, 2 failed tries)', True))
+
+    async def test_unresolved_episode_ends_after_going_quiet(self):
+        from dasovbot.constants import ERROR_EPISODE_IDLE_SEC
+        self.notifier.attach_bot(self.bot)
+        await self.notifier.error('⚠️ 409', key='conflict')
+        self.t += ERROR_EPISODE_IDLE_SEC
+        await self.notifier.error('⚠️ 409', key='conflict')
+        self.assertEqual(self.sent(), [('⚠️ 409', False), ('⚠️ 409', False)])
+
+    async def test_reminder_and_recovery_recorded_in_history(self):
+        from tests.helpers import make_state
+        state = make_state()
+        notifier = DeveloperNotifier(make_config(developer_chat_id='42'), clock=lambda: self.t, state=state)
+        await notifier.error('⚠️ a', key='k')
+        self.t += 3600
+        await notifier.error('⚠️ b', key='k')
+        await notifier.resolved('k', '✅ ok')
+        self.assertEqual([e['kind'] for e in state.ha_events], ['error', 'error', 'recovered'])
+        self.assertIn('still failing', state.ha_events[1]['text'])
 
     async def test_send_failure_is_swallowed(self):
         self.notifier.attach_bot(self.bot)

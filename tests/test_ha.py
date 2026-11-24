@@ -45,6 +45,9 @@ class FakePeer:
 
     async def maybe_snapshot(self):
         self.maybe_snapshots = getattr(self, 'maybe_snapshots', 0) + 1
+        if getattr(self, 'snapshot_error', None):
+            raise self.snapshot_error
+        return getattr(self, 'snapshot_applied', False)
 
     async def on_handed_back(self):
         self.handed_back += 1
@@ -79,14 +82,21 @@ class FakeRunner:
 class FakeNotifier:
     def __init__(self):
         self.transitions, self.errors, self.quiet = [], [], []
+        self.error_keys = []            # key per entry of self.errors
+        self.resolutions = []           # (key, text) of every resolved() call that carried a text
 
     async def transition(self, text, quiet=False):
         self.transitions.append(text)
         if quiet:
             self.quiet.append(text)
 
-    async def error(self, text):
+    async def error(self, text, key=None):
         self.errors.append(text)
+        self.error_keys.append(key)
+
+    async def resolved(self, key, text=None, confirm_sec=0):
+        if text is not None:
+            self.resolutions.append((key, text))
 
 
 class ControllerTestCase(unittest.IsolatedAsyncioTestCase):
@@ -246,6 +256,24 @@ class TestPassiveFollowing(ControllerTestCase):
         self.assertEqual(ctl.role, HA_ROLE_PASSIVE)
         self.assertEqual(len(self.notifier.errors), 2)
         self.assertIn('boom', self.notifier.errors[0])
+        self.assertEqual(self.notifier.error_keys, ['sync', 'sync'])
+        self.assertEqual(getattr(self.peer, 'maybe_snapshots', 0), 0, 'no snapshot after a failed pull')
+        self.peer.pull_error = None
+        await self.tick(ctl)
+        self.assertEqual(self.notifier.resolutions, [('sync', '✅ me syncing from other again')])
+
+    async def test_snapshot_failure_is_its_own_episode_while_the_feed_works(self):
+        self.peer.reply = self.active_reply()
+        self.peer.snapshot_error = SyncError('snapshot rejected: bad JSON; next try in 5 min')
+        ctl = await self.started('standby')
+        await self.tick(ctl)
+        self.assertEqual(self.notifier.error_keys, ['snapshot'])
+        self.assertEqual(self.notifier.errors, ['⚠️ me sync error: snapshot rejected: bad JSON; next try in 5 min'])
+        self.assertEqual([key for key, _ in self.notifier.resolutions], ['sync'], 'the feed itself is fine')
+        self.peer.snapshot_error = None
+        self.peer.snapshot_applied = True
+        await self.tick(ctl)
+        self.assertEqual(self.notifier.resolutions[-1], ('snapshot', '✅ me snapshot from other applied again'))
 
     async def test_returning_node_reconciles_once_per_handoff(self):
         self.peer.reply = self.active_reply(handoff_rev=90)

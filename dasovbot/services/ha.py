@@ -26,7 +26,7 @@ from telegram import Update
 from dasovbot.config import Config
 from dasovbot.constants import (
     DATETIME_FORMAT, HA_ROLE_ACTIVE, HA_ROLE_DRAINING, HA_ROLE_PASSIVE, READINESS_LEASE_FACTOR,
-    STEP_DOWN_HOLD_FACTOR, STEP_DOWN_HOLD_MAX_SEC,
+    STEP_DOWN_HOLD_FACTOR, STEP_DOWN_HOLD_MAX_SEC, SYNC_RECOVERY_CONFIRM_SEC,
 )
 from dasovbot.database import get_meta, set_meta
 from dasovbot.persistence import remove_unfinished_downloads
@@ -89,8 +89,12 @@ class Notifier(Protocol):
     async def transition(self, text: str, quiet: bool = False) -> None:
         """`quiet` keeps the step in the history only, without a chat message."""
 
-    async def error(self, text: str) -> None:
-        """Rate-limited to one message per SYNC_ERROR_NOTIFY_INTERVAL_SEC."""
+    async def error(self, text: str, key: str | None = None) -> None:
+        """One episode per `key`: the first failure is sent, repeats become an hourly reminder."""
+
+    async def resolved(self, key: str, text: str | None = None, confirm_sec: float = 0) -> None:
+        """Ends the `key` episode, if one is open: `text` (plus how long it failed) is sent, None ends it
+        quietly. With `confirm_sec` it ends only after that long without a new failure."""
 
 
 def _fmt_duration(seconds: float) -> str:
@@ -202,7 +206,9 @@ class RoleController:
                 await self.tick()
             except Exception as e:  # noqa: BLE001 — the loop must survive anything
                 logger.error("HA tick failed", exc_info=True)
-                await self.notifier.error(f"⚠️ {self.node} HA loop error: {e}")
+                await self.notifier.error(f"⚠️ {self.node} HA loop error: {e}", key='ha_loop')
+            else:
+                await self.notifier.resolved('ha_loop', f"✅ {self.node} HA loop running again")
 
     def status(self) -> dict:
         sync = self.peer.sync_status() if self.peer is not None else {}
@@ -310,7 +316,8 @@ class RoleController:
             return
         if self.config.is_primary:
             logger.warning("409 Conflict while ACTIVE on the primary; the standby should yield")
-            asyncio.create_task(self.notifier.error(f"⚠️ {self.node} got 409 Conflict while ACTIVE — the standby should yield"))
+            asyncio.create_task(self.notifier.error(
+                f"⚠️ {self.node} got 409 Conflict while ACTIVE — the standby should yield", key='conflict'))
             return
         if self._stepping_down:
             return
@@ -357,6 +364,7 @@ class RoleController:
 
     async def _tick_passive(self, reply: dict | None, peer_active: bool, now: float):
         if peer_active:
+            await self.notifier.resolved('cannot_take_over')
             if self.handoff_pending and reply.get('drained'):
                 # The peer has stopped; take over right away — the final pull
                 # replaces the regular one, nothing else may delay this tick
@@ -371,12 +379,15 @@ class RoleController:
                 self.handoff_retry_at = now + self.config.lease_ttl_sec
                 await self.notifier.error(
                     f"⚠️ {self.node} handoff lapsed: {self.peer_name} re-activated before the takeover; "
-                    f"retrying in {_fmt_duration(self.config.lease_ttl_sec)}")
+                    f"retrying in {_fmt_duration(self.config.lease_ttl_sec)}", key='handoff_lapsed')
             try:
                 await self._pull(reply)
-                await self.peer.maybe_snapshot()
             except SyncError as e:
-                await self.notifier.error(f"⚠️ {self.node} sync error: {e}")
+                await self.notifier.error(f"⚠️ {self.node} sync error: {e}", key='sync')
+            else:
+                await self.notifier.resolved('sync', f"✅ {self.node} syncing from {self.peer_name} again",
+                                             confirm_sec=SYNC_RECOVERY_CONFIRM_SEC)
+                await self._maybe_snapshot()
             if not self.handoff_pending and self._should_request_handoff(reply, now):
                 manual = bool(reply.get('handback_requested')) or self._manual_takeover
                 if await self.peer.request_handoff(manual=manual):
@@ -419,16 +430,27 @@ class RoleController:
             await self._activate(reason)
         else:
             await self.notifier.error(
-                f"⚠️ {self.node} cannot take over ({reason}): {self.readiness_reason()}")
+                f"⚠️ {self.node} cannot take over ({reason}): {self.readiness_reason()}", key='cannot_take_over')
+
+    async def _maybe_snapshot(self):
+        """The hourly snapshot, in its own alert episode: the feed can be healthy while it keeps failing."""
+        try:
+            applied = await self.peer.maybe_snapshot()
+        except SyncError as e:
+            await self.notifier.error(f"⚠️ {self.node} sync error: {e}", key='snapshot')
+            return
+        if applied:
+            await self.notifier.resolved('snapshot', f"✅ {self.node} snapshot from {self.peer_name} applied again")
 
     async def _tick_active(self, reply: dict | None, peer_active: bool):
         if peer_active and reply.get('role') == HA_ROLE_ACTIVE:
             if self.config.is_primary:
                 logger.warning("both nodes ACTIVE; the standby should yield")
-                await self.notifier.error(f"⚠️ both nodes are ACTIVE — {self.peer_name} should yield")
+                await self.notifier.error(f"⚠️ both nodes are ACTIVE — {self.peer_name} should yield", key='both_active')
             else:
                 await self._step_down('peer active')
             return
+        await self.notifier.resolved('both_active')
         if reply is not None and reply.get('role') == HA_ROLE_PASSIVE:
             # A passive peer that still advertises a handoff point held the
             # lease without a clean handover (it stepped down when this node
@@ -437,9 +459,13 @@ class RoleController:
             # it touched, this node's own survivors are re-stamped — before the
             # peer's hourly snapshot floor would discard them
             try:
-                await self._reconcile_if_needed(reply)
+                absorbed = await self._reconcile_if_needed(reply)
             except SyncError as e:
-                await self.notifier.error(f"⚠️ {self.node} could not absorb {self.peer_name}'s writes: {e}")
+                await self.notifier.error(f"⚠️ {self.node} could not absorb {self.peer_name}'s writes: {e}",
+                                          key='absorb')
+            else:
+                if absorbed:
+                    await self.notifier.resolved('absorb', f"✅ {self.node} absorbed {self.peer_name}'s writes")
 
     async def _tick_draining(self, reply: dict | None, peer_active: bool, now: float):
         if not self.drained:
@@ -508,6 +534,10 @@ class RoleController:
         self.handoff_pending = False
         self.handback_requested = False
         self._stepping_down = False
+        # The "now ACTIVE" transition below says it all; an ACTIVE node does not pull, so its
+        # feed/snapshot episodes would otherwise stay open and swallow the next failure as a repeat
+        for key in ('cannot_take_over', 'final_pull', 'sync', 'snapshot'):
+            await self.notifier.resolved(key)
         since = None
         if self.peer_active_wall_at is not None:
             since = self.peer_active_wall_at - timedelta(seconds=self.config.heartbeat_interval_sec)
@@ -519,7 +549,7 @@ class RoleController:
             await self.peer.pull_changes()
         except SyncError as e:
             # Never activate on stale data: stay PASSIVE, keep handoff_pending, retry next tick
-            await self.notifier.error(f"⚠️ {self.node} final pull before takeover failed: {e}")
+            await self.notifier.error(f"⚠️ {self.node} final pull before takeover failed: {e}", key='final_pull')
             return
         await self._activate(reason)
 

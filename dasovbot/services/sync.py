@@ -22,8 +22,8 @@ import aiohttp
 
 from dasovbot.config import Config
 from dasovbot.constants import (
-    DATETIME_FORMAT, SNAPSHOT_INTERVAL_SEC, SNAPSHOT_RETRY_MIN_SEC, SYNC_ERROR_NOTIFY_INTERVAL_SEC, SYNC_PAGE_SIZE,
-    TRANSITION_COLLAPSE_SEC,
+    DATETIME_FORMAT, ERROR_EPISODE_IDLE_SEC, ERROR_REMIND_INTERVAL_SEC, SNAPSHOT_INTERVAL_SEC, SNAPSHOT_RETRY_MIN_SEC,
+    SYNC_PAGE_SIZE, TRANSITION_COLLAPSE_SEC,
 )
 from dasovbot.database import get_meta, set_meta, last_applied_key, reconcile_from_snapshot, validate_snapshot
 from dasovbot.services.ha import SyncError  # noqa: F401 — re-exported: the port's contract lives in ha.py
@@ -332,13 +332,30 @@ class SyncClient:
         return not (self.state.videos or self.state.users or self.state.subscriptions or self.state.intents)
 
 
+class _Episode:
+    """One run of failures of the same kind, from the first alert to the recovery."""
+
+    __slots__ = ('started', 'last_failure', 'last_sent', 'failures', 'ok_since')
+
+    def __init__(self, now: float):
+        self.started = self.last_failure = self.last_sent = now
+        self.failures = 1
+        self.ok_since: float | None = None
+
+
 class DeveloperNotifier:
-    """Transition messages always (quiet ones go to the history only); error messages at most
-    once per SYNC_ERROR_NOTIFY_INTERVAL_SEC.
+    """Transition messages always (quiet ones go to the history only); errors in episodes.
+
+    An error opens an episode for its `key` (default: one shared episode) and
+    is sent at once. Repeats are counted; while they continue, one silent
+    "still failing" reminder goes out per ERROR_REMIND_INTERVAL_SEC.
+    `resolved(key, text)` closes the episode with one silent recovery message
+    that says how long it failed. An episode that nobody resolves ends after
+    ERROR_EPISODE_IDLE_SEC without a repeat, so the next failure alerts again.
 
     With a `state`, every transition (collapsed repeats included) and every
-    error notice that is actually sent is also appended to `state.ha_events`
-    for the system page.
+    error, reminder and recovery notice that is actually sent is also appended
+    to `state.ha_events` for the system page.
     """
 
     def __init__(self, config: Config, clock=time.monotonic, state: BotState | None = None):
@@ -346,7 +363,7 @@ class DeveloperNotifier:
         self.clock = clock
         self.state = state
         self.bot = None
-        self._last_error_sent: float | None = None
+        self._episodes: dict[str, _Episode] = {}
         self._recent: dict[str, tuple[float, int]] = {}   # text -> (first sent at, repeats collapsed since)
 
     def attach_bot(self, bot):
@@ -378,14 +395,47 @@ class DeveloperNotifier:
         logger.info("API: %s", text)
         await self._send(text)
 
-    async def error(self, text: str):
+    async def error(self, text: str, key: str | None = None):
         logger.error("HA: %s", text)
+        key = key or 'error'
         now = self.clock()
-        if self._last_error_sent is not None and now - self._last_error_sent < SYNC_ERROR_NOTIFY_INTERVAL_SEC:
+        episode = self._episodes.get(key)
+        if episode is not None and now - episode.last_failure >= ERROR_EPISODE_IDLE_SEC:
+            episode = None                      # went quiet long ago without a recovery: a new episode
+        if episode is None:
+            self._episodes[key] = _Episode(now)
+            await self._record(text, 'error')
+            await self._send(text)
             return
-        self._last_error_sent = now
+        episode.failures += 1
+        episode.last_failure = now
+        episode.ok_since = None
+        if now - episode.last_sent < ERROR_REMIND_INTERVAL_SEC:
+            return
+        episode.last_sent = now
+        text = f"{text}\n⏳ still failing after {fmt_span(now - episode.started)} ({episode.failures} tries)"
         await self._record(text, 'error')
-        await self._send(text)
+        await self._send(text, silent=True)
+
+    async def resolved(self, key: str, text: str | None = None, confirm_sec: float = 0):
+        episode = self._episodes.get(key)
+        if episode is None:
+            return
+        now = self.clock()
+        if confirm_sec:
+            if episode.ok_since is None:
+                episode.ok_since = now
+            if now - episode.ok_since < confirm_sec:
+                return
+        del self._episodes[key]
+        if text is None:
+            logger.info("HA: %s episode over (%d failures)", key, episode.failures)
+            return
+        tries = f"{episode.failures} failed tr{'y' if episode.failures == 1 else 'ies'}"
+        text = f"{text} (after {fmt_span(now - episode.started)}, {tries})"
+        logger.info("HA: %s", text)
+        await self._record(text, 'recovered')
+        await self._send(text, silent=True)
 
     async def _record(self, text: str, kind: str):
         if self.state is None:
@@ -395,10 +445,11 @@ class DeveloperNotifier:
         except Exception:  # noqa: BLE001 — history is best effort
             logger.warning("recording HA event failed", exc_info=True)
 
-    async def _send(self, text: str):
+    async def _send(self, text: str, silent: bool = False):
         if self.bot is None or not self.config.developer_chat_id:
             return
+        kwargs = {'disable_notification': True} if silent else {}
         try:
-            await self.bot.send_message(chat_id=self.config.developer_chat_id, text=text)
+            await self.bot.send_message(chat_id=self.config.developer_chat_id, text=text, **kwargs)
         except Exception:  # noqa: BLE001 — notifications never break the controller
             logger.warning("developer notification failed", exc_info=True)

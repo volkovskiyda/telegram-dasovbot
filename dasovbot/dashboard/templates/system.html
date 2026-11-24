@@ -90,7 +90,7 @@
         {% for event in ha_events %}
         <tr>
             <td style="white-space: nowrap;">{{ event.at }} <span class="text-muted">({{ event.relative }})</span></td>
-            <td{% if event.kind == 'error' %} style="color: #ffb3c1;"{% endif %}>{{ event.text }}</td>
+            <td{% if event.kind == 'error' %} style="color: #ffb3c1;"{% elif event.kind == 'recovered' %} style="color: #86efac;"{% endif %}>{{ event.text }}</td>
         </tr>
         {% endfor %}
     </tbody>
